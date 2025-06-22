@@ -22,7 +22,11 @@ vul_ini = 'output/' # the file to initialize the abundances for ini_mix = 'vulca
 output_dir = 'output/'
 plot_dir = 'plot/'
 movie_dir = 'plot/movie/'
+<<<<<<< HEAD
 out_name =  'Earth-rtol005.vul' # output file name
+=======
+out_name =  'Earth-rtol01.vul' # output file name
+>>>>>>> b2df249 (updated cfg examples)
 
 # ====== Setting up the elemental abundance ======
 use_solar = False # True: using the solar abundance from Table 10. K.Lodders 2009; False: using the customized elemental abundance. 
@@ -153,7 +157,11 @@ flux_atol = 1. # the tol for actinc flux (# photons cm-2 s-1 nm-1)
 
 # ====== Setting up numerical parameters for Ros2 ODE solver ====== 
 rtol = 1.             # relative tolerence for adjusting the stepsize 
+<<<<<<< HEAD
 post_conden_rtol = 0.05 # switched to this value after fix_species_time
+=======
+post_conden_rtol = 0.1 # switched to this value after fix_species_time
+>>>>>>> b2df249 (updated cfg examples)
 
 # ====== Setting up for ouwtput and plotting ======
 # plotting:
