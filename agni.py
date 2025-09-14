@@ -48,6 +48,7 @@ def init_agni_atmos(vulcan_cfg:Config, atm:AtmData, var:Variables):
     log.debug("New AGNI atmosphere")
 
     atmos = jl.AGNI.atmosphere.Atmos_t()
+    succ = True
 
     # Stellar spectrum path (scaled to stellar surface)
     sflux_path  = vulcan_cfg.sflux_file
@@ -64,10 +65,14 @@ def init_agni_atmos(vulcan_cfg:Config, atm:AtmData, var:Variables):
         # exists => don't modify it
         input_sf =      try_spfile
         input_star =    ""
+    elif vulcan_cfg.spectral_file == "greygas":
+        # grey gas solution
+        input_sf =    vulcan_cfg.spectral_file
+        input_star =  sflux_path
     else:
         # doesn't exist => AGNI will copy it + modify as required
-        input_sf =      os.path.join(paths.AGNI_DIR,vulcan_cfg.spectral_file)
-        input_star =    sflux_path
+        input_sf =   os.path.join(paths.AGNI_DIR,vulcan_cfg.spectral_file)
+        input_star = sflux_path
 
     # composition set initially well-mixed
     vol_dict = {}
@@ -84,7 +89,7 @@ def init_agni_atmos(vulcan_cfg:Config, atm:AtmData, var:Variables):
     p_top  = atm.pico[-1]* 1e-6 # convert to bar
 
     # Setup struct
-    jl.AGNI.atmosphere.setup_b(atmos,
+    succ = jl.AGNI.atmosphere.setup_b(atmos,
                         paths.AGNI_DIR, vulcan_cfg.output_dir, input_sf,
 
                         sflux_integ,
@@ -118,9 +123,14 @@ def init_agni_atmos(vulcan_cfg:Config, atm:AtmData, var:Variables):
                         tmp_magma=vulcan_cfg.Tsurf_guess, 
                         tmp_floor=50.0
                         )
+    if not succ:
+        raise RuntimeError("Could not initialise AGNI atmos object")
 
     # Allocate arrays
-    jl.AGNI.atmosphere.allocate_b(atmos,input_star)
+    succ = jl.AGNI.atmosphere.allocate_b(atmos,input_star)
+
+    if not succ:
+        raise RuntimeError("Could not allocate AGNI atmos object")
 
     # Set temperature profile to initial guess
     tmp_top = 500.0
