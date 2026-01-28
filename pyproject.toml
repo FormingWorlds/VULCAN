@@ -41,6 +41,14 @@ dependencies = [
     "astropy"
 ]
 
+[project.optional-dependencies]
+docs = [
+    "markdown-include",
+    "mkdocs",
+    "mkdocs-material",
+    "mkdocstrings[python]",
+]
+
 [project.urls]
 homepage = "https://github.com/exoclime/VULCAN/"
 issues = "https://github.com/exoclime/VULCAN/issues"
