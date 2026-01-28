@@ -1,5 +1,6 @@
 # VULCAN
-[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)\
+[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
+
 Photochemical kinetics for exoplanetary atmospheres, a fast and easy-to-use python code. 
 
 VULCAN can be used on its own, but is also integrated into the [PROTEUS framework](https://proteus-framework.org/PROTEUS/), a coupled simulation tool for the long-term evolution of atmospheres and interiors of rocky planets.
