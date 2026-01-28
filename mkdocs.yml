@@ -1,4 +1,4 @@
-site_name: MORS
+site_name: VULCAN
 site_url: https://proteus-framework.org/VULCAN/
 repo_url: https://github.com/FormingWorlds/VULCAN
 repo_name: GitHub
@@ -13,8 +13,8 @@ nav:
       - Editing or using a different chemical network: How-to/chem_network.md
 
   - Tutorials:
-      - Overview: Tutorials/index.md
-      - Demo: Tutorials/quickstart.md
+      - Overview: tutorials/index.md
+      - Quick start: tutorials/quickstart.md
 
   - Explanations:
       - Overview: Explanations/index.md
@@ -113,6 +113,6 @@ plugins:
           filters: ["!^_"]
 
 watch:
-  - src/
+  - fastchem_vulcan/
   - docs/
   - README.md
