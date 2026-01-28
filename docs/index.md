@@ -42,5 +42,9 @@ Typically ```config.py``` is the only file you need to edit for each specific ru
 
 ## Publications
 
-The theory papers of VULCAN can be found here: [Tsai et al. 2021](https://arxiv.org/abs/2108.01790) (with photochemistry) and [Tsai et al. 2017](https://arxiv.org/abs/1607.00409) (without photochemistry).
-This is currently a release candidate version. Any questions or feedbacks is welcome and can be sent to [Shami Tsai](mailto:shang-min.tsai@physics.ox.ac.uk)
+The theory papers of VULCAN can be found here: 
+
+- [Tsai et al. 2021](https://arxiv.org/abs/2108.01790) (with photochemistry)
+- [Tsai et al. 2017](https://arxiv.org/abs/1607.00409) (without photochemistry)
+
+This is currently a release candidate version. Any questions or feedbacks is welcome and can be sent to [Shami Tsai](mailto:shang-min.tsai@physics.ox.ac.uk). 
