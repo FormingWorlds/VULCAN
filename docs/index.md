@@ -7,6 +7,10 @@ VULCAN can be used on its own, but is also integrated into the [PROTEUS framewor
 
 This distribution of VULCAN contains a number of performance and usability improvements.
 
+* Demo with realtime plotting:
+
+![Running with realtime plotting](../demo/demo.gif)
+
 ## Contributors
 
 | Name                    | Email address                            |
