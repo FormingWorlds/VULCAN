@@ -9,7 +9,6 @@ nav:
   - How-to guides:
       - Overview: How-to/index.md
       - Installation: How-to/installation.md
-      - Configuration: How-to/configuration.md
       - Editing or using a different chemical network: How-to/chem_network.md
 
   - Tutorials:
@@ -65,9 +64,6 @@ theme:
       toggle:
         icon: material/weather-sunny
         name: Switch to light mode
-
-extra_css:
-  - stylesheets/extra.css
 
 markdown_extensions:
   - admonition
