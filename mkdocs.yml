@@ -15,10 +15,6 @@ nav:
       - Overview: tutorials/index.md
       - Quick start: tutorials/quickstart.md
 
-  - Explanations:
-      - Overview: Explanations/index.md
-      - Model overview: Explanations/model_overview.md
-
   - Source code: https://github.com/FormingWorlds/VULCAN
   - Issues page: https://github.com/FormingWorlds/VULCAN/issues
   - 🔗 PROTEUS: https://proteus-framework.org/PROTEUS/
