@@ -9,7 +9,7 @@ This distribution of VULCAN contains a number of performance and usability impro
 
 * Demo with realtime plotting:
 
-![Running with realtime plotting](../demo/demo.gif)
+![Running with realtime plotting](assets/demo.gif)
 
 ## Contributors
 
