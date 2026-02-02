@@ -13,6 +13,14 @@ Before installing VULCAN, ensure you have the following:
 
 ## Installation steps
 
+### 0. Install julia
+
+For the coupling to the julia-based 1D radiative-convective model AGNI, julia needs to be installed. Do not install julia via your computer's package manager. Instead:
+
+```bash
+curl -fsSL https://install.julialang.org | sh
+```
+
 ### 1. Clone the repository
 
 ```bash
