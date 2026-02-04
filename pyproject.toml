@@ -50,7 +50,7 @@ docs = [
 ]
 
 [project.urls]
-homepage = "https://github.com/exoclime/VULCAN/"
-issues = "https://github.com/exoclime/VULCAN/issues"
+homepage = "https://github.com/FormingWorlds/VULCAN/"
+issues = "https://github.com/FormingWorlds/VULCAN/issues"
 changelog = "https://github.com/exoclime/VULCAN//releases"
 
