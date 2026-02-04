@@ -16,7 +16,8 @@ This distribution of VULCAN contains a number of performance and usability impro
 | Name                    | Email address                            |
 | -                       | -                                        |
 | Shang-Min (Shami) Tsai  | smtsai@asiaa.sinica.edu.tw               |
-| Harrison Nicholls       | harrison.nicholls@physics.ox.ac.uk       |
+| Harrison Nicholls       | h-nicholls@pm.me       |
+| Karen Stuitje           | e.k.e.stuitje@student.rug.nl       |
 
 ## Project Structure
 
