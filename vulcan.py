@@ -2,6 +2,12 @@
 
 __version__ = "26.02.20"
 
+# Set number of threads but don't overwrite existing value, if set
+import os
+num_threads = max(1,int(getattr(os.environ,"OMP_NUM_THREADS",2)))
+for k in ("MKL_NUM_THREADS","NUMEXPR_NUM_THREADS","OMP_NUM_THREADS"):
+    os.environ[k] = str(num_threads)
+
 # Import system modules
 import time
 import sys
@@ -131,7 +137,7 @@ def main(vulcan_cfg:Config):
     solver.naming_solver(data_para)
 
     # Running the integration loop
-    log.info("Starting VULCAN integration...")
+    log.info(f"Starting VULCAN integration with {os.environ['OMP_NUM_THREADS']} threads...")
     integ(data_var, data_atm, data_para, make_atm, atmos=atmos)
 
     # Save result to disk

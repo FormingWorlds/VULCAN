@@ -8,9 +8,10 @@ thermo/*network*.txt
 
 fastchem_vulcan/obj/*.o
 fastchem_vulcan/obj/*.d
-# fastchem_vulcan/input/element_abundances_vulcan.dat
+fastchem_vulcan/input/element_abundances_vulcan.dat
+fastchem_vulcan/input/vulcan_TP/
 fastchem_vulcan/fastchem
-# fastchem_vulcan/output/
+fastchem_vulcan/output/
 
 output/
 plot/
