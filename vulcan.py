@@ -147,7 +147,7 @@ if __name__ == "__main__":
     print("Starting VULCAN from command line")
 
     # Setup basic logging
-    logging.basicConfig(format='%(asctime)s - %(levelname)8s:  %(message)s',
+    logging.basicConfig(format='[%(asctime)s, %(levelname)8s]  %(message)s',
                             datefmt='%H:%M:%S',
                             encoding='utf-8', level=logging.INFO)
 
