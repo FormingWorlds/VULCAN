@@ -86,7 +86,12 @@ linking done.
 everything is done and fine. enjoy your day!
 ```
 
-### 4. Verify installation
+### 4. (Optional for RCE modelling) Install AGNI
+
+- Install AGNI following the instructions on the [AGNI website](https://www.h-nicholls.space/AGNI).
+- Create a symbolic link from your AGNI install folder to your VULCAN folder. Test this by running `file AGNI/agni.jl` inside your local `VULCAN/` folder.
+
+### 5. Verify installation
 
 Test that everything is working by running the demo:
 

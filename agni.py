@@ -23,7 +23,14 @@ AGNI_LOGFILE_NAME = "agni_recent.log"
 
 def activate_julia(vulcan_cfg:Config):
 
-    log.info("Activating Julia environment")
+    # Check AGNI is in the right location
+    if not os.path.isdir(paths.AGNI_DIR):
+        raise FileNotFoundError(paths.AGNI_DIR)
+    if not os.path.isfile(os.path.join(paths.AGNI_DIR,"agni.jl")):
+        raise FileNotFoundError(os.path.join(paths.AGNI_DIR,"agni.jl"))
+
+    # Activate environment for Julia
+    log.info(f"Activating Julia environment {paths.AGNI_DIR}")
     jl.seval("using Pkg")
     jl.Pkg.activate(paths.AGNI_DIR)
 
@@ -185,11 +192,13 @@ def _solve_energy(atmos, vulcan_cfg:Config,):
             linesearch, str(easy_start), dx_max, ls_increase
         ))
 
+        jl.AGNI.solver.ls_increase = float(ls_increase)
+
         # Try solving temperature profile
         agni_success = jl.AGNI.solver.solve_energy_b(atmos,
                             sol_type  = int(3),
                             method    = int(1),
-                            chem_type = int(0),
+                            chem      = False,
 
                             conduct=False, convect=True, sens_heat=True,
                             latent=False, rainout=True,
@@ -198,7 +207,7 @@ def _solve_energy(atmos, vulcan_cfg:Config,):
                             conv_atol=float(vulcan_cfg.agni_atol),
                             conv_rtol=float(vulcan_cfg.agni_rtol),
 
-                            ls_increase=float(ls_increase), ls_method=int(linesearch),
+                            ls_method=int(linesearch),
                             dx_max=float(dx_max), easy_start=easy_start,
                             perturb_all=perturb_all,
 
