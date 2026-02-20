@@ -122,6 +122,7 @@ class ReadRate(object):
                     var.ion_indx = i
 
                 elif line.startswith("# reverse stops"):
+                    var.special_re = False
                     var.stop_rev_indx = i
 
                 # skip common lines and blank lines
@@ -721,10 +722,10 @@ class Integration(object):
                                 else:
                                     sat_rho = atm.n_0 * atm.sat_mix[sp]
                                     conden_status = var.y[:,species.index(sp)] >= sat_rho
-
                                     if list(var.y[conden_status,species.index(sp)]): # if it condenses
                                         min_sat = np.amin(atm.sat_mix[sp][conden_status]) # the mininum value of the saturation p within the saturation region
-                                        conden_min_lev = np.where(atm.sat_mix[sp] == min_sat)[0][0]
+                                        atm.min_sat = min_sat
+                                        conden_min_lev = np.where(atm.sat_mix[sp] == min_sat)[0].item()
                                         atm.conden_min_lev[sp] = conden_min_lev
                                         log.debug(sp + " is now fixed from " + "{:.2f}".format(atm.pco[atm.conden_min_lev[sp]]/1e6) + " bar." )
                                     else:
@@ -1997,7 +1998,7 @@ class ODESolver(object):
         atom_sum = data_var.atom_sum
 
         for atom in atom_list:
-            #data_var.atom_sum[atom] = np.sum([compo[compo_row.index(species[i])][atom] * data_var.y[:,i] for i in range(ni)])
+            # data_var.atom_sum[atom] = np.sum([compo[compo_row.index(species[i])][atom] * data_var.y[:,i] for i in range(ni)])
             # TEST V scaling
             data_var.atom_sum[atom] = np.sum([compo[compo_row.index(species[i])][atom] * data_var.y[:,i] for i in range(ni)]) # *data_var.v_ratio
             data_var.atom_loss[atom] = (data_var.atom_sum[atom] - data_var.atom_ini[atom])/data_var.atom_ini[atom]
@@ -2402,7 +2403,6 @@ class Ros2(ODESolver):
         k2 = k2.reshape(y.shape)
 
         sol = y + 3./(2.*r)*k1 + 1/(2.*r)*k2
-
         # setting particles on the surace = 0
         if self.cfg.use_fix_sp_bot: # if use_fix_sp_bot = {} (empty), it returns false
             sol[0,self.fix_sp_bot_index] = self.fix_sp_bot_mix*atm.n_0[0]
@@ -2838,7 +2838,7 @@ class Output(object):
         plt.gca().set_yscale('log')
         plt.xlabel('time')
         plt.ylabel('mixing ratios')
-        plt.ylim((1.E-30,1.))
+        plt.ylim((plot_ymin,1.))
         plt.legend(frameon=0, prop={'size':14}, loc='best')
         plt.savefig(plot_dir + 'evo.png', dpi=self.cfg.plot_dpi)
 
@@ -2860,7 +2860,7 @@ class Output(object):
         plt.gca().set_yscale('log')
         plt.xlabel('time')
         plt.ylabel('mixing ratios')
-        plt.ylim((1.E-30,1.))
+        plt.ylim((plot_ymin,1.))
         plt.legend(frameon=0, prop={'size':14}, loc='best')
         plt.savefig(plot_dir + 'evo.png', dpi=self.cfg.plot_dpi)
 

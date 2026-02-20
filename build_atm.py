@@ -152,6 +152,11 @@ class InitialAbun(object):
             self.ini_fc(data_var, data_atm)
             fc = np.genfromtxt(FASTCHEM_DIR+'output/vulcan_EQ.dat', names=True, dtype=None, skip_header=0)
             for sp in species:
+                # Atomic P hack (genfromtxt gets the Pressure as index otherwise)
+                if sp == 'P':
+                    y_ini[:,species.index(sp)] = fc['P_1']*gas_tot # this also changes data_var.y because the address of y array has passed to y_ini
+                    #print(sp,y_ini[:,species.index(sp)]/gas_tot)
+                    continue
                 if sp in fc.dtype.names:
                     y_ini[:,species.index(sp)] = fc[sp]*gas_tot # this also changes data_var.y because the address of y array has passed to y_ini
 
@@ -673,7 +678,6 @@ class Atm(object):
         for i in range(len(species)):
             # input should be float or in the form of nz-long 1D array
             atm.Dzz[:,i] = Dzz_gen(Tco_i, n0_i, self.mol_mass(species[i]))
-
             # constructing the molecular weight for every species
             # this is required even without molecular weight
             atm.ms[i] = compo[compo_row.index(species[i])][-1]
