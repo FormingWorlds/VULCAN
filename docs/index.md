@@ -11,14 +11,6 @@ This distribution of VULCAN contains a number of performance and usability impro
 
 ![Running with realtime plotting](assets/demo.gif)
 
-## Contributors
-
-| Name                    | Email address                            |
-| -                       | -                                        |
-| Shang-Min (Shami) Tsai  | smtsai@asiaa.sinica.edu.tw               |
-| Harrison Nicholls       | h-nicholls@pm.me       |
-| Karen Stuitje           | e.k.e.stuitje@student.rug.nl       |
-
 ## Project Structure
 
 ```

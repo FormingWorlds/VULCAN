@@ -26,7 +26,7 @@ nav:
   - 🔗 Obliqua: https://proteus-framework.org/Obliqua/
   - 🔗 Zalmoxis: https://proteus-framework.org/Zalmoxis/
   - 🔗 Aragog: https://proteus-framework.org/aragog/
-  - 🔗 SPIDER: https://github.com/djbower/spider
+  - 🔗 SPIDER: https://proteus-framework.org/SPIDER/
   - 🔗 Atmodeller: https://atmodeller.readthedocs.io/en/latest/
   - 🔗 FastChem: https://newstrangeworlds.github.io/FastChem/
   - 🔗 PLATON: https://platon.readthedocs.io/en/latest/
@@ -34,6 +34,9 @@ nav:
 theme:
   name: material
   custom_dir: docs/overrides
+  features:
+  - content.code.copy
+  - navigation.expand
 
   # Default assets (used unless overridden per palette below)
   favicon: assets/PROTEUS_black_on_white_logo_only.png
@@ -61,6 +64,9 @@ theme:
         icon: material/weather-sunny
         name: Switch to light mode
 
+extra_css:
+  - stylesheets/extra.css
+ 
 markdown_extensions:
   - admonition
   - attr_list
@@ -69,10 +75,11 @@ markdown_extensions:
   - pymdownx.extra
   - pymdownx.arithmatex:
       generic: true
+  - footnotes
 
 extra_javascript:
-  - https://polyfill.io/v3/polyfill.min.js?features=es6
   - https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js
+  - javascripts/header-links.js
 
 plugins:
 - search
@@ -103,6 +110,8 @@ plugins:
           members_order: alphabetical
           merge_init_into_class: yes
           filters: ["!^_"]
+
+use_directory_urls: false
 
 watch:
   - fastchem_vulcan/
