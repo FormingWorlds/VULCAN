@@ -153,6 +153,9 @@ class Config:
         # ====== Setting up numerical parameters for Ros2 ODE solver ======
         self.rtol             = 0.7 # relative tolerence for adjusting the stepsize
         self.post_conden_rtol = 0.1 # switched to this value after fix_species_time
+        self.rtol_min        = 0.02
+        self.rtol_max        = 2.5  
+        self.use_adapt_rtol  = True
 
         # ====== Setting up for output and plotting ======
         self.plot_dpi        = 130

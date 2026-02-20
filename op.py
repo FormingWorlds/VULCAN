@@ -25,7 +25,7 @@ from chem_funs import neg_symjac as neg_achemjac
 from chem_funs import symjac as achemjac
 from chem_funs import spec_list as species
 from config import Config
-from phy_const import kb, Navo, hc, ag0 # hc is used to convert to the actinic flux
+from phy_const import kb, Navo, hc, ag0, spacer # hc is used to convert to the actinic flux
 
 
 class ReadRate(object):
@@ -692,7 +692,27 @@ class Integration(object):
 
             # integrating one step
             var, para = self.odesolver.one_step(var, atm, para)
+            self.loss_criteria = 0.0005
 
+            # # TEST 2025: using atom_loss to reduce rtol
+            if self.cfg.use_adapt_rtol and para.count%10 == 0:
+                if max([np.abs(loss) for loss in var.atom_loss.values()]) >= self.loss_criteria: 
+                    self.loss_criteria *= 2.
+                    self.cfg.rtol *= 0.75
+                    self.cfg.rtol = max(self.cfg.rtol, self.cfg.rtol_min)
+                    if self.cfg.rtol != self.cfg.rtol_min:
+                        log.debug('rtol reduced to ' + str(self.cfg.rtol))
+                        log.debug (spacer)
+
+            if self.cfg.use_adapt_rtol and para.count%1000 == 0 and para.count>0:
+                if max([np.abs(loss) for loss in var.atom_loss.values()]) < 2e-4: #
+                    self.cfg.rtol *= 1.25
+                    self.cfg.rtol = min(self.cfg.rtol, self.cfg.rtol_max)
+                    if self.cfg.rtol != self.cfg.rtol_max:
+                        log.debug ('rtol increased to ' + str(self.cfg.rtol))
+                        log.debug (spacer)
+            #
+            # # TEST 2025
 
             # Condensation (needs to be after solver.one_step)
             if self.cfg.use_condense and var.t >= self.cfg.start_conden_time and para.fix_species_start == False:
@@ -722,6 +742,8 @@ class Integration(object):
                                 else:
                                     sat_rho = atm.n_0 * atm.sat_mix[sp]
                                     conden_status = var.y[:,species.index(sp)] >= sat_rho
+                                    atm.conden_status = conden_status 
+                                    
                                     if list(var.y[conden_status,species.index(sp)]): # if it condenses
                                         min_sat = np.amin(atm.sat_mix[sp][conden_status]) # the mininum value of the saturation p within the saturation region
                                         atm.min_sat = min_sat
@@ -2061,13 +2083,13 @@ class ODESolver(object):
         log.warning('species: ' + str([species[s] for s in nega_i[1]]) )
         log.warning('dt= ' + str(data_var.dt))
         log.warning('...reset dt to dt*0.2...')
-        log.warning('------------------------------------------------------------------')
+        log.warning(spacer)
 
     def print_lossBig(self, para):
 
         log.warning('Element conservation is violated too large')
         log.warning('at step: ' + str(para.count))
-        log.warning('------------------------------------------------------------------')
+        log.warning(spacer)
 
     def thomas_vec(a, b, c, d):
         '''
@@ -2613,7 +2635,7 @@ class Output(object):
         log.info('Elapsed time: ' +"{:.2e}".format(var.t) + ' || Step number: ' + str(para.count) + '/' + str(self.cfg.count_max) )
         log.info('longdy = ' + "{:.2e}".format(var.longdy) + '      || longdy/dt = ' + "{:.2e}".format(var.longdydt) + '  || dt = '+ "{:.2e}".format(var.dt) )
         log.info('from nz = ' + str(int(indx_max/ni)) + ' and ' + species[indx_max%ni])
-        log.info('------------------------------------------------------------------------' )
+        log.info(spacer)
 
 
     def print_end_msg(self, var, para ):

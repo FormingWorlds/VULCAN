@@ -15,7 +15,7 @@ log = logging.getLogger("fwl."+__name__)
 import paths
 from config import Config
 from store import AtmData, Variables
-from phy_const import r_sun, au
+from phy_const import r_sun, au, spacer
 from chem_funs import spec_list as gas_list
 
 # constants
@@ -278,5 +278,5 @@ def run_agni(atmos, vulcan_cfg:Config, atm:AtmData, var:Variables):
     t_itp = PchipInterpolator(atmos.p, atmos.tmp)
     atm.Tco[:] = t_itp(atm.pco*0.1)[:] 
 
-    log.info('------------------------------------------------------------------------')
+    log.info(spacer)
     return atmos
