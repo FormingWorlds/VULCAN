@@ -39,9 +39,19 @@ class Config:
 
 
         # ====== Setting up the elemental abundance ======
-        self.ini_mix = 'const_mix'
+        self.ini_mix = 'eq'
         self.const_mix = { 'H2O':3e-2, 'CO2':5e-3, 'H2':0.9, 'CH4':3e-2, 'CO':1e-3, 'N2':4e-3, 'NH3':3e-2}
         self.vul_ini = '_unset_'
+
+        # If using ini_mix = 'eq'
+        self.use_solar = False 
+        # customized elemental abundance (only read when use_solar = False)
+        self.fastchem_met_scale = 1.0
+        self.O_H = 6.0618E-4 #*(0.793)  
+        self.C_H = 2.7761E-4  
+        self.N_H = 8.1853E-5
+        self.S_H = 1.3183E-5
+        self.He_H = 0.09692
 
 
         # ====== Setting up photochemistry ======
@@ -105,7 +115,7 @@ class Config:
         self.agni_atol      = 1e-3
         self.agni_rtol      = 1e-3
         self.agni_nlev      = 60
-        self.solve_rce      = True
+        self.solve_rce      = False
 
 
         # ====== steady state check ======

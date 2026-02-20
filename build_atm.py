@@ -33,8 +33,8 @@ class InitialAbun(object):
     def __init__(self, vulcan_cfg:Config):
         self.cfg = vulcan_cfg
         self.ini_m = [0.9,0.1,0.,0.,0] # initial guess
-
         self.atom_list = vulcan_cfg.atom_list
+        self.cfg.ini_mix = self.cfg.ini_mix.lower() # normalise string to lowercase
 
     def abun_lowT(self, x):
         """
@@ -68,7 +68,7 @@ class InitialAbun(object):
 
 
     def ini_mol(self):
-        if self.cfg.ini_mix == 'const_lowT':
+        if self.cfg.ini_mix == 'const_lowt':
             return np.array(sop.fsolve(self.abun_lowT, self.ini_m))
 
     def ini_fc(self, data_var, data_atm):
@@ -147,7 +147,7 @@ class InitialAbun(object):
         gas_tot = data_atm.M
         charge_list = [] # list of charged species excluding echarge_list
 
-        if self.cfg.ini_mix == 'EQ':
+        if self.cfg.ini_mix == 'eq':
 
             self.ini_fc(data_var, data_atm)
             fc = np.genfromtxt(FASTCHEM_DIR+'output/vulcan_EQ.dat', names=True, dtype=None, skip_header=0)
@@ -211,7 +211,7 @@ class InitialAbun(object):
         else:
             for i in range(nz):
 
-                if self.cfg.ini_mix == 'const_lowT':
+                if self.cfg.ini_mix == 'const_lowt':
                     y_ini[i,:] = ini
                     y_ini[i,species.index('H2')] = ini_mol[0]*gas_tot[i]; y_ini[i,species.index('H2O')] = ini_mol[1]*gas_tot[i]; y_ini[i,species.index('CH4')] = ini_mol[2]*gas_tot[i]
                     y_ini[i,species.index('NH3')] = ini_mol[4]*gas_tot[i]

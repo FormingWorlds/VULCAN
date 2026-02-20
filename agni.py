@@ -240,8 +240,7 @@ def _solve_once(atmos):
     jl.AGNI.setpt.stratosphere_b(atmos, 0.5)
 
     # calculate convective flux only, to get Kzz profile
-    jl.AGNI.energy.calc_fluxes_b(atmos, False, 
-                                    False, True, False, False, calc_cf=False)
+    jl.AGNI.energy.calc_fluxes_b(atmos, convective=True)
 
     # fill kzz values
     jl.AGNI.energy.fill_Kzz_b(atmos)
