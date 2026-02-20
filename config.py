@@ -77,6 +77,7 @@ class Config:
 
         # ====== Mixing processes ======
         self.use_moldiff = True
+        self.use_vm_mol = False # use upwind scheme for molecular diffusion -- under testing
         self.use_vz      = True
         self.vz_prof     = 'const'  # Options: 'const' or 'file'
         self.const_vz    = 0.0 # (cm/s)

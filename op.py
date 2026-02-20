@@ -1558,6 +1558,114 @@ class ODESolver(object):
             ### the const flux has no contribution to the jacobian ###
             diff[-1] += atm.top_flux /dzi[-1]
         if self.cfg.use_botflux == True:
+            ### the deposition term needs to be included in the jacobian!!!   
+            diff[0] += (atm.bot_flux - y[0]*atm.bot_vdep) /dzi[0]
+        
+        return diff
+            
+    
+    def diffdf_settling_vm(self, y, atm): 
+        """
+        added vm for molecular diffusion
+        function of eddy diffusion including molecular diffusion and the settling velocity for particles, with zero-flux boundary conditions and non-uniform grids (dzi)
+        in the form of Aj*y_j + Bj+1*y_j+1 + Cj-1*y_j-1
+        """
+        
+        nz = self.cfg.nz
+        y = y.copy()
+        
+        if self.cfg.non_gas_sp:
+            ysum = np.sum(y[:,atm.gas_indx], axis=1)
+        else: ysum = np.sum(y, axis=1)
+        
+        dzi = atm.dzi.copy()
+        Kzz = atm.Kzz.copy()
+        vz = atm.vz.copy()
+        Dzz = atm.Dzz.copy()
+        vs = atm.vs.copy()
+        alpha = atm.alpha.copy()
+        Tco = atm.Tco.copy()
+        ms = atm.ms.copy()
+        Hp = atm.Hp.copy()
+        g = atm.g
+        Ti = atm.Ti
+        Hpi = atm.Hpi
+        
+        vm = atm.vm
+        # shape: nz x ni
+        # vm defined in build.py
+        # vm = - Dzz_cen * ( ms[np.newaxis,:]*g[:,np.newaxis]/(Navo*kb*Tco[:,np.newaxis]) - 1./Hp[:,np.newaxis] +  alpha/Tco[:,np.newaxis]*(delta_T[:,np.newaxis])/dz[:,np.newaxis]  )
+
+            
+        A, B, C = np.zeros(nz), np.zeros(nz), np.zeros(nz)
+        Ai, Bi, Ci = [ np.zeros((nz,ni)) for i in range(3)]
+        
+        A[0] = -1./(dzi[0])*(Kzz[0]/dzi[0]) *(ysum[1]+ysum[0])/2. /ysum[0]     
+        B[0] = 1./(dzi[0])*(Kzz[0]/dzi[0]) *(ysum[1]+ysum[0])/2. /ysum[1] 
+        C[0] = 0 
+        A[nz-1] = -1./(dzi[nz-2])*(Kzz[nz-2]/dzi[nz-2]) *(ysum[nz-1]+ysum[nz-2])/2. /ysum[nz-1] 
+        B[nz-1] = 0 
+        C[nz-1] = 1./(dzi[nz-2])*(Kzz[nz-2]/dzi[nz-2]) *(ysum[nz-1]+ysum[nz-2])/2. /ysum[nz-2] 
+        
+        # vertical adection (with closed B.C.) 
+        A[0] += -( (vz[0]>0)*vz[0] )/dzi[0]
+        B[0] += -( (vz[0]<0)*vz[0] )/dzi[0]
+        A[-1] += ( (vz[-1]<0)*vz[-1] )/dzi[-1]
+        C[-1] += ( (vz[-1]>0)*vz[-1] )/dzi[-1]
+        # vertical adection
+        
+        # shape of ni-long 1D array
+        # Including the settling velocity of the particles and the advective component of molecular diffusion
+        Ai[0] = -1./(dzi[0])*(Dzz[0]/dzi[0]) *(ysum[1]+ysum[0])/2. /ysum[0] \
+        -( (vs[0]>0)*vs[0] )/dzi[0]  
+        Bi[0] = 1./(dzi[0])*(Dzz[0]/dzi[0]) *(ysum[1]+ysum[0])/2. /ysum[1] \
+        -( (vs[0]<0)*vs[0] )/dzi[0]
+        #Ci[0] = 0 
+        Ai[nz-1] = -1./(dzi[-1])*(Dzz[nz-2]/dzi[-1]) *(ysum[nz-1]+ysum[nz-2])/2. /ysum[nz-1] \
+        +( (vm[-1]<0)*vm[-1] )/dzi[-1]  +( (vs[-1]<0)*vs[-1] )/dzi[-1]
+        #Bi[nz-1] = 0
+        Ci[nz-1] = 1./(dzi[-1])*(Dzz[nz-2]/dzi[-1]) *(ysum[nz-1]+ysum[nz-2])/2. /ysum[nz-2] \
+        +( (vm[-1]>0)*vm[-1] )/dzi[-1]  +( (vs[-1]>0)*vs[-1] )/dzi[-1]
+        
+        for j in range(1,nz-1):
+            dz_ave = 0.5*(dzi[j-1] + dzi[j])
+            A[j] = -1./dz_ave * ( Kzz[j]/dzi[j]*(ysum[j+1]+ysum[j])/2. + Kzz[j-1]/dzi[j-1]*(ysum[j]+ysum[j-1])/2. ) /ysum[j]  
+            B[j] = 1./dz_ave * Kzz[j]/dzi[j] *(ysum[j+1]+ysum[j])/2. /ysum[j+1]
+            C[j] = 1./dz_ave * Kzz[j-1]/dzi[j-1] *(ysum[j]+ysum[j-1])/2. /ysum[j-1]
+            
+            # vertical adection
+            A[j] += -( (vz[j]>0)*vz[j] - (vz[j-1]<0)*vz[j-1] )/dz_ave
+            B[j] += -( (vz[j]<0)*vz[j] )/dz_ave
+            C[j] += ( (vz[j-1]>0)*vz[j-1] )/dz_ave
+            # vertical adection
+            
+            # Ai in the shape of nz*ni and Ai[j] in the shape of ni 
+            # Including the settling velocity of the particles
+            
+            # diffusion component
+            Ai[j] = -1./dz_ave * ( Dzz[j]/dzi[j]*(ysum[j+1]+ysum[j])/2. + Dzz[j-1]/dzi[j-1]*(ysum[j]+ysum[j-1])/2. ) /ysum[j] 
+            Bi[j] = 1./dz_ave * Dzz[j]/dzi[j] *(ysum[j+1]+ysum[j])/2. /ysum[j+1]  
+            Ci[j] = 1./dz_ave * Dzz[j-1]/dzi[j-1] *(ysum[j]+ysum[j-1])/2. /ysum[j-1]  
+            # diffusion component
+            
+            # advective component using upwind (inc. from Dzz and from vs)
+            Ai[j] += -( (vm[j]>0)*vm[j] - (vm[j-1]<0)*vm[j-1] )/dz_ave  -( (vs[j]>0)*vs[j] - (vs[j-1]<0)*vs[j-1] )/dz_ave
+            Bi[j] += -( (vm[j]<0)*vm[j] )/dz_ave  -( (vs[j]<0)*vs[j] )/dz_ave
+            Ci[j] += +( (vm[j-1]>0)*vm[j-1] )/dz_ave  +( (vs[j-1]>0)*vs[j-1] )/dz_ave 
+            # advective component using upwind
+            
+        tmp0 = (A[0] + Ai[0])*y[0] + (B[0] + Bi[0])*y[1] # shape of ni-long 1D array  
+        tmp1 = np.ndarray.flatten( (np.vstack(A[1:nz-1])*y[1:(nz-1)] + np.vstack(B[1:nz-1])*y[1+1:(nz-1)+1] + np.vstack(C[1:nz-1])*y[1-1:(nz-1)-1]) ) 
+        tmp1 += np.ndarray.flatten( Ai[1:nz-1]*y[1:(nz-1)] + Bi[1:nz-1]*y[1+1:(nz-1)+1] + Ci[1:nz-1]*y[1-1:(nz-1)-1] ) # shape of (nz-2,ni)
+        tmp2 = (A[nz-1] + Ai[nz-1])*y[nz-1] + (C[nz-1] + Ci[nz-1])*y[nz-2]
+        diff = np.append(np.append(tmp0, tmp1), tmp2)
+        diff = diff.reshape(nz,ni)
+
+        if self.cfg.use_topflux == True:
+            # Don't forget dz!!! -d phi/ dz
+            ### the const flux has no contribution to the jacobian ### 
+            diff[-1] += atm.top_flux /dzi[-1]
+        if self.cfg.use_botflux == True:
             ### the deposition term needs to be included in the jacobian!!!
             diff[0] += (atm.bot_flux - y[0]*atm.bot_vdep) /dzi[0]
 
@@ -1571,9 +1679,8 @@ class ODESolver(object):
         """
 
         nz = self.cfg.nz
-
-
         y = var.y.copy()
+        
         # TEST condensation excluding non-gaseous species
         if self.cfg.non_gas_sp:
             ysum = np.sum(y[:,atm.gas_indx], axis=1)
@@ -1699,6 +1806,79 @@ class ODESolver(object):
         +1./(dzi[0])* Dzz[0]/2.*(-1./Hpi[0]+ms*g[0]/(Navo*kb*Ti[0])+alpha/Ti[0]*(Tco[1]-Tco[0])/dzi[0] )
         # deposition velocity
         if self.cfg.use_botflux == True: dfdy[j_indx[0], j_indx[0]] -= -1.*atm.bot_vdep /dzi[0]
+        
+        dfdy[j_indx[0], j_indx[1]] -= 1./(dzi[0])*(Kzz[0]/dzi[0]) * (ysum[1]+ysum[0])/(2.*ysum[1]) -( (vz[0]<0)*vz[0] )/dzi[0]
+        dfdy[j_indx[0], j_indx[1]] -= 1./(dzi[0])*(Dzz[0]/dzi[0]) * (ysum[1]+ysum[0])/(2.*ysum[1]) \
+        +1./(dzi[0])* Dzz[0]/2.*(-1./Hpi[0]+ms*g[0]/(Navo*kb*Ti[0])+alpha/Ti[0]*(Tco[1]-Tco[0])/dzi[0] )
+
+        dfdy[j_indx[nz-1], j_indx[nz-1]] -= -1./(dzi[nz-2])*(Kzz[nz-2]/dzi[nz-2]) *(ysum[(nz-1)-1]+ysum[nz-1])/(2.*ysum[nz-1]) +( (vz[-1]<0)*vz[-1] )/dzi[-1]  
+        dfdy[j_indx[nz-1], j_indx[nz-1]] -= -1./(dzi[nz-2])*(Dzz[nz-2]/dzi[nz-2]) *(ysum[nz-1]+ysum[nz-2])/(2.*ysum[nz-1]) \
+        - 1./(dzi[-1])* Dzz[-1]/2.*(-1./Hpi[-1]+ms*g[-1]/(Navo*kb*Ti[-1])+alpha/Ti[-1]*(Tco[-1]-Tco[-2])/dzi[-1] )
+        dfdy[j_indx[nz-1], j_indx[(nz-1)-1]] -= 1./(dzi[nz-2])*(Kzz[nz-2]/dzi[nz-2])* (ysum[(nz-1)-1]+ysum[nz-1])/(2.*ysum[(nz-1)-1]) +( (vz[-1]>0)*vz[-1] )/dzi[-1]  
+        dfdy[j_indx[nz-1], j_indx[(nz-1)-1]] -= 1./(dzi[nz-2])*(Dzz[nz-2]/dzi[nz-2]) *(ysum[nz-1]+ysum[nz-2])/(2.*ysum[(nz-1)-1]) \
+                -1./(dzi[-1])* Dzz[-1]/2.*(-1./Hpi[-1]+ms*g[-1]/(Navo*kb*Ti[-1])+alpha/Ti[-1]*(Tco[-1]-Tco[-2])/dzi[-1] )
+
+        return dfdy    
+
+    def lhs_jac_tot_vm(self, var, atm):      
+        """
+        directly constructing lhs = 1./(r*h)*sparse.identity(ni*nz) - dfdy
+        jacobian matrix for dn/dt + dphi/dz = P - L (including molecular diffusion)
+        zero-flux BC:  1st derivitive of y is zero
+        inc. vm from molecular diffusion
+        """
+        y = var.y.copy()
+        nz = self.cfg.nz
+
+        # TEST condensation excluding non-gaseous species
+        if self.cfg.use_condense == True:
+            ysum = np.sum(y[:,atm.gas_indx], axis=1)
+            #ysum = np.sum(y, axis=1)
+        else: ysum = np.sum(y, axis=1)
+        # TEST condensation excluding non-gaseous species
+        dzi = atm.dzi.copy()
+        Kzz = atm.Kzz.copy()
+        Dzz = atm.Dzz.copy()
+        vz = atm.vz.copy()
+        alpha = atm.alpha.copy()
+        Tco = atm.Tco.copy()
+        mu, ms = atm.mu.copy(),  atm.ms.copy()
+        g = atm.g
+        vm = atm.vm
+        
+        Ti = atm.Ti.copy()
+        Hpi = atm.Hpi.copy()
+
+        # c0 = 1./(r*h) where r = 1. + 1./2.**0.5
+        r = 1. + 1./2.**0.5
+        c0 = 1./(r*var.dt)
+        dfdy = neg_achemjac(y, atm.M, var.k)
+        np.fill_diagonal(dfdy, c0 + np.diag(dfdy)) 
+        j_indx = []
+        
+        for j in range(nz):
+            j_indx.append( np.arange(j*ni,j*ni+ni) )
+
+        for j in range(1,nz-1):
+            # excluding the buttom and the top cell
+            # at j level consists of ni species
+            dz_ave = 0.5*(dzi[j-1] + dzi[j])
+            dfdy[j_indx[j], j_indx[j]] -=  -1./dz_ave*( Kzz[j]/dzi[j]*(ysum[j+1]+ysum[j])/2. + Kzz[j-1]/dzi[j-1]*(ysum[j-1]+ysum[j])/2. ) /ysum[j] -( (vz[j]>0)*vz[j] - (vz[j-1]<0)*vz[j-1] )/dz_ave
+            dfdy[j_indx[j], j_indx[j+1]] -= 1./dz_ave*( Kzz[j]/dzi[j]*(ysum[j+1]+ysum[j])/(2.*ysum[j+1]) ) -( (vz[j]<0)*vz[j] )/dz_ave
+            dfdy[j_indx[j], j_indx[j-1]] -= 1./dz_ave*( Kzz[j-1]/dzi[j-1]*(ysum[j-1]+ysum[j])/(2.*ysum[j-1]) ) +( (vz[j-1]>0)*vz[j-1] )/dz_ave
+
+            # [j_indx[j], j_indx[j]] has size ni*ni
+            dfdy[j_indx[j], j_indx[j]] -=  -1./dz_ave*( Dzz[j]/dzi[j]*(ysum[j+1]+ysum[j])/2. + Dzz[j-1]/dzi[j-1]*(ysum[j-1]+ysum[j])/2. ) /ysum[j]\
+            -( (vm[j]>0)*vm[j] - (vm[j-1]<0)*vm[j-1] )/dz_ave
+            dfdy[j_indx[j], j_indx[j+1]] -= 1./dz_ave*( Dzz[j]/dzi[j]*(ysum[j+1]+ysum[j])/(2.*ysum[j+1]) ) \
+            -( (vm[j]<0)*vm[j] )/dz_ave
+            dfdy[j_indx[j], j_indx[j-1]] -= 1./dz_ave*( Dzz[j-1]/dzi[j-1]*(ysum[j-1]+ysum[j])/(2.*ysum[j-1]) ) \
+            +( (vm[j-1]>0)*vm[j-1] )/dz_ave
+    
+        dfdy[j_indx[0], j_indx[0]] -= -1./(dzi[0])*(Kzz[0]/dzi[0]) * (ysum[1]+ysum[0])/(2.*ysum[0]) -( (vz[0]>0)*vz[0] )/dzi[0]
+        dfdy[j_indx[0], j_indx[0]] -= -1./(dzi[0])*(Dzz[0]/dzi[0]) * (ysum[1]+ysum[0])/(2.*ysum[0]) -( (vm[0]>0)*vm[0] )/dzi[0]
+        # deposition velocity
+        if self.cfg.use_botflux == True: dfdy[j_indx[0], j_indx[0]] -= -1.*atm.bot_vdep /dzi[0]
         # diffusion-limited escape
         if self.cfg.diff_esc: # not empty list
             diff_lim = np.zeros(ni)
@@ -1708,15 +1888,14 @@ class ODESolver(object):
             dfdy[j_indx[-1], j_indx[-1]] -= diff_lim # negative
 
         dfdy[j_indx[0], j_indx[1]] -= 1./(dzi[0])*(Kzz[0]/dzi[0]) * (ysum[1]+ysum[0])/(2.*ysum[1]) -( (vz[0]<0)*vz[0] )/dzi[0]
-        dfdy[j_indx[0], j_indx[1]] -= 1./(dzi[0])*(Dzz[0]/dzi[0]) * (ysum[1]+ysum[0])/(2.*ysum[1]) \
-        +1./(dzi[0])* Dzz[0]/2.*(-1./Hpi[0]+ms*g[0]/(Navo*kb*Ti[0])+alpha/Ti[0]*(Tco[1]-Tco[0])/dzi[0] )
+        dfdy[j_indx[0], j_indx[1]] -= 1./(dzi[0])*(Dzz[0]/dzi[0]) * (ysum[1]+ysum[0])/(2.*ysum[1]) -( (vm[0]<0)*vm[0] )/dzi[0]
 
         dfdy[j_indx[nz-1], j_indx[nz-1]] -= -1./(dzi[nz-2])*(Kzz[nz-2]/dzi[nz-2]) *(ysum[(nz-1)-1]+ysum[nz-1])/(2.*ysum[nz-1]) +( (vz[-1]<0)*vz[-1] )/dzi[-1]
         dfdy[j_indx[nz-1], j_indx[nz-1]] -= -1./(dzi[nz-2])*(Dzz[nz-2]/dzi[nz-2]) *(ysum[nz-1]+ysum[nz-2])/(2.*ysum[nz-1]) \
-        - 1./(dzi[-1])* Dzz[-1]/2.*(-1./Hpi[-1]+ms*g[-1]/(Navo*kb*Ti[-1])+alpha/Ti[-1]*(Tco[-1]-Tco[-2])/dzi[-1] )
+        +( (vm[-1]<0)*vm[-1] )/dzi[-1]
         dfdy[j_indx[nz-1], j_indx[(nz-1)-1]] -= 1./(dzi[nz-2])*(Kzz[nz-2]/dzi[nz-2])* (ysum[(nz-1)-1]+ysum[nz-1])/(2.*ysum[(nz-1)-1]) +( (vz[-1]>0)*vz[-1] )/dzi[-1]
         dfdy[j_indx[nz-1], j_indx[(nz-1)-1]] -= 1./(dzi[nz-2])*(Dzz[nz-2]/dzi[nz-2]) *(ysum[nz-1]+ysum[nz-2])/(2.*ysum[(nz-1)-1]) \
-                -1./(dzi[-1])* Dzz[-1]/2.*(-1./Hpi[-1]+ms*g[-1]/(Navo*kb*Ti[-1])+alpha/Ti[-1]*(Tco[-1]-Tco[-2])/dzi[-1] )
+        +( (vm[-1]>0)*vm[-1] )/dzi[-1]
 
         return dfdy
 
@@ -1962,6 +2141,80 @@ class ODESolver(object):
         +1./(dzi[0])* Dzz[0]/2.*(-1./Hpi[0]+ms*g[0]/(Navo*kb*Ti[0])+alpha/Ti[0]*(Tco[1]-Tco[0])/dzi[0] )  -( (vs[0]>0)*vs[0] )/dzi[0]
         # deposition velocity
         if self.cfg.use_botflux == True: dfdy[j_indx[0], j_indx[0]] -= -1.*atm.bot_vdep /dzi[0]
+        
+        dfdy[j_indx[0], j_indx[1]] -= 1./(dzi[0])*(Kzz[0]/dzi[0]) * (ysum[1]+ysum[0])/(2.*ysum[1]) -( (vz[0]<0)*vz[0] )/dzi[0] 
+        dfdy[j_indx[0], j_indx[1]] -= 1./(dzi[0])*(Dzz[0]/dzi[0]) * (ysum[1]+ysum[0])/(2.*ysum[1]) \
+        +1./(dzi[0])* Dzz[0]/2.*(-1./Hpi[0]+ms*g[0]/(Navo*kb*Ti[0])+alpha/Ti[0]*(Tco[1]-Tco[0])/dzi[0] ) -( (vs[0]<0)*vs[0] )/dzi[0]
+
+        dfdy[j_indx[nz-1], j_indx[nz-1]] -= -1./(dzi[nz-2])*(Kzz[nz-2]/dzi[nz-2]) *(ysum[(nz-1)-1]+ysum[nz-1])/(2.*ysum[nz-1]) +( (vz[-1]<0)*vz[-1] )/dzi[-1]  
+        dfdy[j_indx[nz-1], j_indx[nz-1]] -= -1./(dzi[nz-2])*(Dzz[nz-2]/dzi[nz-2]) *(ysum[nz-1]+ysum[nz-2])/(2.*ysum[nz-1]) \
+        - 1./(dzi[-1])* Dzz[-1]/2.*(-1./Hpi[-1]+ms*g[-1]/(Navo*kb*Ti[-1])+alpha/Ti[-1]*(Tco[-1]-Tco[-2])/dzi[-1] ) +( (vs[-1]<0)*vs[-1] )/dzi[-1]
+        dfdy[j_indx[nz-1], j_indx[(nz-1)-1]] -= 1./(dzi[nz-2])*(Kzz[nz-2]/dzi[nz-2])* (ysum[(nz-1)-1]+ysum[nz-1])/(2.*ysum[(nz-1)-1]) +( (vz[-1]>0)*vz[-1] )/dzi[-1]   
+        dfdy[j_indx[nz-1], j_indx[(nz-1)-1]] -= 1./(dzi[nz-2])*(Dzz[nz-2]/dzi[nz-2]) *(ysum[nz-1]+ysum[nz-2])/(2.*ysum[(nz-1)-1]) \
+                -1./(dzi[-1])* Dzz[-1]/2.*(-1./Hpi[-1]+ms*g[-1]/(Navo*kb*Ti[-1])+alpha/Ti[-1]*(Tco[-1]-Tco[-2])/dzi[-1] ) +( (vs[-1]>0)*vs[-1] )/dzi[-1]
+
+        return dfdy
+                
+    def lhs_jac_settling_vm(self, var, atm):      
+        """
+        directly constructing lhs = 1./(r*h)*sparse.identity(ni*nz) - dfdy
+        jacobian matrix for dn/dt + dphi/dz = P - L (including molecular diffusion and gravitation settling for particles)
+        zero-flux BC:  1st derivitive of y is zero
+        inc. vs from molecular diffusion
+        """
+        y = var.y.copy()
+        nz = self.cfg.nz
+
+        # TEST condensation excluding non-gaseous species
+        if self.cfg.non_gas_sp:
+            ysum = np.sum(y[:,atm.gas_indx], axis=1)
+        else: ysum = np.sum(y, axis=1)
+        # TEST condensation excluding non-gaseous species
+        dzi = atm.dzi.copy()
+        Kzz = atm.Kzz.copy()
+        Dzz = atm.Dzz.copy()
+        vz = atm.vz.copy()
+        vs = atm.vs.copy()
+        alpha = atm.alpha.copy()
+        Tco = atm.Tco.copy()
+        mu, ms = atm.mu.copy(),  atm.ms.copy()
+        g = atm.g
+        vm = atm.vm
+
+        Ti = atm.Ti.copy()
+        Hpi = atm.Hpi.copy()
+
+        # c0 = 1./(r*h) where r = 1. + 1./2.**0.5
+        r = 1. + 1./2.**0.5
+        c0 = 1./(r*var.dt)
+        dfdy = neg_achemjac(y, atm.M, var.k)
+        np.fill_diagonal(dfdy, c0 + np.diag(dfdy)) 
+        j_indx = []
+        
+        for j in range(nz):
+            j_indx.append( np.arange(j*ni,j*ni+ni) )
+
+        for j in range(1,nz-1):
+            # excluding the buttom and the top cell
+            # at j level consists of ni species
+            dz_ave = 0.5*(dzi[j-1] + dzi[j])
+            dfdy[j_indx[j], j_indx[j]] -=  -1./dz_ave*( Kzz[j]/dzi[j]*(ysum[j+1]+ysum[j])/2. + Kzz[j-1]/dzi[j-1]*(ysum[j-1]+ysum[j])/2. ) /ysum[j] -( (vz[j]>0)*vz[j] - (vz[j-1]<0)*vz[j-1] )/dz_ave
+            dfdy[j_indx[j], j_indx[j+1]] -= 1./dz_ave*( Kzz[j]/dzi[j]*(ysum[j+1]+ysum[j])/(2.*ysum[j+1]) ) -( (vz[j]<0)*vz[j] )/dz_ave
+            dfdy[j_indx[j], j_indx[j-1]] -= 1./dz_ave*( Kzz[j-1]/dzi[j-1]*(ysum[j-1]+ysum[j])/(2.*ysum[j-1]) ) +( (vz[j-1]>0)*vz[j-1] )/dz_ave
+
+            # [j_indx[j], j_indx[j]] has size ni*ni
+            dfdy[j_indx[j], j_indx[j]] -=  -1./dz_ave*( Dzz[j]/dzi[j]*(ysum[j+1]+ysum[j])/2. + Dzz[j-1]/dzi[j-1]*(ysum[j-1]+ysum[j])/2. ) /ysum[j]\
+            -( (vs[j]>0)*vs[j] - (vs[j-1]<0)*vs[j-1] )/dz_ave  -( (vm[j]>0)*vm[j] - (vm[j-1]<0)*vm[j-1] )/dz_ave
+            dfdy[j_indx[j], j_indx[j+1]] -= 1./dz_ave*( Dzz[j]/dzi[j]*(ysum[j+1]+ysum[j])/(2.*ysum[j+1]) ) \
+            -( (vs[j]<0)*vs[j] )/dz_ave -( (vm[j]<0)*vm[j] )/dz_ave
+            dfdy[j_indx[j], j_indx[j-1]] -= 1./dz_ave*( Dzz[j-1]/dzi[j-1]*(ysum[j-1]+ysum[j])/(2.*ysum[j-1]) ) \
+            +( (vs[j-1]>0)*vs[j-1] )/dz_ave +( (vm[j-1]>0)*vm[j-1] )/dz_ave
+    
+        dfdy[j_indx[0], j_indx[0]] -= -1./(dzi[0])*(Kzz[0]/dzi[0]) * (ysum[1]+ysum[0])/(2.*ysum[0]) -( (vz[0]>0)*vz[0] )/dzi[0]
+        dfdy[j_indx[0], j_indx[0]] -= -1./(dzi[0])*(Dzz[0]/dzi[0]) * (ysum[1]+ysum[0])/(2.*ysum[0]) \
+        -( (vs[0]>0)*vs[0] )/dzi[0]
+        # deposition velocity
+        if self.cfg.use_botflux == True: dfdy[j_indx[0], j_indx[0]] -= -1.*atm.bot_vdep /dzi[0]
 
         # diffusion-limited escape
         if self.cfg.diff_esc: # not empty list
@@ -1973,14 +2226,14 @@ class ODESolver(object):
 
         dfdy[j_indx[0], j_indx[1]] -= 1./(dzi[0])*(Kzz[0]/dzi[0]) * (ysum[1]+ysum[0])/(2.*ysum[1]) -( (vz[0]<0)*vz[0] )/dzi[0]
         dfdy[j_indx[0], j_indx[1]] -= 1./(dzi[0])*(Dzz[0]/dzi[0]) * (ysum[1]+ysum[0])/(2.*ysum[1]) \
-        +1./(dzi[0])* Dzz[0]/2.*(-1./Hpi[0]+ms*g[0]/(Navo*kb*Ti[0])+alpha/Ti[0]*(Tco[1]-Tco[0])/dzi[0] ) -( (vs[0]<0)*vs[0] )/dzi[0]
+         -( (vs[0]<0)*vs[0] )/dzi[0]
 
         dfdy[j_indx[nz-1], j_indx[nz-1]] -= -1./(dzi[nz-2])*(Kzz[nz-2]/dzi[nz-2]) *(ysum[(nz-1)-1]+ysum[nz-1])/(2.*ysum[nz-1]) +( (vz[-1]<0)*vz[-1] )/dzi[-1]
         dfdy[j_indx[nz-1], j_indx[nz-1]] -= -1./(dzi[nz-2])*(Dzz[nz-2]/dzi[nz-2]) *(ysum[nz-1]+ysum[nz-2])/(2.*ysum[nz-1]) \
-        - 1./(dzi[-1])* Dzz[-1]/2.*(-1./Hpi[-1]+ms*g[-1]/(Navo*kb*Ti[-1])+alpha/Ti[-1]*(Tco[-1]-Tco[-2])/dzi[-1] ) +( (vs[-1]<0)*vs[-1] )/dzi[-1]
+        +( (vs[-1]<0)*vs[-1] )/dzi[-1]  +( (vm[-1]<0)*vm[-1] )/dzi[-1]
         dfdy[j_indx[nz-1], j_indx[(nz-1)-1]] -= 1./(dzi[nz-2])*(Kzz[nz-2]/dzi[nz-2])* (ysum[(nz-1)-1]+ysum[nz-1])/(2.*ysum[(nz-1)-1]) +( (vz[-1]>0)*vz[-1] )/dzi[-1]
         dfdy[j_indx[nz-1], j_indx[(nz-1)-1]] -= 1./(dzi[nz-2])*(Dzz[nz-2]/dzi[nz-2]) *(ysum[nz-1]+ysum[nz-2])/(2.*ysum[(nz-1)-1]) \
-                -1./(dzi[-1])* Dzz[-1]/2.*(-1./Hpi[-1]+ms*g[-1]/(Navo*kb*Ti[-1])+alpha/Ti[-1]*(Tco[-1]-Tco[-2])/dzi[-1] ) +( (vs[-1]>0)*vs[-1] )/dzi[-1]
+        +( (vs[-1]>0)*vs[-1] )/dzi[-1]  +( (vm[-1]>0)*vm[-1] )/dzi[-1]
 
         return dfdy
 
@@ -2022,8 +2275,9 @@ class ODESolver(object):
         for atom in atom_list:
             # data_var.atom_sum[atom] = np.sum([compo[compo_row.index(species[i])][atom] * data_var.y[:,i] for i in range(ni)])
             # TEST V scaling
-            data_var.atom_sum[atom] = np.sum([compo[compo_row.index(species[i])][atom] * data_var.y[:,i] for i in range(ni)]) # *data_var.v_ratio
-            data_var.atom_loss[atom] = (data_var.atom_sum[atom] - data_var.atom_ini[atom])/data_var.atom_ini[atom]
+            if atom not in getattr(self.cfg, 'loss_ex', []): # shami added 2024
+                data_var.atom_sum[atom] = np.sum([compo[compo_row.index(species[i])][atom] * data_var.y[:,i] for i in range(ni)]) # *data_var.v_ratio
+                data_var.atom_loss[atom] = (data_var.atom_sum[atom] - data_var.atom_ini[atom])/data_var.atom_ini[atom]
 
         return data_var
 
@@ -2372,15 +2626,26 @@ class Ros2(ODESolver):
         y, ymix, h, k = var.y, var.ymix, var.dt, var.k
         M, dzi, Kzz = atm.M, atm.dzi, atm.Kzz
 
-        if self.cfg.use_moldiff == True and self.cfg.use_settling == False:
-            diffdf = self.diffdf
-            jac_tot = self.lhs_jac_tot
-        elif self.cfg.use_moldiff == True and self.cfg.use_settling == True:
-            diffdf = self.diffdf_settling
-            jac_tot = self.lhs_jac_settling
-        else:
-            diffdf = self.diffdf_no_mol
-            jac_tot = self.lhs_jac_no_mol
+        if self.cfg.use_vm_mol == False:    
+            if self.cfg.use_moldiff == True and self.cfg.use_settling == False:
+                diffdf = self.diffdf
+                jac_tot = self.lhs_jac_tot
+            elif self.cfg.use_moldiff == True and self.cfg.use_settling == True:
+                diffdf = self.diffdf_settling
+                jac_tot = self.lhs_jac_settling
+            else:
+                diffdf = self.diffdf_no_mol
+                jac_tot = self.lhs_jac_no_mol
+        else: # vulcan_cfg.use_vm_mol == True:
+            if self.cfg.use_moldiff == True and self.cfg.use_settling == False:
+                diffdf = self.diffdf_vm
+                jac_tot = self.lhs_jac_tot_vm
+            elif self.cfg.use_moldiff == True and self.cfg.use_settling == True:
+                diffdf = self.diffdf_settling_vm
+                jac_tot = self.lhs_jac_settling_vm
+            else:
+                diffdf = self.diffdf_no_mol
+                jac_tot = self.lhs_jac_no_mol
 
         r = 1. + 1./2.**0.5
 
@@ -2425,6 +2690,17 @@ class Ros2(ODESolver):
         k2 = k2.reshape(y.shape)
 
         sol = y + 3./(2.*r)*k1 + 1/(2.*r)*k2
+        
+        ### for Hycean ###
+        if getattr(self.cfg, 'use_fix_H2He', False) and 'H2' not in self.cfg.use_fix_sp_bot and var.t > 1e6:
+            self.cfg.use_fix_sp_bot['H2'] = var.ymix[0,species.index('H2')]
+            self.cfg.use_fix_sp_bot['He'] = var.ymix[0,species.index('He')]
+            print ("After 1e6 sec, H2 and He are fixed at " + str((var.ymix[0,species.index('H2')], var.ymix[0,species.index('He')])))  
+            
+            self.fix_sp_bot_index = [species.index(sp) for sp in self.cfg.use_fix_sp_bot.keys()]
+            self.fix_sp_bot_mix = np.array([self.cfg.use_fix_sp_bot[sp] for sp in self.cfg.use_fix_sp_bot.keys()])
+        ### for Hycean ###
+        
         # setting particles on the surace = 0
         if self.cfg.use_fix_sp_bot: # if use_fix_sp_bot = {} (empty), it returns false
             sol[0,self.fix_sp_bot_index] = self.fix_sp_bot_mix*atm.n_0[0]
@@ -2845,7 +3121,7 @@ class Output(object):
         plt.xlabel("Mixing Ratios")
         plt.savefig(plot_dir + 'mix.png', dpi=self.cfg.plot_dpi)
 
-    def plot_evo(self, var, atm, plot_j=-1, dn=1):
+    def plot_evo(self, var, atm, plot_j=-1, plot_ymin=1e-20, dn=1):
 
         plot_spec = self.cfg.plot_spec
         plot_dir = self.cfg.plot_dir
@@ -2864,7 +3140,7 @@ class Output(object):
         plt.legend(frameon=0, prop={'size':14}, loc='best')
         plt.savefig(plot_dir + 'evo.png', dpi=self.cfg.plot_dpi)
 
-    def plot_evo_inter(self, var, atm, plot_j=-1, dn=1):
+    def plot_evo_inter(self, var, atm, plot_j=-1, plot_ymin=1e-20, dn=1):
         '''
         plot the evolution when the code is interrupted
         '''
