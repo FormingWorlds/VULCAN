@@ -652,6 +652,11 @@ class Integration(object):
         self.non_gas_sp = self.cfg.non_gas_sp
         self.use_settling = self.cfg.use_settling
 
+        # warn about in-development features
+        if self.cfg.use_vm_mol:
+            log.warning("New upwind scheme for molecular diffusion has been enabled in VULCAN (in development)")
+            raise RuntimeError("You must disable the upwind scheme by setting `use_vm_mol=False`")
+
         # import AGNI?
         if self.cfg.agni_call_frq > 0:
             from agni import run_agni
