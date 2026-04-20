@@ -95,7 +95,7 @@ def init_agni_atmos(vulcan_cfg:Config, atm:AtmData, var:Variables):
                         sflux_integ,
                         vulcan_cfg.f_diurnal,
                         0.0,
-                        vulcan_cfg.sl_angle*np.pi/180.0, # convert to degrees
+                        vulcan_cfg.sl_angle*180.0/np.pi, # convert to degrees
 
                         vulcan_cfg.Tsurf_guess,
                         vulcan_cfg.gs*0.01, # convert to SI, m/s^2
