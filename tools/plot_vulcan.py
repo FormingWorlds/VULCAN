@@ -72,9 +72,11 @@ for color_index,sp in enumerate(plot_spec):
     #plt.plot(data['variable']['ymix'][:,vulcan_spec.index(sp)], data['atm']['zco'][:-1]/1.e5, color=tableau20[color_index], label=sp_lab, lw=1.5)
     if use_height == False:
         plt.plot(data['variable']['ymix'][:,vulcan_spec.index(sp)], data['atm']['pco']/1.e6, color=tableau20[color_index], label=sp_lab, lw=1.5)
+        plt.plot(data['variable']['y_ini'][:,vulcan_spec.index(sp)]/data['atm']['n_0'], data['atm']['pco']/1.e6, color=tableau20[color_index], ls=':', lw=2.5) # plotting the initial 
+        
     else: 
         plt.plot(data['variable']['ymix'][:,vulcan_spec.index(sp)], data['atm']['zco'][1:]/1.e5, color=tableau20[color_index], label=sp_lab, lw=1.5)
-    #plt.plot(data['variable']['y_ini'][:,vulcan_spec.index(sp)]/data['atm']['n_0'], data['atm']['pco']/1.e6, color=tableau20[color_index], ls=':', lw=1.5) # plotting the initial (equilibrium) abundances
+        plt.plot(data['variable']['y_ini'][:,vulcan_spec.index(sp)]/data['atm']['n_0'], data['atm']['pco']/1.e6, color=tableau20[color_index], ls=':', lw=2.5) # plotting the initial (equilibrium) abundances
 
 
 if use_height == False:
@@ -89,7 +91,7 @@ else:
 #plt.title('T1400')
    
 plt.gca().set_xscale('log')       
-plt.xlim((1.E-12, 1.e-2))
+plt.xlim((1.E-14, 0.01))
 plt.legend(frameon=0, prop={'size':12}, loc='best')
 # handles, labels = plt.gca().get_legend_handles_labels()
 # display = range(len(sp_list))
@@ -100,7 +102,7 @@ plt.legend(frameon=0, prop={'size':12}, loc='best')
 # plt.legend([Artist1,Artist2],['Equilibrium','Kinetics'], frameon=False, prop={'size':12}, loc='best')
 
 plt.savefig(plot_dir + plot_name + '.png')
-plt.savefig(plot_dir + plot_name + '.eps')
+#plt.savefig(plot_dir + plot_name + '.eps')
 if vulcan_cfg.use_PIL == True:
     plot = Image.open(plot_dir + plot_name + '.png')
     plot.show()
