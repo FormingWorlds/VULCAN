@@ -15,11 +15,11 @@ nav:
       - Editing or using a different chemical network: How-to/chem_network.md
 
   - Tutorials:
-      - Overview: tutorials/index.md
-      - Quick start: tutorials/quickstart.md
+      - Overview: Tutorials/index.md
+      - Quick start: Tutorials/quickstart.md
 
   - Explanations:
-      - Model description: index.md
+      - Model usage: Explanations/model_usage.md
 
   - Reference:
       - Bibliography: Reference/bibliography.md
