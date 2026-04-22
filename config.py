@@ -7,15 +7,15 @@ class Config:
     """
 
     def __init__(self):
-        self.atom_list               = ['H', 'O', 'C', 'N']
-        self.network                 = VULCAN_DIR+'thermo/NCHO_photo_network.txt'
+        self.atom_list               = ['H', 'O', 'C']
+        self.network                 = VULCAN_DIR+'thermo/CHO_photo_network.txt'
         self.use_lowT_limit_rates    = False
 
         self.atm_base                = 'H2'
         self.rocky                   = False           # for the surface gravity
-        self.nz                      = 100   # number of vertical layers
+        self.nz                      = 120   # number of vertical layers
         self.P_b                     = 1e9 # pressure at the bottom (dyne/cm^2)
-        self.P_t                     = 1e-1  # pressure at the top (dyne/cm^2)
+        self.P_t                     = 1e-2  # pressure at the top (dyne/cm^2)
 
         # Set T(p) from file
         self.atm_type                = 'file'
@@ -40,18 +40,18 @@ class Config:
 
         # ====== Setting up the elemental abundance ======
         self.ini_mix = 'eq'
-        self.const_mix = { 'H2O':3e-2, 'CO2':5e-3, 'H2':0.9, 'CH4':3e-2, 'CO':1e-3, 'N2':4e-3, 'NH3':3e-2}
+        self.const_mix = {'CH4':2.7761E-4*2, 'O2':4.807e-4, 'H2':1. -2.7761E-4*2*4/2} 
         self.vul_ini = '_unset_'
 
         # If using ini_mix = 'eq'
-        self.use_solar = False 
+        self.use_solar = True 
         # customized elemental abundance (only read when use_solar = False)
         self.fastchem_met_scale = 1.0
-        self.O_H = 6.0618E-4 #*(0.793)  
-        self.C_H = 2.7761E-4  
-        self.N_H = 8.1853E-5
-        self.S_H = 1.3183E-5
-        self.He_H = 0.09692
+        self.O_H = 5.37E-4 #*(0.793)  
+        self.C_H = 2.95E-4  
+        self.N_H = 7.08E-5
+        self.S_H = 1.41E-5
+        self.He_H = 0.0838
 
 
         # ====== Setting up photochemistry ======
@@ -61,9 +61,9 @@ class Config:
         self.Rp              = 1.138*7.1492E9      # Planetary radius (cm)
         self.orbit_radius    = 0.03142    # planet-star distance in A.U.
         self.gs              = 2140.       # surface gravity (cm/s^2)  (HD189:2140  HD209:936)
-        self.sl_angle        = 58 /180.*3.14159  # the zenith angle
+        self.sl_angle        = 48 /180.*3.14159  # the zenith angle (radians)
         self.f_diurnal       = 1.0
-        self.scat_sp         = ['H2', 'O2', 'CO2']
+        self.scat_sp         = ['H2', 'He']
         self.T_cross_sp      = []
 
         self.edd             = 0.5 # the Eddington coefficient
@@ -77,16 +77,16 @@ class Config:
 
         # ====== Mixing processes ======
         self.use_moldiff = True
-        self.use_vm_mol = False # use upwind scheme for molecular diffusion -- under testing
+        self.use_vm_mol  = False # use upwind scheme for molecular diffusion -- under testing
         self.use_vz      = True
         self.vz_prof     = 'const'  # Options: 'const' or 'file'
         self.const_vz    = 0.0 # (cm/s)
         self.use_Kzz     = True
-        self.Kzz_prof    = 'Pfunc' # Options: 'const','file'
+        self.Kzz_prof    = 'file' # Options: 'const','file'
         self.const_Kzz   = 1e10 # Only reads when Kzz_prof = 'const'
         self.K_max       = 1e5        # for Kzz_prof = 'Pfunc'
         self.K_p_lev     = 0.1      # for Kzz_prof = 'Pfunc'
-        self.update_frq  = 50    # frequency for updating dz and dzi due to change of mu
+        self.update_frq  = 100    # frequency for updating dz and dzi due to change of mu
 
         # ====== Setting up the boundary conditions ======
         self.use_topflux     = False
@@ -101,11 +101,15 @@ class Config:
         # == Condensation ======
         self.use_condense        = False
         self.use_settling        = False
-        self.start_conden_time   = 1e10
+        self.start_conden_time   = 0.0
+        self.stop_conden_time    = 1e5
         self.condense_sp         = []
         self.non_gas_sp          = []
+        self.r_p                 = {'H2O_l_s': 5e-3}  # particle radius in cm (1e-4 = 1 micron)
+        self.rho_p               = {'H2O_l_s': 1} # particle density in g cm^-3
         self.fix_species         = []      # fixed the condensable species after condensation-evapoation EQ has reached
         self.fix_species_time    = 0  # after this time to fix the condensable species
+        self.humidity            = 1.0
 
         # ====== coupling to AGNI ======
         self.agni_call_frq  = 0
@@ -121,7 +125,7 @@ class Config:
 
         # ====== steady state check ======
         self.st_factor      = 0.5
-        self.conv_step      = 100
+        self.conv_step      = 500
 
         # ====== Setting up numerical parameters for the ODE solver ======
         self.ode_solver      = 'Ros2' # case sensitive
@@ -138,21 +142,21 @@ class Config:
 
         self.count_min       = 120
         self.count_max       = int(3E4)
-        self.atol            = 5.E-2 # Try decreasing this if the solutions are not stable
+        self.atol            = 1e-1 # Try decreasing this if the solutions are not stable
         self.mtol            = 1.E-22
         self.mtol_conv       = 1.E-20
         self.pos_cut         = 0
         self.nega_cut        = -1.
         self.loss_eps        = 1e-1
-        self.yconv_cri       = 0.05  # for checking steady-state
-        self.slope_cri       = 0.0001  # for checking steady-state
-        self.yconv_min       = 0.5
+        self.yconv_cri       = 0.01  # for checking steady-state
+        self.slope_cri       = 1e-4  # for checking steady-state
+        self.yconv_min       = 0.1
         self.flux_cri        = 0.1
         self.flux_atol       = 1. # the tol for actinc flux (# photons cm-2 s-1 nm-1)
         self.conver_ignore   = [] # added 2023. to get rid off non-convergent species, e.g. HC3N without sinks
 
         # ====== Setting up numerical parameters for Ros2 ODE solver ======
-        self.rtol             = 0.7 # relative tolerence for adjusting the stepsize
+        self.rtol             = 0.25 # relative tolerence for adjusting the stepsize
         self.post_conden_rtol = 0.1 # switched to this value after fix_species_time
         self.rtol_min        = 0.02
         self.rtol_max        = 2.5  
