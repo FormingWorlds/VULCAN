@@ -4,9 +4,14 @@ __version__ = "26.02.20"
 
 # Set number of threads but don't overwrite existing value, if set
 import os
-num_threads = max(1,int(os.environ.get("OMP_NUM_THREADS",2)))
+
+# Default number of threads
+NUM_THREADS = 2
+
+# Get number of threads from OMP_NUM_THREADS variable, if set
+NUM_THREADS = max(1,int(os.environ.get("OMP_NUM_THREADS",NUM_THREADS)))
 for k in ("MKL_NUM_THREADS","NUMEXPR_NUM_THREADS","OMP_NUM_THREADS"):
-    os.environ[k] = str(num_threads)
+    os.environ[k] = str(NUM_THREADS)
 
 # Import system modules
 import time

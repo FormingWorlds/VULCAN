@@ -108,7 +108,7 @@ class Config:
         self.fix_species_time    = 0  # after this time to fix the condensable species
 
         # ====== coupling to AGNI ======
-        self.agni_call_frq  = 10
+        self.agni_call_frq  = 0
         self.spectral_file  = "greygas" #"res/spectral_files/Dayspring/48/Dayspring.sf"
         self.use_rayleigh   = False
         self.surf_albedo    = 0.0
@@ -161,10 +161,10 @@ class Config:
         # ====== Setting up for output and plotting ======
         self.plot_dpi        = 130
         self.plot_TP         = True
-        self.use_live_plot   = True
-        self.use_live_flux   = False
-        self.use_plot_end    = False
-        self.use_plot_evo    = False
+        self.use_live_plot   = True        # plot vmr profiles, during run
+        self.use_live_flux   = False       # plot fluxes, during run
+        self.use_plot_end    = True        # plot vmr profiles, at end
+        self.use_plot_evo    = True        # plot vmr versus time, at end
         self.use_flux_movie  = False
         self.plot_height     = False
         self.live_plot_frq   = 50

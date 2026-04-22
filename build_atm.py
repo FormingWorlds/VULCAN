@@ -2,6 +2,7 @@ import numpy as np
 import scipy
 from scipy import interpolate
 import scipy.optimize as sop
+import os
 import subprocess
 import pickle
 from shutil import copyfile
@@ -72,15 +73,21 @@ class InitialAbun(object):
             return np.array(sop.fsolve(self.abun_lowT, self.ini_m))
 
     def ini_fc(self, data_var, data_atm):
+
+        # check that fastchem is compiled in the correct place
+        if not os.path.isfile(os.path.join(FASTCHEM_DIR, 'fastchem')):
+            raise RuntimeError('FastChem cannot be found. Try compiling it by running `make` inside {FASTCHEM_DIR}')
+
+
         # reading-in the default elemental abundances from Lodders 2009
         # depending on including ion or not (whether there is e- in the fastchem elemental abundance dat)
-        solar_ele = FASTCHEM_DIR+'input/solar_element_abundances.dat'
+        solar_ele = os.path.join(FASTCHEM_DIR, 'input', 'solar_element_abundances.dat')
         if self.cfg.use_ion == True:
-            copyfile(FASTCHEM_DIR+'input/parameters_ion.dat',
-                     FASTCHEM_DIR+'input/parameters.dat')
+            copyfile(os.path.join(FASTCHEM_DIR, 'input', 'parameters_ion.dat'),
+                     os.path.join(FASTCHEM_DIR, 'input', 'parameters.dat'))
         else:
-            copyfile(FASTCHEM_DIR+'input/parameters_wo_ion.dat',
-                     FASTCHEM_DIR+'input/parameters.dat')
+            copyfile(os.path.join(FASTCHEM_DIR, 'input', 'parameters_wo_ion.dat'),
+                     os.path.join(FASTCHEM_DIR, 'input', 'parameters.dat'))
 
         with open(solar_ele ,'r') as f:
             new_str = ""
@@ -125,7 +132,9 @@ class InitialAbun(object):
                 f.write(new_str)
 
         # write a T-P text file for fast_chem
-        with open(FASTCHEM_DIR+'input/vulcan_TP/vulcan_TP.dat' ,'w') as f:
+        vulcan_TP_dir = os.path.join(FASTCHEM_DIR, 'input', 'vulcan_TP')
+        os.makedirs(vulcan_TP_dir, exist_ok=True)
+        with open(os.path.join(vulcan_TP_dir, 'vulcan_TP.dat'), 'w') as f:
             ost = '#p (bar)    T (K)\n'
             for n, p in enumerate(data_atm.pco): # p in bar in fast_chem
                 ost +=  '{:.3e}'.format(p/1.e6) + '\t' + '{:.1f}'.format(data_atm.Tco[n])  + '\n'
@@ -133,7 +142,9 @@ class InitialAbun(object):
             f.write(ost)
 
         try:
-            subprocess.check_call(["./fastchem input/config.input"], shell=True, cwd=FASTCHEM_DIR) # check_call instead of call can catch the error
+            subprocess.check_call([ os.path.join(FASTCHEM_DIR, 'fastchem') + " " + os.path.join(FASTCHEM_DIR, 'input', 'config.input')], 
+                                    shell=True, cwd=FASTCHEM_DIR) 
+            # check_call instead of call can catch the error
         except:
             raise RuntimeError('FastChem cannot run properly. Try compiling it by running `make` inside {FASTCHEM_DIR}')
 
@@ -150,7 +161,8 @@ class InitialAbun(object):
         if self.cfg.ini_mix == 'eq':
 
             self.ini_fc(data_var, data_atm)
-            fc = np.genfromtxt(FASTCHEM_DIR+'output/vulcan_EQ.dat', names=True, dtype=None, skip_header=0)
+            fc = np.genfromtxt(os.path.join(FASTCHEM_DIR, 'output', 'vulcan_EQ.dat'), 
+                               names=True, dtype=None, skip_header=0)
             for sp in species:
                 # Atomic P hack (genfromtxt gets the Pressure as index otherwise)
                 if sp == 'P':
