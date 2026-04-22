@@ -1,76 +1,84 @@
 #!/usr/bin/env python3
+from __future__ import annotations
+
+import importlib
+import logging
 
 import numpy as np
-import importlib
-from sympy import Symbol, Matrix # for constructing the symbolic Jacobian matrix
+from sympy import Matrix, Symbol  # for constructing the symbolic Jacobian matrix
 
-import logging
-log = logging.getLogger("fwl."+__name__)
+log = logging.getLogger('fwl.' + __name__)
 
 from config import Config
-from paths import COM_FILE, GIBBS_FILE, CHEM_FUNS_FILE, THERMO_DIR
+from paths import CHEM_FUNS_FILE, COM_FILE, GIBBS_FILE, THERMO_DIR
+
 
 # read the network and produce the .txt table for chemdf
 # Re-arrange the numerbers in the network
-def read_network(vulcan_cfg:Config):
+def read_network(vulcan_cfg: Config):
 
     Rf, Rindx = {}, {}
     i = 1
     special_re, photo_re = False, False
     re_end = False
 
-    if vulcan_cfg.use_photo==True:
+    if vulcan_cfg.use_photo == True:
         header = 'Chemical Network and Photolysis Reactions'
     else:
         header = 'Chemical Network without Photochemistry'
-    ofstr = f"# {header} \n\n"
+    ofstr = f'# {header} \n\n'
 
     photo_str = '# photochemistry \n\n'
     ion_str = '# ionchemistry \n\n'
     re_label = '#R'
     new_network = ''
-    photo_re_indx = 0 # The index of first photodissoication reaction
+    photo_re_indx = 0  # The index of first photodissoication reaction
 
     with open(vulcan_cfg.network, 'r') as f:
         for line in f.readlines():
-
             # switch to 3-body and dissociation reations
-            if line.startswith("# 3-body"): re_label = '#M'
+            if line.startswith('# 3-body'):
+                re_label = '#M'
 
-            elif line.startswith("# special"):
-                special_re = True # switch to reactions with special forms (hard coded)
+            elif line.startswith('# special'):
+                special_re = True  # switch to reactions with special forms (hard coded)
                 re_label = '#S'
 
-            elif line.startswith("# condensation"):
+            elif line.startswith('# condensation'):
                 log.debug('Including condensation reactions.')
-                special_re = False # switch to reactions with special forms (hard coded)
+                special_re = False  # switch to reactions with special forms (hard coded)
                 re_label = '#C'
 
-            elif line.startswith("# radiative"): re_label = '#R'
+            elif line.startswith('# radiative'):
+                re_label = '#R'
 
-            elif line.startswith("# photo"):
-                special_re = False # switch to photo-disscoiation reactions
+            elif line.startswith('# photo'):
+                special_re = False  # switch to photo-disscoiation reactions
                 photo_re = True
                 photo_re_indx = i
                 re_label = '#P'
 
-            elif line.startswith("# ionisation"): re_label = '#I'
-
+            elif line.startswith('# ionisation'):
+                re_label = '#I'
 
             # skip common lines and blank lines
             # ========================================================================================
-            if not line.startswith("#") and line.strip() and special_re == False and re_end == False: # if not starts
-
+            if (
+                not line.startswith('#')
+                and line.strip()
+                and special_re == False
+                and re_end == False
+            ):  # if not starts
                 Rf[i] = line.partition('[')[-1].rpartition(']')[0].strip()
                 li = line.partition(']')[-1].strip()
                 columns = li.split()
 
                 # updating the numerical index in the network (1, 3, ...)
-                line = '{:<4d} {:s}'.format(i, "".join(line.partition('[')[1:]))
+                line = '{:<4d} {:s}'.format(i, ''.join(line.partition('[')[1:]))
 
                 if not (vulcan_cfg.use_photo == False and photo_re == True):
                     ofstr += re_label + str(i) + '\n'
-                    ofstr +=  Rf[i] + '\n'
+                    ofstr += Rf[i] + '\n'
 
                 # storing only the photochemical reactions
                 elif re_label == '#P':
@@ -92,13 +100,17 @@ def read_network(vulcan_cfg:Config):
 
                 i += 2
             # ========================================================================================
-            elif special_re == True and line.strip() and not line.startswith("#") and re_end == False:
-
-                #Rindx[i] = int(line.partition('[')[0].strip())
+            elif (
+                special_re == True
+                and line.strip()
+                and not line.startswith('#')
+                and re_end == False
+            ):
+                # Rindx[i] = int(line.partition('[')[0].strip())
                 Rf[i] = line.partition('[')[-1].rpartition(']')[0].strip()
-                line = '{:<4d} {:s}'.format(i, "".join(line.partition('[')[1:]))
+                line = '{:<4d} {:s}'.format(i, ''.join(line.partition('[')[1:]))
                 ofstr += re_label + str(i) + '\n'
-                ofstr +=  Rf[i] + '\n'
+                ofstr += Rf[i] + '\n'
 
                 i += 2
             new_network += line
@@ -109,32 +121,32 @@ def read_network(vulcan_cfg:Config):
 
 
 def make_chemdf(re_table, ofname):
-    '''
+    """
     Make the function chemdf for calculating the chemical production/loss term
-    '''
+    """
 
     chem_dict = {}
-    reac_dict = {}      # reaction dict. packed with v_i
+    reac_dict = {}  # reaction dict. packed with v_i
     exp_reac_dict = {}  # explicit reaction dict.
     i = -1
-    j = -1 #index of forward reaction(odd number:1,3,5,...)
-    count = 0 # count for even/odd term in v_exp
+    j = -1  # index of forward reaction(odd number:1,3,5,...)
+    count = 0  # count for even/odd term in v_exp
 
     reac_list = []
     rate_dict = {}
-    sp_rate = {} # to store each term of prod and loss individually
+    sp_rate = {}  # to store each term of prod and loss individually
     re_sp_dic = {}
-    re_reac_prod = {} # store the products and the reactants for reaction j (without M)
-    re_reac_prod_wM = {} # same as re_reac_prod but including M
+    re_reac_prod = {}  # store the products and the reactants for reaction j (without M)
+    re_reac_prod_wM = {}  # same as re_reac_prod but including M
     re_dict_str = 're_dict = {'
-    re_wM_dict_str = 're_wM_dict = {' # including M
+    re_wM_dict_str = 're_wM_dict = {'  # including M
 
     for line in re_table.splitlines():
-        '''
+        """
         reac : e.g. [[1, 'H'], [1, 'H'], [1, 'M']]
         reac_args: e.g. ['H2', 'H', 'M']
-        '''
-        #skip the space and #
+        """
+        # skip the space and #
         if line == '':
             continue
         elif line[0] == '#':
@@ -145,25 +157,25 @@ def make_chemdf(re_table, ofname):
             mol_prod = []
             prod = []
             rate_exp = ''
-            rate_str = ""
-            v_str = ""
+            rate_str = ''
+            v_str = ''
             v_exp = ''  # to store the explicit expression of v_i (for jacobian)
             # sp_rate = [] # to store species
             # R = True:reactants  R = False:products
-            R = True    # if reads '->'
+            R = True  # if reads '->'
             N = False
 
-            #Need to take car of M!!!
+            # Need to take car of M!!!
             for term in line.split():
                 if term == '+':
                     continue
-                elif term == "->":
+                elif term == '->':
                     # R=True:reactants R=False:products
                     R = False
                     continue
 
                 # mol_list = [stoi-number, species name]
-                mol_list = term.split("*")
+                mol_list = term.split('*')
                 if len(mol_list) == 1:
                     mol_list = [1] + mol_list
                 else:
@@ -172,11 +184,11 @@ def make_chemdf(re_table, ofname):
                 stoi = int(mol_list[0])
 
                 # check if the species is already included
-                if not mol in chem_dict and not term=='M':
+                if mol not in chem_dict and not term == 'M':
                     i += 1
-                    chem_dict.update({mol : i})
-                    reac_dict.update({chem_dict[mol] : ""})
-                    exp_reac_dict.update({chem_dict[mol] : ""})
+                    chem_dict.update({mol: i})
+                    reac_dict.update({chem_dict[mol]: ''})
+                    exp_reac_dict.update({chem_dict[mol]: ''})
 
                     # creating a new list for new species
                     sp_rate[mol] = []
@@ -191,65 +203,74 @@ def make_chemdf(re_table, ofname):
 
             j += 2
 
-            reac_args = list(set(mol_reac + mol_prod)) #Remove repeating elements
+            reac_args = list(set(mol_reac + mol_prod))  # Remove repeating elements
             # because set exclude duplicates
 
             # v_i() is the rate equation function for i
-            rate_str = "v_" + str(j) + "(k, M, "
+            rate_str = 'v_' + str(j) + '(k, M, '
 
-            reac_noM = [ele for ele in reac if not ele[1]=='M' ]
-            prod_noM = [ele for ele in prod if not ele[1]=='M' ]
-            reac_args_noM = [ele for ele in reac_args if not ele=='M' ]
+            reac_noM = [ele for ele in reac if not ele[1] == 'M']
+            prod_noM = [ele for ele in prod if not ele[1] == 'M']
+            reac_args_noM = [ele for ele in reac_args if not ele == 'M']
 
             # store the products and the reactants in the 1st and 2nd element for reaction j (without M)
-            re_reac_prod[j] = [ [ele[1] for ele in reac if not ele[1]=='M' ], [ele[1] for ele in prod if not ele[1]=='M' ] ]
+            re_reac_prod[j] = [
+                [ele[1] for ele in reac if not ele[1] == 'M'],
+                [ele[1] for ele in prod if not ele[1] == 'M'],
+            ]
             # store the products and the reactants in the 1st and 2nd element for reaction j (with M)
-            re_reac_prod_wM[j] = [ [ele[1] for ele in reac], [ele[1] for ele in prod] ]
+            re_reac_prod_wM[j] = [[ele[1] for ele in reac], [ele[1] for ele in prod]]
             # skip line
-            if j%51 == 0:
+            if j % 51 == 0:
                 re_dict_str += '\n'
                 re_wM_dict_str += '\n'
 
             re_dict_str += str(j) + ':' + str(re_reac_prod[j]) + ', '
             # reverse the list "re_reac_prod[j]" for the reverse reaction
-            re_dict_str += str(j+1) + ':' + str(re_reac_prod[j][::-1]) + ', '
+            re_dict_str += str(j + 1) + ':' + str(re_reac_prod[j][::-1]) + ', '
             # with M
             re_wM_dict_str += str(j) + ':' + str(re_reac_prod_wM[j]) + ', '
             # reverse
-            re_wM_dict_str += str(j+1) + ':' + str(re_reac_prod_wM[j][::-1]) + ', '
+            re_wM_dict_str += str(j + 1) + ':' + str(re_reac_prod_wM[j][::-1]) + ', '
 
-            for term in [ele for ele in reac_args if not ele=='M' ] :
-                rate_str += "y[" + str(chem_dict[term]) + "], "
-            rate_str = rate_str[0:-2] + ")"
+            for term in [ele for ele in reac_args if not ele == 'M']:
+                rate_str += 'y[' + str(chem_dict[term]) + '], '
+            rate_str = rate_str[0:-2] + ')'
 
             v_exp += 'k[' + str(j) + ']*'
             for term in reac:
-                if term[0]!=1:
-                    if term[1]== 'M':
-                        v_exp += term[1] + "**" + str(term[0]) + '*'
+                if term[0] != 1:
+                    if term[1] == 'M':
+                        v_exp += term[1] + '**' + str(term[0]) + '*'
                     else:
-                        v_exp += 'y[' + str(chem_dict[term[1]]) + ']' + "**" + str(term[0]) + '*'
+                        v_exp += (
+                            'y[' + str(chem_dict[term[1]]) + ']' + '**' + str(term[0]) + '*'
+                        )
                 else:
-                    if term[1]== 'M':
+                    if term[1] == 'M':
                         v_exp += term[1] + '*'
                     else:
                         v_exp += 'y[' + str(chem_dict[term[1]]) + ']*'
             v_exp = v_exp[0:-1]  # Delete the last '*'
             fv_exp = v_exp
 
-            v_exp += ' - k[' + str(j+1) + ']*'
-            b_exp = ' k[' + str(j+1) + ']*'
+            v_exp += ' - k[' + str(j + 1) + ']*'
+            b_exp = ' k[' + str(j + 1) + ']*'
 
             for term in prod:
-                if term[0]!=1:
-                    if term[1]== 'M':
-                        v_exp += term[1] + "**" + str(term[0]) + '*'
-                        b_exp += term[1] + "**" + str(term[0]) + '*'
+                if term[0] != 1:
+                    if term[1] == 'M':
+                        v_exp += term[1] + '**' + str(term[0]) + '*'
+                        b_exp += term[1] + '**' + str(term[0]) + '*'
                     else:
-                        v_exp += 'y[' + str(chem_dict[term[1]]) + ']' + "**" + str(term[0]) + '*'
-                        b_exp += 'y[' + str(chem_dict[term[1]]) + ']' + "**" + str(term[0]) + '*'
+                        v_exp += (
+                            'y[' + str(chem_dict[term[1]]) + ']' + '**' + str(term[0]) + '*'
+                        )
+                        b_exp += (
+                            'y[' + str(chem_dict[term[1]]) + ']' + '**' + str(term[0]) + '*'
+                        )
                 else:
-                    if term[1]== 'M':
+                    if term[1] == 'M':
                         v_exp += term[1] + '*'
                         b_exp += term[1] + '*'
                     else:
@@ -259,110 +280,111 @@ def make_chemdf(re_table, ofname):
             rv_exp = b_exp[0:-1]
 
             for term in reac_noM:
-
                 # term[0] os the stoi-number of the species
-                reac_dict[chem_dict[term[1]]] += " -" + str(term[0]) + "*" + rate_str
+                reac_dict[chem_dict[term[1]]] += ' -' + str(term[0]) + '*' + rate_str
 
                 # for each term of prod and loss individually
-                sp_rate[term[1]].append( " -" + str(term[0]) + "*" + fv_exp )
-                sp_rate[term[1]].append( " +" + str(term[0]) + "*" + rv_exp )
+                sp_rate[term[1]].append(' -' + str(term[0]) + '*' + fv_exp)
+                sp_rate[term[1]].append(' +' + str(term[0]) + '*' + rv_exp)
 
-                if term[0]==1:
-                    exp_reac_dict[chem_dict[term[1]]] += " -" + "(" + v_exp + ')'
+                if term[0] == 1:
+                    exp_reac_dict[chem_dict[term[1]]] += ' -' + '(' + v_exp + ')'
                     count += 1
                 else:
-                    exp_reac_dict[chem_dict[term[1]]] += " -" + str(term[0]) + "*(" + v_exp + ')'
+                    exp_reac_dict[chem_dict[term[1]]] += (
+                        ' -' + str(term[0]) + '*(' + v_exp + ')'
+                    )
                     count += 1
-
-
 
             for term in prod_noM:
-                reac_dict[chem_dict[term[1]]] += " +" + str(term[0]) + "*" + rate_str
-                sp_rate[term[1]].append( " +" + str(term[0]) + "*" + fv_exp )
-                sp_rate[term[1]].append( " -" + str(term[0]) + "*" + rv_exp )
+                reac_dict[chem_dict[term[1]]] += ' +' + str(term[0]) + '*' + rate_str
+                sp_rate[term[1]].append(' +' + str(term[0]) + '*' + fv_exp)
+                sp_rate[term[1]].append(' -' + str(term[0]) + '*' + rv_exp)
 
-                if term[0]==1:
-                    exp_reac_dict[chem_dict[term[1]]] += " +" + "(" + v_exp + ')'
+                if term[0] == 1:
+                    exp_reac_dict[chem_dict[term[1]]] += ' +' + '(' + v_exp + ')'
                     count += 1
                 else:
-                    exp_reac_dict[chem_dict[term[1]]] += " +" + str(term[0]) + "*(" + v_exp + ')'
+                    exp_reac_dict[chem_dict[term[1]]] += (
+                        ' +' + str(term[0]) + '*(' + v_exp + ')'
+                    )
                     count += 1
 
-            v_str = "#" + line + "\n"
-            v_str += "v_" + str(j) + " = lambda k, M, "
+            v_str = '#' + line + '\n'
+            v_str += 'v_' + str(j) + ' = lambda k, M, '
 
             for term in reac_args_noM:
-                v_str += term + ", "
-            v_str = v_str[0:-2] + " : "
+                v_str += term + ', '
+            v_str = v_str[0:-2] + ' : '
             v_str += 'k[' + str(j) + ']*'
             for term in reac:
-                if term[0]!=1:
-                    v_str += term[1] + "**" + str(term[0]) + '*'
+                if term[0] != 1:
+                    v_str += term[1] + '**' + str(term[0]) + '*'
                 else:
                     v_str += term[1] + '*'
-            v_str = v_str[0:-1] # Delete the last '*'
+            v_str = v_str[0:-1]  # Delete the last '*'
 
-            v_str += ' - k[' + str(j+1) + ']*'
+            v_str += ' - k[' + str(j + 1) + ']*'
             for term in prod:
-                if term[0]!=1:
-                    v_str += term[1] + "**" + str(term[0]) + '*'
+                if term[0] != 1:
+                    v_str += term[1] + '**' + str(term[0]) + '*'
                 else:
                     v_str += term[1] + '*'
             v_str = v_str[0:-1]
 
             reac_list.append(v_str)
 
-            #ouput of each single rate from k1...
+            # ouput of each single rate from k1...
             rate_exp += 'k[' + str(j) + ']*'
             for term in reac:
                 if term[1] == 'M':
                     rate_exp += 'M*'
                 else:
-                    if term[0]==1:
-                        rate_exp += ('y['+str(chem_dict[term[1]])+']*' )
+                    if term[0] == 1:
+                        rate_exp += 'y[' + str(chem_dict[term[1]]) + ']*'
                     else:
-                        rate_exp += ('y['+str(chem_dict[term[1]])+']**'+str(term[0])+'*' )
+                        rate_exp += 'y[' + str(chem_dict[term[1]]) + ']**' + str(term[0]) + '*'
 
             rate_exp = rate_exp[0:-1]  # Delete the last '*'
             rate_dict[j] = rate_exp
             rate_exp = ''
-            rate_exp += 'k[' + str(j+1) + ']*' #j+1 even number for reverse index
+            rate_exp += 'k[' + str(j + 1) + ']*'  # j+1 even number for reverse index
             for term in prod:
                 if term[1] == 'M':
                     rate_exp += 'M*'
                 else:
-                    if term[0]==1:
-                        rate_exp += ('y['+str(chem_dict[term[1]])+']*' )
+                    if term[0] == 1:
+                        rate_exp += 'y[' + str(chem_dict[term[1]]) + ']*'
                     else:
-                        rate_exp += ('y['+str(chem_dict[term[1]])+']**'+str(term[0])+'*' )
+                        rate_exp += 'y[' + str(chem_dict[term[1]]) + ']**' + str(term[0]) + '*'
             rate_exp = rate_exp[0:-1]  # Delete the last '*'
-            rate_dict[j+1] = rate_exp
+            rate_dict[j + 1] = rate_exp
 
-    re_dict_str = re_dict_str[:-2] # delet the last ','
+    re_dict_str = re_dict_str[:-2]  # delet the last ','
     re_dict_str += '}\n'
     re_wM_dict_str = re_wM_dict_str[:-2]
     re_wM_dict_str += '}\n'
-    #print re_dict_str
+    # print re_dict_str
     # save output
     chem_dict_r = {}
     spec_list = []
 
-    ofstr =  "#!/usr/bin/env python3 \n\n"
-    ofstr += "# This file was generated by VULCAN \n\n"
-    ofstr += "import numpy as np \n"
-    ofstr += "from phy_const import kb, Navo\n\n"
+    ofstr = '#!/usr/bin/env python3 \n\n'
+    ofstr += '# This file was generated by VULCAN \n\n'
+    ofstr += 'import numpy as np \n'
+    ofstr += 'from phy_const import kb, Navo\n\n'
 
     ofstr += "'''\n## Reaction ##\n\n"
-    ofstr += re_table + "\n\n"
+    ofstr += re_table + '\n\n'
 
-    ofstr += "## Mapping ##\n\n"
+    ofstr += '## Mapping ##\n\n'
     for term in chem_dict:
-        chem_dict_r.update({chem_dict[term] : term})
+        chem_dict_r.update({chem_dict[term]: term})
     for term in reac_dict:
         ofstr += chem_dict_r[term] + ': y[' + str(term) + '], '
-    ofstr+='\n\n'
+    ofstr += '\n\n'
     for term in reac_dict:
-        ofstr += chem_dict_r[term] + "\t" + str(term) + "\t" + reac_dict[term] + "\n"
+        ofstr += chem_dict_r[term] + '\t' + str(term) + '\t' + reac_dict[term] + '\n'
     for i in chem_dict_r:
         spec_list.append(chem_dict_r[i])
 
@@ -375,10 +397,16 @@ def make_chemdf(re_table, ofname):
     ofstr += '\n# the total number of reactions (forward and reverse)'
     ofstr += '\nnr = ' + str(len(rate_dict.keys()))
 
-    ofstr += '\n\n# store the products and the reactants in the 1st and the 2nd element for reaction j (without M)\n' + re_dict_str
-    ofstr += '\n\n# store the products and the reactants in the 1st and the 2nd element for reaction j (with M)\n' + re_wM_dict_str
+    ofstr += (
+        '\n\n# store the products and the reactants in the 1st and the 2nd element for reaction j (without M)\n'
+        + re_dict_str
+    )
+    ofstr += (
+        '\n\n# store the products and the reactants in the 1st and the 2nd element for reaction j (with M)\n'
+        + re_wM_dict_str
+    )
 
-    ost = '\n\ndef chemdf(y, M, k): \n' # Note: making M as input!!!
+    ost = '\n\ndef chemdf(y, M, k): \n'  # Note: making M as input!!!
     ost += '\t y = np.transpose(y) \n'.expandtabs(3)
     ost += '\t dydt = np.zeros(shape=y.shape) \n'.expandtabs(3)
 
@@ -391,13 +419,13 @@ def make_chemdf(re_table, ofname):
     ost += 'def df(y, M, k):\n'
     ost += '\t df_list = [] \n'.expandtabs(3)
     for num in exp_reac_dict:
-        ost += '\t df_list.append( '.expandtabs(3) +exp_reac_dict[num] + ' )\n'
+        ost += '\t df_list.append( '.expandtabs(3) + exp_reac_dict[num] + ' )\n'
     ost += '\t return df_list \n\n'.expandtabs(3)
 
     ofstr += ost
 
     for term in reac_list:
-        ofstr += term + "\n\n\n"
+        ofstr += term + '\n\n\n'
 
     # for rate analysis
     ost = 'def rate_ans(sp): \n'
@@ -410,11 +438,11 @@ def make_chemdf(re_table, ofname):
             ost += i
             ost += ','
             start, end = False, False
-            for n,letter in enumerate(i):
-                if letter == 'k' and start==False:
-                    k_start=n+2
+            for n, letter in enumerate(i):
+                if letter == 'k' and start == False:
+                    k_start = n + 2
                     start = True
-                elif letter == ']' and start==True and end==False:
+                elif letter == ']' and start == True and end == False:
                     k_end = n
                     end = True
                     re_sp_dic[sp].append(int(i[k_start:k_end]))
@@ -425,26 +453,25 @@ def make_chemdf(re_table, ofname):
     ost += '\t return np.array(rate_str[sp]) \n\n'.expandtabs(3)
     ofstr += ost
 
-    log.debug(f"Writing ofstr to {ofname}")
-    with open(ofname, "w") as of:
+    log.debug(f'Writing ofstr to {ofname}')
+    with open(ofname, 'w') as of:
         of.write(ofstr)
 
     # return (ni, nr, the list of species)
     return (len(chem_dict.keys()), len(rate_dict.keys()), chem_dict.keys())
 
 
-
 def make_Gibbs(re_table, gibbs_text, ofname):
-    '''
+    """
     Calculating the equilibrium constants (K_eq) from the Gibbs free energy to reverse the reaction rates.
     To DO: combine the repetitive parts of make_chemdf and make_Gibbs into one finction
-    '''
+    """
     chem_dict = {}
-    reac_dict = {}      # reaction dict. packed with v_i
+    reac_dict = {}  # reaction dict. packed with v_i
     exp_reac_dict = {}  # explicit reaction dict.
     i = -1
-    j = -1 #index of forward reaction(odd number:1,3,5,...)
-    count = 0 # count for even/odd term in v_exp
+    j = -1  # index of forward reaction(odd number:1,3,5,...)
+    count = 0  # count for even/odd term in v_exp
     reac_list = []
     rate_dict = {}
 
@@ -462,26 +489,26 @@ def make_Gibbs(re_table, gibbs_text, ofname):
             mol_prod = []
             prod = []
             rate_exp = ''
-            rate_str = ""
-            v_str = ""
+            rate_str = ''
+            v_str = ''
             v_exp = ''  # to store the explicit expression of v_i (for jacobian)
             gibbs = 'np.exp( -('
             R = True
             N = False
             reac_num, prod_num = 0, 0
 
-            #Need to take car of M!!!
+            # Need to take car of M!!!
             for term in line.split():
-                #print 'term' + term
+                # print 'term' + term
                 if term == '+':
                     continue
-                elif term == "->":
+                elif term == '->':
                     # R=True:reactants R=False:products
                     R = False
                     continue
 
                 # mol_list = [stoi-number, species name]
-                mol_list = term.split("*")
+                mol_list = term.split('*')
                 if len(mol_list) == 1:
                     mol_list = [1] + mol_list
                 else:
@@ -489,13 +516,12 @@ def make_Gibbs(re_table, gibbs_text, ofname):
                 mol = mol_list[1]
                 stoi = int(mol_list[0])
 
-
                 # check if the species is already included
-                if not mol in chem_dict and not term=='M':
+                if mol not in chem_dict and not term == 'M':
                     i += 1
-                    chem_dict.update({mol : i})
-                    reac_dict.update({chem_dict[mol] : ""})
-                    exp_reac_dict.update({chem_dict[mol] : ""})
+                    chem_dict.update({mol: i})
+                    reac_dict.update({chem_dict[mol]: ''})
+                    exp_reac_dict.update({chem_dict[mol]: ''})
                 # if R is true, it's the reactants
                 if R:
                     reac.append(mol_list)
@@ -504,46 +530,49 @@ def make_Gibbs(re_table, gibbs_text, ofname):
                     prod.append(mol_list)
                     mol_prod.append(mol)
 
-
             j += 2
 
-            reac_args = list(set(mol_reac + mol_prod)) #Remove repeating elements
+            reac_args = list(set(mol_reac + mol_prod))  # Remove repeating elements
             # because set exclude duplicates
 
             # v_i() is the rate equation function for i
-            rate_str = "v_" + str(j) + "("
+            rate_str = 'v_' + str(j) + '('
 
-            reac_noM = [ele for ele in reac if not ele[1]=='M' ]
-            prod_noM = [ele for ele in prod if not ele[1]=='M' ]
-            reac_args_noM = [ele for ele in reac_args if not ele=='M' ]
+            reac_noM = [ele for ele in reac if not ele[1] == 'M']
+            prod_noM = [ele for ele in prod if not ele[1] == 'M']
+            reac_args_noM = [ele for ele in reac_args if not ele == 'M']
 
-            for term in [ele for ele in reac_args if not ele=='M' ] :
-                rate_str += "y[" + str(chem_dict[term]) + "], "
-            rate_str = rate_str[0:-2] + ")"
+            for term in [ele for ele in reac_args if not ele == 'M']:
+                rate_str += 'y[' + str(chem_dict[term]) + '], '
+            rate_str = rate_str[0:-2] + ')'
 
             v_exp += 'k[' + str(j) + ']*'
             for term in reac:
-                if term[0]!=1:
-                    if term[1]== 'M':
-                        v_exp += term[1] + "**" + str(term[0]) + '*'
+                if term[0] != 1:
+                    if term[1] == 'M':
+                        v_exp += term[1] + '**' + str(term[0]) + '*'
                     else:
-                        v_exp += 'y[' + str(chem_dict[term[1]]) + ']' + "**" + str(term[0]) + '*'
+                        v_exp += (
+                            'y[' + str(chem_dict[term[1]]) + ']' + '**' + str(term[0]) + '*'
+                        )
                 else:
-                    if term[1]== 'M':
+                    if term[1] == 'M':
                         v_exp += term[1] + '*'
                     else:
                         v_exp += 'y[' + str(chem_dict[term[1]]) + ']*'
             v_exp = v_exp[0:-1]  # Delete the last '*'
 
-            v_exp += ' - k[' + str(j+1) + ']*'
+            v_exp += ' - k[' + str(j + 1) + ']*'
             for term in prod:
-                if term[0]!=1:
-                    if term[1]== 'M':
-                        v_exp += term[1] + "**" + str(term[0]) + '*'
+                if term[0] != 1:
+                    if term[1] == 'M':
+                        v_exp += term[1] + '**' + str(term[0]) + '*'
                     else:
-                        v_exp += 'y[' + str(chem_dict[term[1]]) + ']' + "**" + str(term[0]) + '*'
+                        v_exp += (
+                            'y[' + str(chem_dict[term[1]]) + ']' + '**' + str(term[0]) + '*'
+                        )
                 else:
-                    if term[1]== 'M':
+                    if term[1] == 'M':
                         v_exp += term[1] + '*'
                     else:
                         v_exp += 'y[' + str(chem_dict[term[1]]) + ']*'
@@ -551,30 +580,34 @@ def make_Gibbs(re_table, gibbs_text, ofname):
 
             for term in reac_noM:
                 # term[0] is the stoi-number of the species
-                reac_dict[chem_dict[term[1]]] += " -" + str(term[0]) + "*" + rate_str
-                if term[0]==1:
-                    exp_reac_dict[chem_dict[term[1]]] += " -" + "(" + v_exp + ')'
+                reac_dict[chem_dict[term[1]]] += ' -' + str(term[0]) + '*' + rate_str
+                if term[0] == 1:
+                    exp_reac_dict[chem_dict[term[1]]] += ' -' + '(' + v_exp + ')'
                     count += 1
                 else:
-                    exp_reac_dict[chem_dict[term[1]]] += " -" + str(term[0]) + "*(" + v_exp + ')'
+                    exp_reac_dict[chem_dict[term[1]]] += (
+                        ' -' + str(term[0]) + '*(' + v_exp + ')'
+                    )
                     count += 1
 
             for term in prod_noM:
-                reac_dict[chem_dict[term[1]]] += " +" + str(term[0]) + "*" + rate_str
-                if term[0]==1:
-                    exp_reac_dict[chem_dict[term[1]]] += " +" + "(" + v_exp + ')'
+                reac_dict[chem_dict[term[1]]] += ' +' + str(term[0]) + '*' + rate_str
+                if term[0] == 1:
+                    exp_reac_dict[chem_dict[term[1]]] += ' +' + '(' + v_exp + ')'
                     count += 1
                 else:
-                    exp_reac_dict[chem_dict[term[1]]] += " +" + str(term[0]) + "*(" + v_exp + ')'
+                    exp_reac_dict[chem_dict[term[1]]] += (
+                        ' +' + str(term[0]) + '*(' + v_exp + ')'
+                    )
                     count += 1
 
             ######################## for constructing Gibbs free energy ########################
             for term in reac_noM:
-                gibbs += '-' + str(term[0]) + '*' + "gibbs_sp('" + str(term[1]) +"',T)"
+                gibbs += '-' + str(term[0]) + '*' + "gibbs_sp('" + str(term[1]) + "',T)"
                 reac_num += term[0]
 
             for term in prod_noM:
-                gibbs += '+' + str(term[0]) + '*' + "gibbs_sp('" + str(term[1]) +"',T)"
+                gibbs += '+' + str(term[0]) + '*' + "gibbs_sp('" + str(term[1]) + "',T)"
                 prod_num += term[0]
 
             gibbs += ' ) )'
@@ -583,80 +616,78 @@ def make_Gibbs(re_table, gibbs_text, ofname):
             gibbs_dict[j] = gibbs
             ######################## for constructing Gibbs free energy ########################
 
-            v_str = "#" + line + "\n"
-            v_str += "v_" + str(j) + " = lambda "
+            v_str = '#' + line + '\n'
+            v_str += 'v_' + str(j) + ' = lambda '
 
             for term in reac_args_noM:
-                v_str += term + ", "
-            v_str = v_str[0:-2] + " : "
+                v_str += term + ', '
+            v_str = v_str[0:-2] + ' : '
             # j: ->
             # j+1: <-
             v_str += 'k[' + str(j) + ']*'
             for term in reac:
-                if term[0]!=1:
-                    v_str += term[1] + "**" + str(term[0]) + '*'
+                if term[0] != 1:
+                    v_str += term[1] + '**' + str(term[0]) + '*'
                 else:
                     v_str += term[1] + '*'
-            v_str = v_str[0:-1] # Delete the last '*'
+            v_str = v_str[0:-1]  # Delete the last '*'
 
-            v_str += ' - k[' + str(j+1) + ']*'
+            v_str += ' - k[' + str(j + 1) + ']*'
             for term in prod:
-                if term[0]!=1:
-                    v_str += term[1] + "**" + str(term[0]) + '*'
+                if term[0] != 1:
+                    v_str += term[1] + '**' + str(term[0]) + '*'
                 else:
                     v_str += term[1] + '*'
             v_str = v_str[0:-1]
 
             reac_list.append(v_str)
 
-            #ouput of each single rate from k1...
+            # ouput of each single rate from k1...
             rate_exp += 'k[' + str(j) + ']*'
             for term in reac:
                 if term[1] == 'M':
                     rate_exp += 'M*'
                 else:
-                    if term[0]==1:
-                        rate_exp += ('y['+str(chem_dict[term[1]])+']*' )
+                    if term[0] == 1:
+                        rate_exp += 'y[' + str(chem_dict[term[1]]) + ']*'
                     else:
-                        rate_exp += ('y['+str(chem_dict[term[1]])+']**'+str(term[0])+'*' )
+                        rate_exp += 'y[' + str(chem_dict[term[1]]) + ']**' + str(term[0]) + '*'
 
             rate_exp = rate_exp[0:-1]  # Delete the last '*'
             rate_dict[j] = rate_exp
             rate_exp = ''
-            rate_exp += 'k[' + str(j+1) + ']*' #j+1 even number for reverse index
+            rate_exp += 'k[' + str(j + 1) + ']*'  # j+1 even number for reverse index
             for term in prod:
                 if term[1] == 'M':
                     rate_exp += 'M*'
                 else:
-                    if term[0]==1:
-                        rate_exp += ('y['+str(chem_dict[term[1]])+']*' )
+                    if term[0] == 1:
+                        rate_exp += 'y[' + str(chem_dict[term[1]]) + ']*'
                     else:
-                        rate_exp += ('y['+str(chem_dict[term[1]])+']**'+str(term[0])+'*' )
+                        rate_exp += 'y[' + str(chem_dict[term[1]]) + ']**' + str(term[0]) + '*'
             rate_exp = rate_exp[0:-1]  # Delete the last '*'
-            rate_dict[j+1] = rate_exp
-
+            rate_dict[j + 1] = rate_exp
 
     with open(GIBBS_FILE, 'r') as g:
         for line in g:
             gstr += line
 
     # the data of 'H2CO' is from Brucat's 2015
-    #C2H NASA 9 new from Brucat
-    gstr += "\n\n"
-    gstr += "nasa9 = {} \n"
-    gstr += "for i in [ _ for _ in spec_list]: \n"
+    # C2H NASA 9 new from Brucat
+    gstr += '\n\n'
+    gstr += 'nasa9 = {} \n'
+    gstr += 'for i in [ _ for _ in spec_list]: \n'
     gstr += f"    nasa9[i] = np.loadtxt('{THERMO_DIR}/NASA9/' + str(i) + '.txt') \n"
-    gstr += "    nasa9[i] = nasa9[i].flatten() \n"
+    gstr += '    nasa9[i] = nasa9[i].flatten() \n'
     gstr += "    nasa9[i,'low'] = nasa9[i][0:10] \n"
     gstr += "    nasa9[i,'high'] = nasa9[i][10:20] \n"
-
 
     gstr += '\n\n'
     gstr += '# Gibbs free energy:\n'
     gstr += 'def Gibbs(i,T):\n'
     gstr += '\t G={}\n'.expandtabs(3)
     for _ in gibbs_dict:
-        gstr += '\t G['.expandtabs(3) +str(_)+'] = lambda T: ' + str(gibbs_dict[_]) + '\n'
+        gstr += '\t G['.expandtabs(3) + str(_) + '] = lambda T: ' + str(gibbs_dict[_]) + '\n'
 
     gstr += '\t return G[i](T)\n\n'.expandtabs(3)
 
@@ -665,19 +696,19 @@ def make_Gibbs(re_table, gibbs_text, ofname):
 
 
 def make_jac(ni, nr, ofname, chemistry):
-    '''
+    """
     to make the analytical Jacobian matrix of chemdf
-    '''
+    """
     M = Symbol('M')
     y, k = [], []
 
     for i in range(ni):
-        y.append( Symbol('y[:,'+str(i)+']') )
-    for i in range(nr+1):
-        k.append( Symbol('k['+str(i)+']') )
+        y.append(Symbol('y[:,' + str(i) + ']'))
+    for i in range(nr + 1):
+        k.append(Symbol('k[' + str(i) + ']'))
 
     # chemistry is the "ofname" module
-    dy = Matrix(chemistry.df(y,M,k))
+    dy = Matrix(chemistry.df(y, M, k))
     x = Matrix(y)
     jac = dy.jacobian(x)
 
@@ -689,27 +720,37 @@ def make_jac(ni, nr, ofname, chemistry):
 
     for i in range(ni):
         for j in range(ni):
-            jstr += '\t dfdy[indx['.expandtabs(3) + str(i) + '], indx[' + str(j) +']] = ' + str(jac[i,j]) + '\n'
+            jstr += (
+                '\t dfdy[indx['.expandtabs(3)
+                + str(i)
+                + '], indx['
+                + str(j)
+                + ']] = '
+                + str(jac[i, j])
+                + '\n'
+            )
 
     jstr += '\t return dfdy \n\n'.expandtabs(3)
 
     # save the output function
-    with open (ofname, 'a+') as f: f.write(jstr)
+    with open(ofname, 'a+') as f:
+        f.write(jstr)
+
 
 def make_neg_jac(ni, nr, ofname, chemistry):
-    '''
+    """
     to make the analytical Jocobian matrix of chemdf
-    '''
+    """
     M = Symbol('M')
     y, k = [], []
 
     for i in range(ni):
-        y.append( Symbol('y[:,'+str(i)+']') )
-    for i in range(nr+1):
-        k.append( Symbol('k['+str(i)+']') )
+        y.append(Symbol('y[:,' + str(i) + ']'))
+    for i in range(nr + 1):
+        k.append(Symbol('k[' + str(i) + ']'))
 
     # chemistry is the "ofname" module
-    dy = Matrix(chemistry.df(y,M,k))
+    dy = Matrix(chemistry.df(y, M, k))
     x = Matrix(y)
     jac = dy.jacobian(x)
 
@@ -721,18 +762,28 @@ def make_neg_jac(ni, nr, ofname, chemistry):
 
     for i in range(ni):
         for j in range(ni):
-            jstr += '\t dfdy[indx['.expandtabs(3) + str(i) + '], indx[' + str(j) +']] = -(' + str(jac[i,j]) + ')\n'
+            jstr += (
+                '\t dfdy[indx['.expandtabs(3)
+                + str(i)
+                + '], indx['
+                + str(j)
+                + ']] = -('
+                + str(jac[i, j])
+                + ')\n'
+            )
 
     jstr += '\t return dfdy \n\n'.expandtabs(3)
 
     # save the output function
-    with open (ofname, 'a+') as f: f.write(jstr)
+    with open(ofname, 'a+') as f:
+        f.write(jstr)
+
 
 def check_conserv(nr):
     from chem_funs import re_dict
 
     conserv_check = True
-    compo = np.genfromtxt(COM_FILE,names=True,dtype=None)
+    compo = np.genfromtxt(COM_FILE, names=True, dtype=None)
     compo_row_raw = list(compo['species'])
 
     # Convert bytes to strings
@@ -744,21 +795,20 @@ def check_conserv(nr):
         except (UnicodeDecodeError, AttributeError):
             pass
         compo_row.append(str(sp))
-    log.debug("compo_row: "+str(compo_row)[1:60] + "...")
+    log.debug('compo_row: ' + str(compo_row)[1:60] + '...')
 
     # dtype.names returns the column names and -2 is for 'species' and 'mass'
     num_atoms = len(compo.dtype.names) - 2
 
-    for re in range(1,nr+1,2):
-
+    for re in range(1, nr + 1, 2):
         reac_atoms, prod_atoms = np.zeros(num_atoms), np.zeros(num_atoms)
 
         for sp in re_dict[re][0]:
             # 1:7 for all the atoms (H	O	C	He	N	S)
-            reac_atoms += np.array(list(compo[compo_row.index(sp)])[1:num_atoms+1])
+            reac_atoms += np.array(list(compo[compo_row.index(sp)])[1 : num_atoms + 1])
 
         for sp in re_dict[re][1]:
-            prod_atoms += np.array(list(compo[compo_row.index(sp)])[1:num_atoms+1])
+            prod_atoms += np.array(list(compo[compo_row.index(sp)])[1 : num_atoms + 1])
 
         if not np.all(reac_atoms == prod_atoms):
             log.warning('Re ' + str(re) + ' not conserving element!')
@@ -769,35 +819,46 @@ def check_conserv(nr):
     else:
         raise RuntimeError('Elements are not conserved in the reaction. Check the network!')
 
+
 def check_duplicate(nr, photo_re_indx):
     from chem_funs import re_wM_dict
 
-    if photo_re_indx >0: re_end = photo_re_indx-1
-    else: re_end = nr
+    if photo_re_indx > 0:
+        re_end = photo_re_indx - 1
+    else:
+        re_end = nr
 
     dup_list = []
-    for re in range(1,re_end,2):
-        for re_oth in range(1,re_end,2):
+    for re in range(1, re_end, 2):
+        for re_oth in range(1, re_end, 2):
             if re != re_oth:
-                if set(re_wM_dict[re][0]) == set(re_wM_dict[re_oth][0]) and set(re_wM_dict[re][1]) == set(re_wM_dict[re_oth][1]) or set(re_wM_dict[re][0]) == set(re_wM_dict[re_oth][1]) and set(re_wM_dict[re][1]) == set(re_wM_dict[re_oth][0]):
+                if (
+                    set(re_wM_dict[re][0]) == set(re_wM_dict[re_oth][0])
+                    and set(re_wM_dict[re][1]) == set(re_wM_dict[re_oth][1])
+                    or set(re_wM_dict[re][0]) == set(re_wM_dict[re_oth][1])
+                    and set(re_wM_dict[re][1]) == set(re_wM_dict[re_oth][0])
+                ):
                     # if prod of R_re == prod of R_re' and reac of R_re == react of R_re' or reac of R_re == prod of R_re' and prod of R_re == react
                     dup_check = True
-                    if {re,re_oth} not in dup_list:
-                        dup_list.append({re,re_oth})
-                        log.warning('Re' + str(re) + ' and '+ 'Re' + str(re_oth) +   ' are duplicates!')
+                    if {re, re_oth} not in dup_list:
+                        dup_list.append({re, re_oth})
+                        log.warning(
+                            'Re' + str(re) + ' and ' + 'Re' + str(re_oth) + ' are duplicates!'
+                        )
 
     if not dup_list:
         log.info('No duplicates in the network.')
 
+
 # Main function
-def make_all(vulcan_cfg:Config):
+def make_all(vulcan_cfg: Config):
 
     re_table, photo_table, photo_re_indx = read_network(vulcan_cfg)
     ni, nr, species = make_chemdf(re_table, CHEM_FUNS_FILE)
     make_Gibbs(re_table, GIBBS_FILE, CHEM_FUNS_FILE)
 
     # import the "ofname" module as chemistry for make_jac to read df
-    chem_funs = importlib.import_module(CHEM_FUNS_FILE.split("/")[-1].split(".")[0])
+    chem_funs = importlib.import_module(CHEM_FUNS_FILE.split('/')[-1].split('.')[0])
 
     # the last function that writes into chem_funs.py
     make_jac(ni, nr, CHEM_FUNS_FILE, chem_funs)
@@ -812,6 +873,6 @@ def make_all(vulcan_cfg:Config):
 
 
 # Entry point when called from shell
-if __name__ == "__main__":
+if __name__ == '__main__':
     vulcan_cfg = Config()
     make_all(vulcan_cfg)

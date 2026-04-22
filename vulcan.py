@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
+from __future__ import annotations
 
-__version__ = "26.04.22"
+__version__ = '26.04.22'
 
 # Set number of threads but don't overwrite existing value, if set
 import os
@@ -9,41 +10,47 @@ import os
 NUM_THREADS = 2
 
 # Get number of threads from OMP_NUM_THREADS variable, if set
-NUM_THREADS = max(1,int(os.environ.get("OMP_NUM_THREADS",NUM_THREADS)))
-for k in ("MKL_NUM_THREADS","NUMEXPR_NUM_THREADS","OMP_NUM_THREADS"):
+NUM_THREADS = max(1, int(os.environ.get('OMP_NUM_THREADS', NUM_THREADS)))
+for k in ('MKL_NUM_THREADS', 'NUMEXPR_NUM_THREADS', 'OMP_NUM_THREADS'):
     os.environ[k] = str(NUM_THREADS)
 
 # Import system modules
-import time
-import sys
 import logging
+import sys
+import time
 
 # disable matplotlib debug logging
-mpl_logger = logging.getLogger("matplotlib")
+mpl_logger = logging.getLogger('matplotlib')
 mpl_logger.setLevel(logging.WARNING)
 
 # initialise logger for vulcan
-log = logging.getLogger("fwl."+__name__)
+log = logging.getLogger('fwl.' + __name__)
 
 # Import some VULCAN modules
 import paths
-from make_chem_funs import make_all
 from config import Config
+from make_chem_funs import make_all
+
 
 # import the configuration inputs
-def main(vulcan_cfg:Config):
+def main(vulcan_cfg: Config):
 
-    log.info("Running VULCAN")
+    log.info('Running VULCAN')
 
     # Import modules for running VULCAN
-    import store, build_atm, op
+    import build_atm
+    import op
+    import store
 
     ### read in the basic chemistry data
     with open(paths.COM_FILE, 'r') as f:
-        columns = f.readline() # reading in the first line
-        num_ele = len(columns.split())-2 # number of elements (-2 for removing "species" and "mass")
+        columns = f.readline()  # reading in the first line
+        num_ele = (
+            len(columns.split()) - 2
+        )  # number of elements (-2 for removing "species" and "mass")
     type_list = ['int' for i in range(num_ele)]
-    type_list.insert(0,'U20'); type_list.append('float')
+    type_list.insert(0, 'U20')
+    type_list.append('float')
 
     ### create the instances for storing the variables and parameters
     data_var = store.Variables(vulcan_cfg)
@@ -66,7 +73,7 @@ def main(vulcan_cfg:Config):
     data_atm = make_atm.f_pico(data_atm)
 
     # construct Tco and Kzz
-    data_atm =  make_atm.load_TPK(data_atm)
+    data_atm = make_atm.load_TPK(data_atm)
 
     # construct Dzz (molecular diffusion)
     # Only setting up ms (the species molecular weight) if vulcan_cfg.use_moldiff == False
@@ -108,13 +115,13 @@ def main(vulcan_cfg:Config):
     # initialise environment for T(p) solver
     atmos = None
     if vulcan_cfg.agni_call_frq > 0:
-        # setup julia 
-        from agni import activate_julia, init_agni_atmos, deallocate_atmos
+        # setup julia
+        from agni import activate_julia, deallocate_atmos, init_agni_atmos
+
         activate_julia(vulcan_cfg)
-        
+
         # setup AGNI atmosphere object
         atmos = init_agni_atmos(vulcan_cfg, data_atm, data_var)
-
 
     # ============== Execute VULCAN  ==============
     # time-steping in the while loop until conv() returns True or count > count_max
@@ -125,7 +132,7 @@ def main(vulcan_cfg:Config):
     # Setting up for photo chemistry
     if vulcan_cfg.use_photo:
         rate.make_bins_read_cross(data_var, data_atm)
-        #rate.read_cross(data_var)
+        # rate.read_cross(data_var)
         make_atm.read_sflux(data_var, data_atm)
 
         # computing the optical depth (tau), flux, and the photolisys rates (J) for the first time
@@ -142,27 +149,25 @@ def main(vulcan_cfg:Config):
     solver.naming_solver(data_para)
 
     # Running the integration loop
-    log.info(f"Starting VULCAN integration with {os.environ['OMP_NUM_THREADS']} threads...")
+    log.info(f'Starting VULCAN integration with {os.environ["OMP_NUM_THREADS"]} threads...')
     integ(data_var, data_atm, data_para, make_atm, atmos=atmos)
 
     # Save result to disk
     output.save_out(data_var, data_atm, data_para)
 
-    # Deallocate AGNI 
+    # Deallocate AGNI
     if atmos:
         deallocate_atmos(atmos)
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     # Entry point for the script when run directly
-    print("Starting VULCAN from command line")
+    print('Starting VULCAN from command line')
 
     # Setup basic logging
     logfmt = '[ %(levelname)-5s ]  %(message)s'
     # logfmt = '[ %(levelname)-5s, %(asctime)s ]  %(message)s'
-    logging.basicConfig(format=logfmt,
-                            datefmt='%H:%M:%S',
-                            encoding='utf-8', level=logging.INFO)
+    logging.basicConfig(format=logfmt, datefmt='%H:%M:%S', encoding='utf-8', level=logging.INFO)
 
     # Make config
     vulcan_cfg = Config()
@@ -172,7 +177,7 @@ if __name__ == "__main__":
         log.debug('Making chem_funs.py ...')
         make_all(vulcan_cfg)
     else:
-        log.debug("Skip making chem_funs.py")
+        log.debug('Skip making chem_funs.py')
 
     # Run model
     main(vulcan_cfg)

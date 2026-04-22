@@ -75,7 +75,7 @@ changelog = "https://github.com/FormingWorlds/VULCAN/releases"
 [tool.ruff]
 line-length = 96
 target-version = "py312"
-extend-exclude = ["*ipynb"]
+extend-exclude = ["*ipynb", "tools/", "thermo/", "fastchem_vulcan/"]
 
 [tool.ruff.lint]
 select = [

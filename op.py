@@ -7,44 +7,75 @@
 # Integration() is the backbone of integrating for one time step
 # ODESolver() contains the functions for solving system of ODEs (e.g. dy/dt, Jacobian, etc.)
 # ==============================================================================
+from __future__ import annotations
 
+import logging
+import os
+import shutil
+import time
+
+import matplotlib.pyplot as plt
 import numpy as np
 import scipy
 from scipy import interpolate
-import matplotlib.pyplot as plt
-import time, os
-import shutil
 
-import logging
-log = logging.getLogger("fwl."+__name__)
+log = logging.getLogger('fwl.' + __name__)
 
-from paths import CROSS_DIR
 from build_atm import compo, compo_row
-from chem_funs import chemdf, ni, nr, Gibbs # number of species and reactions in the network
+from chem_funs import Gibbs, chemdf, ni, nr  # number of species and reactions in the network
 from chem_funs import neg_symjac as neg_achemjac
-from chem_funs import symjac as achemjac
 from chem_funs import spec_list as species
+from chem_funs import symjac as achemjac
 from config import Config
-from phy_const import kb, Navo, hc, ag0, spacer # hc is used to convert to the actinic flux
+from paths import CROSS_DIR
+from phy_const import Navo, ag0, hc, kb, spacer  # hc is used to convert to the actinic flux
 
-PLT_FMT = 'png' # the format for saving plots, e.g. png, pdf
+PLT_FMT = 'png'  # the format for saving plots, e.g. png, pdf
 
 gas_cols = {
-        "H2O": "#027FB1",
-        "CO2": "#D24901",
-        "H2" : "#008C01",
-        "CH4": "#C720DD",
-        "CO" : "#D1AC02",
-        "N2" : "#870036",
-        "S2" : "#FF8FA1",
-        "SO2": "#00008B",
-        "H2S": "#2eff71",
-        "NH3": "#675200",
-    }
+    'H2O': '#027FB1',
+    'CO2': '#D24901',
+    'H2': '#008C01',
+    'CH4': '#C720DD',
+    'CO': '#D1AC02',
+    'N2': '#870036',
+    'S2': '#FF8FA1',
+    'SO2': '#00008B',
+    'H2S': '#2eff71',
+    'NH3': '#675200',
+}
 
-tex_labels = {'H':'H','H2':'H$_2$','O':'O','OH':'OH','H2O':'H$_2$O','CH':'CH','C':'C','CH2':'CH$_2$','CH3':'CH$_3$','CH4':'CH$_4$','HCO':'HCO','H2CO':'H$_2$CO', 'C4H2':'C$_4$H$_2$',\
-                'C2':'C$_2$','C2H2':'C$_2$H$_2$','C2H3':'C$_2$H$_3$','C2H':'C$_2$H','CO':'CO','CO2':'CO$_2$','He':'He','O2':'O$_2$','CH3OH':'CH$_3$OH','C2H4':'C$_2$H$_4$','C2H5':'C$_2$H$_5$','C2H6':'C$_2$H$_6$','CH3O': 'CH$_3$O'\
-                ,'CH2OH':'CH$_2$OH', 'NH3':'NH$_3$', "H2S":'H$_2$S'}
+tex_labels = {
+    'H': 'H',
+    'H2': 'H$_2$',
+    'O': 'O',
+    'OH': 'OH',
+    'H2O': 'H$_2$O',
+    'CH': 'CH',
+    'C': 'C',
+    'CH2': 'CH$_2$',
+    'CH3': 'CH$_3$',
+    'CH4': 'CH$_4$',
+    'HCO': 'HCO',
+    'H2CO': 'H$_2$CO',
+    'C4H2': 'C$_4$H$_2$',
+    'C2': 'C$_2$',
+    'C2H2': 'C$_2$H$_2$',
+    'C2H3': 'C$_2$H$_3$',
+    'C2H': 'C$_2$H',
+    'CO': 'CO',
+    'CO2': 'CO$_2$',
+    'He': 'He',
+    'O2': 'O$_2$',
+    'CH3OH': 'CH$_3$OH',
+    'C2H4': 'C$_2$H$_4$',
+    'C2H5': 'C$_2$H$_5$',
+    'C2H6': 'C$_2$H$_6$',
+    'CH3O': 'CH$_3$O',
+    'CH2OH': 'CH$_2$OH',
+    'NH3': 'NH$_3$',
+    'H2S': 'H$_2$S',
+}
 
 
 def safe_rm(fpath: str) -> bool:
@@ -75,10 +106,10 @@ def safe_rm(fpath: str) -> bool:
         elif os.path.isdir(fpath):
             subfolders = [f.path.split('/')[-1] for f in os.scandir(fpath) if f.is_dir()]
             if '.git' in subfolders:
-                log.warning(f"Not emptying '{fpath}' as it contains a Git repository")    
+                log.warning(f"Not emptying '{fpath}' as it contains a Git repository")
 
             elif os.path.samefile(fpath, os.getcwd()):
-                log.warning(f"Not emptying '{fpath}' as it is the current working directory")  
+                log.warning(f"Not emptying '{fpath}' as it is the current working directory")
 
             else:
                 shutil.rmtree(fpath)
@@ -91,12 +122,11 @@ def safe_rm(fpath: str) -> bool:
 
 
 class ReadRate(object):
-
     """
     to read in rate constants from the network file and compute the reaction rates for the corresponding Tco and pco
     """
 
-    def __init__(self, vulcan_cfg:Config):
+    def __init__(self, vulcan_cfg: Config):
 
         self.cfg = vulcan_cfg
         self.i = 1
@@ -104,14 +134,41 @@ class ReadRate(object):
         self.re_tri, self.re_tri_k0 = False, False
         self.list_tri = []
 
-
     def read_rate(self, var, atm):
 
         nz = self.cfg.nz
 
-        Rf, Rindx, a, n, E, a_inf, n_inf, E_inf, k, k_fun, k_inf, kinf_fun, k_fun_new, pho_rate_index = \
-        var.Rf, var.Rindx, var.a, var.n, var.E, var.a_inf, var.n_inf, var.E_inf, var.k, var.k_fun, var.k_inf, var.kinf_fun, var.k_fun_new,\
-         var.pho_rate_index
+        (
+            Rf,
+            Rindx,
+            a,
+            n,
+            E,
+            a_inf,
+            n_inf,
+            E_inf,
+            k,
+            k_fun,
+            k_inf,
+            kinf_fun,
+            k_fun_new,
+            pho_rate_index,
+        ) = (
+            var.Rf,
+            var.Rindx,
+            var.a,
+            var.n,
+            var.E,
+            var.a_inf,
+            var.n_inf,
+            var.E_inf,
+            var.k,
+            var.k_fun,
+            var.k_inf,
+            var.kinf_fun,
+            var.k_fun_new,
+            var.pho_rate_index,
+        )
         ion_rate_index = var.ion_rate_index
 
         i = self.i
@@ -126,9 +183,9 @@ class ReadRate(object):
         recomb_re = False
         photo_re = False
         ion_re = False
-        #end_re = False
-        #br_read  = False
-        #ion_br_read = False
+        # end_re = False
+        # br_read  = False
+        # ion_br_read = False
 
         photo_sp = []
         ion_sp = []
@@ -136,27 +193,26 @@ class ReadRate(object):
         with open(self.cfg.network) as f:
             all_lines = f.readlines()
             for line_indx, line in enumerate(all_lines):
-
                 # switch to 3-body and dissociation reations
-                if line.startswith("# 3-body"):
+                if line.startswith('# 3-body'):
                     re_tri = True
 
-                if line.startswith("# 3-body reactions without high-pressure rates"):
+                if line.startswith('# 3-body reactions without high-pressure rates'):
                     re_tri_k0 = True
 
-                elif line.startswith("# special"):
+                elif line.startswith('# special'):
                     re_tri = False
                     re_tri_k0 = False
-                    special_re = True # switch to reactions with special forms (hard coded)
+                    special_re = True  # switch to reactions with special forms (hard coded)
 
-                elif line.startswith("# condensation"):
+                elif line.startswith('# condensation'):
                     re_tri = False
                     re_tri_k0 = False
                     special_re = False
                     conden_re = True
                     var.conden_indx = i
 
-                elif line.startswith("# radiative"):
+                elif line.startswith('# radiative'):
                     re_tri = False
                     re_tri_k0 = False
                     special_re = False
@@ -164,33 +220,39 @@ class ReadRate(object):
                     recomb_re = True
                     var.recomb_indx = i
 
-                elif line.startswith("# photo"):
+                elif line.startswith('# photo'):
                     re_tri = False
                     re_tri_k0 = False
-                    special_re = False # turn off reading in the special form
+                    special_re = False  # turn off reading in the special form
                     conden_re = False
                     recomb_re = False
                     photo_re = True
                     var.photo_indx = i
 
-                elif line.startswith("# ionisation"):
+                elif line.startswith('# ionisation'):
                     re_tri = False
                     re_tri_k0 = False
-                    special_re = False # turn off reading in the special form
+                    special_re = False  # turn off reading in the special form
                     conden_re = False
                     recomb_re = False
                     photo_re = False
                     ion_re = True
                     var.ion_indx = i
 
-                elif line.startswith("# reverse stops"):
+                elif line.startswith('# reverse stops'):
                     var.special_re = False
                     var.stop_rev_indx = i
 
                 # skip common lines and blank lines
                 # ========================================================================================
-                if not line.startswith("#") and line.strip() and special_re == False and conden_re == False and photo_re == False and ion_re == False: # if not starts
-
+                if (
+                    not line.startswith('#')
+                    and line.strip()
+                    and special_re == False
+                    and conden_re == False
+                    and photo_re == False
+                    and ion_re == False
+                ):  # if not starts
                     Rf[i] = line.partition('[')[-1].rpartition(']')[0].strip()
                     li = line.partition(']')[-1].strip()
                     columns = li.split()
@@ -206,75 +268,105 @@ class ReadRate(object):
                         E_inf[i] = float(columns[5])
                         list_tri.append(i)
 
-                    if columns[-1].strip() == 'He': re_He = i
-                    elif columns[-1].strip() == 'ex1': re_CH3OH = i
+                    if columns[-1].strip() == 'He':
+                        re_He = i
+                    elif columns[-1].strip() == 'ex1':
+                        re_CH3OH = i
 
                     # Note: make the defaut i=i
-                    k_fun[i] = lambda temp, mm, i=i: a[i] *temp**n[i] * np.exp(-E[i]/temp)
-
+                    k_fun[i] = lambda temp, mm, i=i: a[i] * temp ** n[i] * np.exp(-E[i] / temp)
 
                     if re_tri == False:
                         k[i] = k_fun[i](Tco, M)
 
                     # for 3-body reactions, also calculating k_inf
-                    elif re_tri == True and len(columns)>=6:
+                    elif re_tri == True and len(columns) >= 6:
+                        kinf_fun[i] = lambda temp, i=i: (
+                            a_inf[i] * temp ** n_inf[i] * np.exp(-E_inf[i] / temp)
+                        )
+                        k_fun_new[i] = lambda temp, mm, i=i: (
+                            (a[i] * temp ** n[i] * np.exp(-E[i] / temp))
+                            / (
+                                1
+                                + (a[i] * temp ** n[i] * np.exp(-E[i] / temp))
+                                * mm
+                                / (a_inf[i] * temp ** n_inf[i] * np.exp(-E_inf[i] / temp))
+                            )
+                        )
 
-
-                        kinf_fun[i] = lambda temp, i=i: a_inf[i] *temp**n_inf[i] * np.exp(-E_inf[i]/temp)
-                        k_fun_new[i] = lambda temp, mm, i=i: (a[i] *temp**n[i] * np.exp(-E[i]/temp))/(1 + (a[i] *temp**n[i] * np.exp(-E[i]/temp))*mm/(a_inf[i] *temp**n_inf[i] * np.exp(-E_inf[i]/temp)) )
-
-                        #k[i] = k_fun_new[i](Tco, M)
-                        k_inf = a_inf[i] *Tco**n_inf[i] * np.exp(-E_inf[i]/Tco)
+                        # k[i] = k_fun_new[i](Tco, M)
+                        k_inf = a_inf[i] * Tco ** n_inf[i] * np.exp(-E_inf[i] / Tco)
                         k[i] = k_fun[i](Tco, M)
-                        k[i] = k[i]/(1 + k[i]*M/k_inf )
+                        k[i] = k[i] / (1 + k[i] * M / k_inf)
 
-
-                    else: # for 3-body reactions without high-pressure rates
+                    else:  # for 3-body reactions without high-pressure rates
                         k[i] = k_fun[i](Tco, M)
-
 
                     i += 2
                     # end if not
-                 # ========================================================================================
-                elif special_re == True and line.strip() and not line.startswith("#"):
-
+                # ========================================================================================
+                elif special_re == True and line.strip() and not line.startswith('#'):
                     Rindx[i] = int(line.partition('[')[0].strip())
                     Rf[i] = line.partition('[')[-1].rpartition(']')[0].strip()
 
                     if Rf[i] == 'OH + CH3 + M -> CH3OH + M':
                         log.debug('Using special form for the reaction: ' + Rf[i])
 
-                        k[i] = 1.932E3*Tco**-9.88 *np.exp(-7544./Tco) + 5.109E-11*Tco**-6.25 *np.exp(-1433./Tco)
-                        k_inf = 1.031E-10 * Tco**-0.018 *np.exp(16.74/Tco)
+                        k[i] = 1.932e3 * Tco**-9.88 * np.exp(
+                            -7544.0 / Tco
+                        ) + 5.109e-11 * Tco**-6.25 * np.exp(-1433.0 / Tco)
+                        k_inf = 1.031e-10 * Tco**-0.018 * np.exp(16.74 / Tco)
                         # the pressure dependence from Jasper 2017
-                        Fc = 0.1855*np.exp(-Tco/155.8)+0.8145*np.exp(-Tco/1675.)+np.exp(-4531./Tco)
-                        nn = 0.75 - 1.27*np.log(Fc)
-                        ff = np.exp( np.log(Fc)/(1.+ (np.log(k[i]*M/k_inf)/nn**2)**2 ) )
+                        Fc = (
+                            0.1855 * np.exp(-Tco / 155.8)
+                            + 0.8145 * np.exp(-Tco / 1675.0)
+                            + np.exp(-4531.0 / Tco)
+                        )
+                        nn = 0.75 - 1.27 * np.log(Fc)
+                        ff = np.exp(
+                            np.log(Fc) / (1.0 + (np.log(k[i] * M / k_inf) / nn**2) ** 2)
+                        )
 
-                        k[i] = k[i]/(1 + k[i]*M/k_inf ) *ff
+                        k[i] = k[i] / (1 + k[i] * M / k_inf) * ff
 
-                        k_fun[i] = lambda temp, mm, i=i: 1.932E3 *temp**-9.88 *np.exp(-7544./temp) + 5.109E-11*temp**-6.25 *np.exp(-1433./temp)
-                        kinf_fun[i] = lambda temp, mm, i=i: 1.031E-10 * temp**-0.018 *np.exp(16.74/temp)
-                        k_fun_new[i] = lambda temp, mm, i=i: (1.932E3 *temp**-9.88 *np.exp(-7544./temp) + 5.109E-11*temp**-6.25 *np.exp(-1433./temp))/\
-                        (1 + (1.932E3 *temp**-9.88 *np.exp(-7544./temp) + 5.109E-11*temp**-6.25 *np.exp(-1433./temp)) * mm / (1.031E-10 * temp**-0.018 *np.exp(16.74/temp)) )
+                        k_fun[i] = lambda temp, mm, i=i: (
+                            1.932e3 * temp**-9.88 * np.exp(-7544.0 / temp)
+                            + 5.109e-11 * temp**-6.25 * np.exp(-1433.0 / temp)
+                        )
+                        kinf_fun[i] = lambda temp, mm, i=i: (
+                            1.031e-10 * temp**-0.018 * np.exp(16.74 / temp)
+                        )
+                        k_fun_new[i] = lambda temp, mm, i=i: (
+                            (
+                                1.932e3 * temp**-9.88 * np.exp(-7544.0 / temp)
+                                + 5.109e-11 * temp**-6.25 * np.exp(-1433.0 / temp)
+                            )
+                            / (
+                                1
+                                + (
+                                    1.932e3 * temp**-9.88 * np.exp(-7544.0 / temp)
+                                    + 5.109e-11 * temp**-6.25 * np.exp(-1433.0 / temp)
+                                )
+                                * mm
+                                / (1.031e-10 * temp**-0.018 * np.exp(16.74 / temp))
+                            )
+                        )
 
                     i += 2
 
-
                 # Testing condensation
-                elif conden_re == True and line.strip() and not line.startswith("#"):
+                elif conden_re == True and line.strip() and not line.startswith('#'):
                     Rindx[i] = int(line.partition('[')[0].strip())
                     Rf[i] = line.partition('[')[-1].rpartition(']')[0].strip()
 
                     var.conden_re_list.append(i)
                     k[i] = np.zeros(nz)
-                    k[i+1] = np.zeros(nz)
+                    k[i + 1] = np.zeros(nz)
 
                     i += 2
 
                 # setting photo dissociation reactions to zeros
-                elif photo_re == True and line.strip() and not line.startswith("#"):
-
+                elif photo_re == True and line.strip() and not line.startswith('#'):
                     k[i] = np.zeros(nz)
                     Rf[i] = line.partition('[')[-1].rpartition(']')[0].strip()
 
@@ -285,7 +377,7 @@ class ReadRate(object):
                     columns = li.split()
                     Rindx[i] = int(line.partition('[')[0].strip())
                     # columns[0]: the species being dissocited; branch index: columns[1]
-                    pho_rate_index[(columns[0],int(columns[1]))] = Rindx[i]
+                    pho_rate_index[(columns[0], int(columns[1]))] = Rindx[i]
 
                     # store the number of branches
                     var.n_branch[columns[0]] = int(columns[1])
@@ -293,8 +385,9 @@ class ReadRate(object):
                     i += 2
 
                 # setting photo ionization reactions to zeros
-                elif ion_re == True and line.strip() and not line.startswith("#"): # and end_re == False
-
+                elif (
+                    ion_re == True and line.strip() and not line.startswith('#')
+                ):  # and end_re == False
                     k[i] = np.zeros(nz)
                     Rf[i] = line.partition('[')[-1].rpartition(']')[0].strip()
 
@@ -305,7 +398,7 @@ class ReadRate(object):
                     columns = li.split()
                     Rindx[i] = int(line.partition('[')[0].strip())
                     # columns[0]: the species being dissocited; branch index: columns[1]
-                    ion_rate_index[(columns[0],int(columns[1]))] = Rindx[i]
+                    ion_rate_index[(columns[0], int(columns[1]))] = Rindx[i]
 
                     # store the number of branches
                     var.ion_branch[columns[0]] = int(columns[1])
@@ -326,77 +419,91 @@ class ReadRate(object):
 
         return var
 
-
     def rev_rate(self, var, atm):
 
         nz = self.cfg.nz
 
-        rev_list = range(2,  var.stop_rev_indx, 2)
+        rev_list = range(2, var.stop_rev_indx, 2)
         # setting the rest reversal zeros
-        for i in range(var.stop_rev_indx+1, nr+1,2):
+        for i in range(var.stop_rev_indx + 1, nr + 1, 2):
             var.k[i] = np.zeros(nz)
 
         Tco = atm.Tco
 
         # reversing rates and storing into data_var
-        log.debug('Reverse rates from R1 to R' + str(var.stop_rev_indx-2))
+        log.debug('Reverse rates from R1 to R' + str(var.stop_rev_indx - 2))
         log.debug('Rates greater than 1e-6:')
         for i in rev_list:
             if i in self.cfg.remove_list:
-                 var.k[i] = np.repeat(0.,nz)
+                var.k[i] = np.repeat(0.0, nz)
             else:
-                var.k_fun[i] = lambda temp, mm, i=i: var.k_fun[i-1](temp, mm)/Gibbs(i-1,temp)
-                var.k[i] = var.k[i-1]/Gibbs(i-1,Tco)
+                var.k_fun[i] = lambda temp, mm, i=i: (
+                    var.k_fun[i - 1](temp, mm) / Gibbs(i - 1, temp)
+                )
+                var.k[i] = var.k[i - 1] / Gibbs(i - 1, Tco)
 
-            if np.any(var.k[i] > 1.e-6):
-                log.debug('R' + str(i) + " " + var.Rf[i-1] +' :  ' + str(np.amax(var.k[i])) )
-            if np.any(var.k[i-1] > 1.e-6):
-                log.debug('R' + str(i-1) + " " + var.Rf[i-1] + ' :  ' + str(np.amax(var.k[i-1])) )
+            if np.any(var.k[i] > 1.0e-6):
+                log.debug('R' + str(i) + ' ' + var.Rf[i - 1] + ' :  ' + str(np.amax(var.k[i])))
+            if np.any(var.k[i - 1] > 1.0e-6):
+                log.debug(
+                    'R' + str(i - 1) + ' ' + var.Rf[i - 1] + ' :  ' + str(np.amax(var.k[i - 1]))
+                )
 
         return var
-
 
     def remove_rate(self, var):
 
         nz = self.cfg.nz
 
         for i in self.cfg.remove_list:
-            var.k[i] = np.repeat(0.,nz)
-            var.k_fun[i] = lambda temp, mm, i=i: np.repeat(0.,nz)
+            var.k[i] = np.repeat(0.0, nz)
+            var.k_fun[i] = lambda temp, mm, i=i: np.repeat(0.0, nz)
 
         return var
 
-    def lim_lowT_rates(self, var, atm): # for setting up the lower limit of rate coefficients for low T
-        for i in range(1,nr,2):
+    def lim_lowT_rates(
+        self, var, atm
+    ):  # for setting up the lower limit of rate coefficients for low T
+        for i in range(1, nr, 2):
             if var.Rf[i] == 'H + CH3 + M -> CH4 + M':
                 T_mask = atm.Tco <= 277.5
-                k0 = 6e-29; kinf = 2.06E-10 *atm.Tco**-0.4 # from Moses+2005
-                lowT_lim = k0 / (1. + k0*atm.M/kinf)
-                log.debug("using the low temperature limit for CH3 + H + M -> CH4 + M")
-                log.debug("capping "); log.debug(var.k[i][T_mask]); log.debug("at "); log.debug(lowT_lim[T_mask])
-                var.k[i][T_mask] =  lowT_lim[T_mask]
+                k0 = 6e-29
+                kinf = 2.06e-10 * atm.Tco**-0.4  # from Moses+2005
+                lowT_lim = k0 / (1.0 + k0 * atm.M / kinf)
+                log.debug('using the low temperature limit for CH3 + H + M -> CH4 + M')
+                log.debug('capping ')
+                log.debug(var.k[i][T_mask])
+                log.debug('at ')
+                log.debug(lowT_lim[T_mask])
+                var.k[i][T_mask] = lowT_lim[T_mask]
 
             elif var.Rf[i] == 'H + C2H4 + M -> C2H5 + M':
                 T_mask = atm.Tco <= 300
-                log.debug("using the low temperature limit for H + C2H4 + M -> C2H5 + M")
-                log.debug("capping "); log.debug(var.k[i][T_mask]); log.debug("at "); log.debug(3.7E-30)
-                var.k[i][T_mask] = 3.7E-30 # from Moses+2005
+                log.debug('using the low temperature limit for H + C2H4 + M -> C2H5 + M')
+                log.debug('capping ')
+                log.debug(var.k[i][T_mask])
+                log.debug('at ')
+                log.debug(3.7e-30)
+                var.k[i][T_mask] = 3.7e-30  # from Moses+2005
 
             elif var.Rf[i] == 'H + C2H5 + M -> C2H6 + M':
                 T_mask = atm.Tco <= 200
-                log.debug("using the low temperature limit for H + C2H5 + M -> C2H6 + M")
-                log.debug("capping "); log.debug(var.k[i][T_mask]); log.debug("at "); log.debug(2.49E-27)
-                var.k[i][T_mask] = 2.49E-27 # from Moses+2005
+                log.debug('using the low temperature limit for H + C2H5 + M -> C2H6 + M')
+                log.debug('capping ')
+                log.debug(var.k[i][T_mask])
+                log.debug('at ')
+                log.debug(2.49e-27)
+                var.k[i][T_mask] = 2.49e-27  # from Moses+2005
 
         return var
 
-    def make_bins_read_cross(self,var,atm):
-        '''
+    def make_bins_read_cross(self, var, atm):
+        """
         determining the bin range and only use the min and max wavelength that the molecules absorb
         to avoid photons with w0=1 (pure scatteing) in certain wavelengths
         var.cross stores the total absorption cross sections of each species, e.g. var.cross['H2O']
         var.cross stores the IDIVIDUAL photodissociation cross sections for each bracnh, e.g. var.cross_J[('H2O',1)], which is equvilent to var.cross['H2O'] times the branching ratio of branch 1
-        '''
+        """
         photo_sp = list(var.photo_sp)
         ion_sp = list(var.ion_sp)
         absp_sp = photo_sp + ion_sp
@@ -408,289 +515,494 @@ class ReadRate(object):
         cross_T_raw = {}
 
         # In the end, we do not need photons beyond the longest-wavelength threshold from all species (different from absorption)
-        sp_label = np.genfromtxt(CROSS_DIR+'thresholds.txt',dtype=str, usecols=0) # taking the first column as labels
-        lmd_data = np.genfromtxt(CROSS_DIR+'thresholds.txt', skip_header = 1)[:,1] # discarding the fist column
+        sp_label = np.genfromtxt(
+            CROSS_DIR + 'thresholds.txt', dtype=str, usecols=0
+        )  # taking the first column as labels
+        lmd_data = np.genfromtxt(CROSS_DIR + 'thresholds.txt', skip_header=1)[
+            :, 1
+        ]  # discarding the fist column
 
         # for setting up the wavelength coverage
-        threshold = {label: row for label, row in zip(sp_label, lmd_data) if label in species} # only include the species in the current network
+        threshold = {
+            label: row for label, row in zip(sp_label, lmd_data) if label in species
+        }  # only include the species in the current network
         var.threshold = threshold
 
         # reading in cross sections into dictionaries
         for n, sp in enumerate(absp_sp):
-
             if self.cfg.use_ion:
                 try:
-                    cross_raw[sp] = np.genfromtxt(CROSS_DIR+sp+'/'+sp+'_cross.csv',dtype=float,delimiter=',',skip_header=1, names = ['lambda','cross','disso','ion'])
+                    cross_raw[sp] = np.genfromtxt(
+                        CROSS_DIR + sp + '/' + sp + '_cross.csv',
+                        dtype=float,
+                        delimiter=',',
+                        skip_header=1,
+                        names=['lambda', 'cross', 'disso', 'ion'],
+                    )
                 except:
                     raise RuntimeError('Missing the cross section from ' + sp)
                 if sp in ion_sp:
                     try:
-                        ion_ratio_raw[sp] = np.genfromtxt(CROSS_DIR+sp+'/'+sp+'_ion_branch.csv',dtype=float,delimiter=',',skip_header=1, names = True)
+                        ion_ratio_raw[sp] = np.genfromtxt(
+                            CROSS_DIR + sp + '/' + sp + '_ion_branch.csv',
+                            dtype=float,
+                            delimiter=',',
+                            skip_header=1,
+                            names=True,
+                        )
                     except:
                         raise RuntimeError('Missing the ion branching ratio from ' + sp)
             else:
                 try:
-                    cross_raw[sp] = np.genfromtxt(CROSS_DIR+sp+'/'+sp+'_cross.csv',dtype=float,delimiter=',',skip_header=1, names = ['lambda','cross','disso'])
+                    cross_raw[sp] = np.genfromtxt(
+                        CROSS_DIR + sp + '/' + sp + '_cross.csv',
+                        dtype=float,
+                        delimiter=',',
+                        skip_header=1,
+                        names=['lambda', 'cross', 'disso'],
+                    )
                 except:
-                   raise RuntimeError('Missing the cross section from ' + sp)
+                    raise RuntimeError('Missing the cross section from ' + sp)
 
             # reading in the branching ratios
             # for i in range(1,var.n_branch[sp]+1): # branch index should start from 1
-            if sp in photo_sp: # excluding ion_sp
+            if sp in photo_sp:  # excluding ion_sp
                 try:
-                    ratio_raw[sp] = np.genfromtxt(CROSS_DIR+sp+'/'+sp+'_branch.csv',dtype=float,delimiter=',',skip_header=1, names = True)
+                    ratio_raw[sp] = np.genfromtxt(
+                        CROSS_DIR + sp + '/' + sp + '_branch.csv',
+                        dtype=float,
+                        delimiter=',',
+                        skip_header=1,
+                        names=True,
+                    )
                 except:
                     raise RuntimeError('Missing the branching ratio from ' + sp)
 
             # reading in temperature dependent cross sections
             if sp in self.cfg.T_cross_sp:
                 T_list = []
-                for temp_file in os.listdir("thermo/photo_cross/" + sp + "/"):
-                    if temp_file.startswith(sp) and temp_file.endswith("K.csv"):
+                for temp_file in os.listdir('thermo/photo_cross/' + sp + '/'):
+                    if temp_file.startswith(sp) and temp_file.endswith('K.csv'):
                         temp = temp_file
-                        temp = temp.replace(sp,'')
-                        temp = temp.replace('_cross_','')
-                        temp = temp.replace('K.csv','')
-                        T_list.append(int(temp) )
+                        temp = temp.replace(sp, '')
+                        temp = temp.replace('_cross_', '')
+                        temp = temp.replace('K.csv', '')
+                        T_list.append(int(temp))
                         var.cross_T_sp_list[sp] = T_list
                 for tt in T_list:
-                    if self.cfg.use_ion: # usually the T-dependent cross sections are only measured in the photodissociation-relavent wavelengths so cross_tot = cross_diss
-                        cross_T_raw[(sp, tt)] = np.genfromtxt(CROSS_DIR+sp+'/'+sp+'_cross_'+str(tt)+'K.csv',dtype=float,delimiter=',',skip_header=1, names = ['lambda','cross','disso','ion'])
+                    if self.cfg.use_ion:  # usually the T-dependent cross sections are only measured in the photodissociation-relavent wavelengths so cross_tot = cross_diss
+                        cross_T_raw[(sp, tt)] = np.genfromtxt(
+                            CROSS_DIR + sp + '/' + sp + '_cross_' + str(tt) + 'K.csv',
+                            dtype=float,
+                            delimiter=',',
+                            skip_header=1,
+                            names=['lambda', 'cross', 'disso', 'ion'],
+                        )
                     else:
-                        cross_T_raw[(sp, tt)] = np.genfromtxt(CROSS_DIR+sp+'/'+sp+'_cross_'+str(tt)+'K.csv',dtype=float,delimiter=',',skip_header=1, names = ['lambda','cross','disso'])
+                        cross_T_raw[(sp, tt)] = np.genfromtxt(
+                            CROSS_DIR + sp + '/' + sp + '_cross_' + str(tt) + 'K.csv',
+                            dtype=float,
+                            delimiter=',',
+                            skip_header=1,
+                            names=['lambda', 'cross', 'disso'],
+                        )
                 # room-T cross section
                 cross_T_raw[(sp, 300)] = cross_raw[sp]
                 var.cross_T_sp_list[sp].append(300)
 
-            if cross_raw[sp]['cross'][0] == 0 or cross_raw[sp]['cross'][-1] ==0:
+            if cross_raw[sp]['cross'][0] == 0 or cross_raw[sp]['cross'][-1] == 0:
                 raise IOError('Please remove the zeros in the cross file of ' + sp)
 
-            if n==0: # the first species
+            if n == 0:  # the first species
                 bin_min = cross_raw[sp]['lambda'][0]
                 bin_max = cross_raw[sp]['lambda'][-1]
                 # photolysis threshold
                 try:
                     diss_max = threshold[sp]
                 except:
-                    raise RuntimeError(sp + " not in threshol.txt")
+                    raise RuntimeError(sp + ' not in threshol.txt')
 
             else:
                 sp_min, sp_max = cross_raw[sp]['lambda'][0], cross_raw[sp]['lambda'][-1]
-                if sp_min < bin_min: bin_min = sp_min
-                if sp_max > bin_max: bin_max = sp_max
+                if sp_min < bin_min:
+                    bin_min = sp_min
+                if sp_max > bin_max:
+                    bin_max = sp_max
                 try:
                     if threshold[sp] > diss_max:
                         diss_max = threshold[sp]
                 except:
-                    raise RuntimeError(sp + " not in threshol.txt")
+                    raise RuntimeError(sp + ' not in threshol.txt')
 
         # constraining the bin_min and bin_max by the default values defined in store.py
         bin_min = max(bin_min, var.def_bin_min)
         bin_max = min(bin_max, var.def_bin_max, diss_max)
-        log.info("Input stellar spectrum from " + "{:.1f}".format(var.def_bin_min) + " to " + "{:.1f}".format(var.def_bin_max) )
-        log.debug("Photodissociation threshold: " + "{:.1f}".format(diss_max) )
-        log.info("Using wavelength bins from " + "{:.1f}".format(bin_min) + " to " +  str(bin_max) )
+        log.info(
+            'Input stellar spectrum from '
+            + '{:.1f}'.format(var.def_bin_min)
+            + ' to '
+            + '{:.1f}'.format(var.def_bin_max)
+        )
+        log.debug('Photodissociation threshold: ' + '{:.1f}'.format(diss_max))
+        log.info(
+            'Using wavelength bins from ' + '{:.1f}'.format(bin_min) + ' to ' + str(bin_max)
+        )
 
         var.dbin1 = self.cfg.dbin1
         var.dbin2 = self.cfg.dbin2
         if self.cfg.dbin_12trans >= bin_min and self.cfg.dbin_12trans <= bin_max:
-            bins = np.concatenate(( np.arange(bin_min,self.cfg.dbin_12trans, var.dbin1), np.arange(self.cfg.dbin_12trans,bin_max, var.dbin2) ))
-        else: bins = np.arange(bin_min,bin_max, var.dbin1)
+            bins = np.concatenate(
+                (
+                    np.arange(bin_min, self.cfg.dbin_12trans, var.dbin1),
+                    np.arange(self.cfg.dbin_12trans, bin_max, var.dbin2),
+                )
+            )
+        else:
+            bins = np.arange(bin_min, bin_max, var.dbin1)
         var.bins = bins
         var.nbin = len(bins)
 
         # all variables that depend on the size of nbins
         # the direct beam (staggered)
-        var.sflux = np.zeros( (nz+1, var.nbin) )
+        var.sflux = np.zeros((nz + 1, var.nbin))
         # the diffusive flux (staggered)
-        var.dflux_u, var.dflux_d = np.zeros( (nz+1, var.nbin) ), np.zeros( (nz+1, var.nbin) )
+        var.dflux_u, var.dflux_d = np.zeros((nz + 1, var.nbin)), np.zeros((nz + 1, var.nbin))
         # the total actinic flux (non-staggered)
-        var.aflux = np.zeros( (nz, var.nbin) )
+        var.aflux = np.zeros((nz, var.nbin))
         # the total actinic flux from the previous calculation
-        prev_aflux = np.zeros( (nz, var.nbin) )
+        prev_aflux = np.zeros((nz, var.nbin))
 
         # staggered
-        var.tau = np.zeros( (nz+1, var.nbin) )
+        var.tau = np.zeros((nz + 1, var.nbin))
         # the stellar flux at TOA
         var.sflux_top = np.zeros(var.nbin)
 
-
         # read_cross
         # creat a dict of cross section with key=sp and values=bins in data_var
-        var.cross = dict([(sp, np.zeros(var.nbin)) for sp in absp_sp ]) # including photo_sp and ion_sp
+        var.cross = dict(
+            [(sp, np.zeros(var.nbin)) for sp in absp_sp]
+        )  # including photo_sp and ion_sp
 
         # read cross of disscoiation
-        var.cross_J = dict([((sp,i), np.zeros(var.nbin)) for sp in photo_sp for i in range(1,var.n_branch[sp]+1)])
+        var.cross_J = dict(
+            [
+                ((sp, i), np.zeros(var.nbin))
+                for sp in photo_sp
+                for i in range(1, var.n_branch[sp] + 1)
+            ]
+        )
         var.cross_scat = dict([(sp, np.zeros(var.nbin)) for sp in self.cfg.scat_sp])
 
         # for temperature-dependent cross sections
-        var.cross_T = dict([(sp, np.zeros((nz, var.nbin) )) for sp in self.cfg.T_cross_sp ])
-        var.cross_J_T = dict([((sp,i), np.zeros((nz, var.nbin) )) for sp in self.cfg.T_cross_sp for i in range(1,var.n_branch[sp]+1) ])
+        var.cross_T = dict([(sp, np.zeros((nz, var.nbin))) for sp in self.cfg.T_cross_sp])
+        var.cross_J_T = dict(
+            [
+                ((sp, i), np.zeros((nz, var.nbin)))
+                for sp in self.cfg.T_cross_sp
+                for i in range(1, var.n_branch[sp] + 1)
+            ]
+        )
 
-        #read cross of ionisation
+        # read cross of ionisation
         if self.cfg.use_ion:
-            var.cross_Jion = dict([((sp,i), np.zeros(var.nbin)) for sp in ion_sp for i in range(1,var.ion_branch[sp]+1)])
+            var.cross_Jion = dict(
+                [
+                    ((sp, i), np.zeros(var.nbin))
+                    for sp in ion_sp
+                    for i in range(1, var.ion_branch[sp] + 1)
+                ]
+            )
 
-        for sp in photo_sp: # photodissociation only; photoionization takes a separate branch ratio file
+        for sp in (
+            photo_sp
+        ):  # photodissociation only; photoionization takes a separate branch ratio file
             # for values outside the boundary => fill_value = 0
-            inter_cross = interpolate.interp1d(cross_raw[sp]['lambda'], cross_raw[sp]['cross'], bounds_error=False, fill_value=0)
-            inter_cross_J = interpolate.interp1d(cross_raw[sp]['lambda'], cross_raw[sp]['disso'], bounds_error=False, fill_value=0)
-            inter_ratio = {} # excluding ionization branches
+            inter_cross = interpolate.interp1d(
+                cross_raw[sp]['lambda'],
+                cross_raw[sp]['cross'],
+                bounds_error=False,
+                fill_value=0,
+            )
+            inter_cross_J = interpolate.interp1d(
+                cross_raw[sp]['lambda'],
+                cross_raw[sp]['disso'],
+                bounds_error=False,
+                fill_value=0,
+            )
+            inter_ratio = {}  # excluding ionization branches
 
-            for i in range(1,var.n_branch[sp]+1): # fill_value extends the first and last elements for branching ratios
+            for i in range(
+                1, var.n_branch[sp] + 1
+            ):  # fill_value extends the first and last elements for branching ratios
                 br_key = 'br_ratio_' + str(i)
                 try:
-                    inter_ratio[i] = interpolate.interp1d(ratio_raw[sp]['lambda'], ratio_raw[sp][br_key], bounds_error=False, fill_value=(ratio_raw[sp][br_key][0],ratio_raw[sp][br_key][-1]))
+                    inter_ratio[i] = interpolate.interp1d(
+                        ratio_raw[sp]['lambda'],
+                        ratio_raw[sp][br_key],
+                        bounds_error=False,
+                        fill_value=(ratio_raw[sp][br_key][0], ratio_raw[sp][br_key][-1]),
+                    )
                 except:
-                    log.error("The branches in the network file does not match the branchong ratio file for " + str(sp))
+                    log.error(
+                        'The branches in the network file does not match the branchong ratio file for '
+                        + str(sp)
+                    )
 
             # using a loop instead of an array because it's easier to handle the branching ratios
             for n, ld in enumerate(bins):
                 var.cross[sp][n] = inter_cross(ld)
 
                 # using the branching ratio (from the files) to construct the individual cross section of each branch
-                for i in range(1,var.n_branch[sp]+1):
-                    var.cross_J[(sp,i)][n] = inter_cross_J(ld) * inter_ratio[i](ld)
+                for i in range(1, var.n_branch[sp] + 1):
+                    var.cross_J[(sp, i)][n] = inter_cross_J(ld) * inter_ratio[i](ld)
 
             # make var.cross_T[(sp,i)] and var.cross_J_T[(sp,i)] here in 2D array: nz * bins (same shape as tau)
             # T-dependent cross sections are usually only measured in the photodissociation-relavent wavelengths so cross_tot = cross_diss
             if sp in self.cfg.T_cross_sp:
-
                 # T list of species sp that have T-depedent cross sections (inclduing 300 K for inter_cross)
                 T_list = np.array(var.cross_T_sp_list[sp])
                 max_T_sp = np.amax(T_list)
                 min_T_sp = np.amin(T_list)
 
-                for lev, Tz in enumerate(atm.Tco): # looping z
-
-                    Tz_between = False # flag for Tz in between any two elements in T_list
+                for lev, Tz in enumerate(atm.Tco):  # looping z
+                    Tz_between = False  # flag for Tz in between any two elements in T_list
                     # define the interpolating T range
                     if list(T_list[T_list <= Tz]) and list(T_list[T_list > Tz]):
-                        Tlow = T_list[T_list <= Tz].max() # closest T in T_list smaller than Tz
-                        Thigh = T_list[T_list > Tz].min() # closest T in T_list larger than Tz
+                        Tlow = T_list[T_list <= Tz].max()  # closest T in T_list smaller than Tz
+                        Thigh = T_list[T_list > Tz].min()  # closest T in T_list larger than Tz
                         Tz_between = True
 
                         # find the wavelength range that are included in both cross_T_raw[(sp,Tlow)] and cross_T_raw[(sp,Thigh)]
-                        ld_min = max( cross_T_raw[(sp,Tlow)]['lambda'][0], cross_T_raw[(sp,Thigh)]['lambda'][0] )
-                        ld_max = min( cross_T_raw[(sp,Tlow)]['lambda'][-1], cross_T_raw[(sp,Thigh)]['lambda'][-1] )
-                        inter_cross_lowT = interpolate.interp1d(cross_T_raw[(sp,Tlow)]['lambda'], cross_T_raw[(sp,Tlow)]['cross'], bounds_error=False, fill_value=0)
-                        inter_cross_highT = interpolate.interp1d(cross_T_raw[(sp,Thigh)]['lambda'], cross_T_raw[(sp,Thigh)]['cross'], bounds_error=False, fill_value=0)
-                        inter_cross_J_lowT = interpolate.interp1d(cross_T_raw[(sp,Tlow)]['lambda'], cross_T_raw[(sp,Tlow)]['disso'], bounds_error=False, fill_value=0)
-                        inter_cross_J_highT = interpolate.interp1d(cross_T_raw[(sp,Thigh)]['lambda'], cross_T_raw[(sp,Thigh)]['disso'], bounds_error=False, fill_value=0)
+                        ld_min = max(
+                            cross_T_raw[(sp, Tlow)]['lambda'][0],
+                            cross_T_raw[(sp, Thigh)]['lambda'][0],
+                        )
+                        ld_max = min(
+                            cross_T_raw[(sp, Tlow)]['lambda'][-1],
+                            cross_T_raw[(sp, Thigh)]['lambda'][-1],
+                        )
+                        inter_cross_lowT = interpolate.interp1d(
+                            cross_T_raw[(sp, Tlow)]['lambda'],
+                            cross_T_raw[(sp, Tlow)]['cross'],
+                            bounds_error=False,
+                            fill_value=0,
+                        )
+                        inter_cross_highT = interpolate.interp1d(
+                            cross_T_raw[(sp, Thigh)]['lambda'],
+                            cross_T_raw[(sp, Thigh)]['cross'],
+                            bounds_error=False,
+                            fill_value=0,
+                        )
+                        inter_cross_J_lowT = interpolate.interp1d(
+                            cross_T_raw[(sp, Tlow)]['lambda'],
+                            cross_T_raw[(sp, Tlow)]['disso'],
+                            bounds_error=False,
+                            fill_value=0,
+                        )
+                        inter_cross_J_highT = interpolate.interp1d(
+                            cross_T_raw[(sp, Thigh)]['lambda'],
+                            cross_T_raw[(sp, Thigh)]['disso'],
+                            bounds_error=False,
+                            fill_value=0,
+                        )
 
-                        for n, ld in enumerate(bins): # looping bins
-
+                        for n, ld in enumerate(bins):  # looping bins
                             # not within the T-cross wavelength range
                             if ld < ld_min or ld > ld_max:
                                 var.cross_T[sp][lev, n] = var.cross[sp][n]
                                 # don't forget the cross_J_T branches
-                                for i in range(1,var.n_branch[sp]+1):
-                                    var.cross_J_T[(sp,i)][lev, n] = var.cross_J[(sp,i)][n]
+                                for i in range(1, var.n_branch[sp] + 1):
+                                    var.cross_J_T[(sp, i)][lev, n] = var.cross_J[(sp, i)][n]
 
                             else:
                                 # update: inerpolation in log10 for cross sections and linearly between Tlow and Thigh
                                 log_lowT = np.log10(inter_cross_lowT(ld))
                                 log_highT = np.log10(inter_cross_highT(ld))
-                                if np.isinf(log_lowT ): log_lowT = -100. # replacing -inf with -100
-                                if np.isinf(log_highT ): log_highT = -100.
+                                if np.isinf(log_lowT):
+                                    log_lowT = -100.0  # replacing -inf with -100
+                                if np.isinf(log_highT):
+                                    log_highT = -100.0
 
-                                inter_T = interpolate.interp1d([Tlow,Thigh], [log_lowT,log_highT], axis=0) # at wavelength ld, interpolating between Tlow and Thigh in log10
-                                if inter_T(Tz) == -100: var.cross_T[sp][lev, n] == 0.
-                                else: var.cross_T[sp][lev, n] = 10**(inter_T(Tz))
+                                inter_T = interpolate.interp1d(
+                                    [Tlow, Thigh], [log_lowT, log_highT], axis=0
+                                )  # at wavelength ld, interpolating between Tlow and Thigh in log10
+                                if inter_T(Tz) == -100:
+                                    var.cross_T[sp][lev, n] == 0.0
+                                else:
+                                    var.cross_T[sp][lev, n] = 10 ** (inter_T(Tz))
 
                                 # update: inerpolation in log10 for cross sections and linearly between Tlow and Thigh
                                 # using the branching ratio (from the files) to construct the individual cross section of each branch
-                                for i in range(1,var.n_branch[sp]+1):
+                                for i in range(1, var.n_branch[sp] + 1):
                                     J_log_lowT = np.log10(inter_cross_J_lowT(ld))
                                     J_log_highT = np.log10(inter_cross_J_highT(ld))
-                                    if np.isinf(J_log_lowT): J_log_lowT = -100. # replacing -inf with -100
-                                    if np.isinf(J_log_highT): J_log_highT = -100.
+                                    if np.isinf(J_log_lowT):
+                                        J_log_lowT = -100.0  # replacing -inf with -100
+                                    if np.isinf(J_log_highT):
+                                        J_log_highT = -100.0
 
-                                    inter_cross_J_T = interpolate.interp1d([Tlow,Thigh], [J_log_lowT,J_log_highT], axis=0)
+                                    inter_cross_J_T = interpolate.interp1d(
+                                        [Tlow, Thigh], [J_log_lowT, J_log_highT], axis=0
+                                    )
 
-                                    if inter_cross_J_T(Tz) == -100: var.cross_J_T[(sp,i)][lev, n] = 0.
-                                    else: var.cross_J_T[(sp,i)][lev, n] = 10**(inter_cross_J_T(Tz)) * inter_ratio[i](ld) # same inter_ratio[i](ld) as the standard one above
+                                    if inter_cross_J_T(Tz) == -100:
+                                        var.cross_J_T[(sp, i)][lev, n] = 0.0
+                                    else:
+                                        var.cross_J_T[(sp, i)][lev, n] = 10 ** (
+                                            inter_cross_J_T(Tz)
+                                        ) * inter_ratio[i](
+                                            ld
+                                        )  # same inter_ratio[i](ld) as the standard one above
 
-
-                    elif not list(T_list[T_list < Tz]): # Tz equal or smaller than all T in T_list including 300K (empty list)
-
+                    elif not list(
+                        T_list[T_list < Tz]
+                    ):  # Tz equal or smaller than all T in T_list including 300K (empty list)
                         if min_T_sp == 300:
-                            var.cross_T[sp][lev] = var.cross[sp] # using the cross section at room T
-                            for i in range(1,var.n_branch[sp]+1):
-                                var.cross_J_T[(sp,i)][lev] = var.cross_J[(sp,i)]
-                        else: # min_T_sp != 300; T-cross lower than room temperature
+                            var.cross_T[sp][lev] = var.cross[
+                                sp
+                            ]  # using the cross section at room T
+                            for i in range(1, var.n_branch[sp] + 1):
+                                var.cross_J_T[(sp, i)][lev] = var.cross_J[(sp, i)]
+                        else:  # min_T_sp != 300; T-cross lower than room temperature
                             # the wavelength range of cross_T_raw at T = min_T_sp
-                            ld_min, ld_max = cross_T_raw[(sp,min_T_sp)]['lambda'][0], cross_T_raw[(sp,min_T_sp)]['lambda'][-1]
-                            inter_cross_lowT = interpolate.interp1d(cross_T_raw[(sp,min_T_sp)]['lambda'], cross_T_raw[(sp,min_T_sp)]['cross'], bounds_error=False, fill_value=0)
-                            inter_cross_J_lowT = interpolate.interp1d(cross_T_raw[(sp,min_T_sp)]['lambda'], cross_T_raw[(sp,min_T_sp)]['disso'], bounds_error=False, fill_value=0)
-                            for n, ld in enumerate(bins): # looping bins
+                            ld_min, ld_max = (
+                                cross_T_raw[(sp, min_T_sp)]['lambda'][0],
+                                cross_T_raw[(sp, min_T_sp)]['lambda'][-1],
+                            )
+                            inter_cross_lowT = interpolate.interp1d(
+                                cross_T_raw[(sp, min_T_sp)]['lambda'],
+                                cross_T_raw[(sp, min_T_sp)]['cross'],
+                                bounds_error=False,
+                                fill_value=0,
+                            )
+                            inter_cross_J_lowT = interpolate.interp1d(
+                                cross_T_raw[(sp, min_T_sp)]['lambda'],
+                                cross_T_raw[(sp, min_T_sp)]['disso'],
+                                bounds_error=False,
+                                fill_value=0,
+                            )
+                            for n, ld in enumerate(bins):  # looping bins
                                 # not within the T-cross wavelength range
                                 if ld < ld_min or ld > ld_max:
                                     var.cross_T[sp][lev, n] = var.cross[sp][n]
                                     # don't forget the cross_J_T branches
-                                    for i in range(1,var.n_branch[sp]+1):
-                                        var.cross_J_T[(sp,i)][lev, n] = var.cross_J[(sp,i)][n]
+                                    for i in range(1, var.n_branch[sp] + 1):
+                                        var.cross_J_T[(sp, i)][lev, n] = var.cross_J[(sp, i)][n]
                                 else:
                                     var.cross_T[sp][lev, n] = inter_cross_lowT(ld)
                                     # using the branching ratio (from the files) to construct the individual cross section of each branch
-                                    for i in range(1,var.n_branch[sp]+1):
-                                        var.cross_J_T[(sp,i)][lev, n] = inter_cross_J_lowT(ld) * inter_ratio[i](ld) # same inter_ratio[i](ld) as the standard one above
+                                    for i in range(1, var.n_branch[sp] + 1):
+                                        var.cross_J_T[(sp, i)][lev, n] = inter_cross_J_lowT(
+                                            ld
+                                        ) * inter_ratio[i](
+                                            ld
+                                        )  # same inter_ratio[i](ld) as the standard one above
 
-                    else: # Tz equal or larger than all T in T_list (empty list)
+                    else:  # Tz equal or larger than all T in T_list (empty list)
                         # the wavelength range of cross_T_raw[(sp,Thigh)]
 
                         if max_T_sp == 300:
-                            var.cross_T[sp][lev] = var.cross[sp] # using the cross section at room T
-                            for i in range(1,var.n_branch[sp]+1):
-                                var.cross_J_T[(sp,i)][lev] = var.cross_J[(sp,i)]
+                            var.cross_T[sp][lev] = var.cross[
+                                sp
+                            ]  # using the cross section at room T
+                            for i in range(1, var.n_branch[sp] + 1):
+                                var.cross_J_T[(sp, i)][lev] = var.cross_J[(sp, i)]
                         else:  # the wavelength range of cross_T_raw at T = max_T_sp
-                            ld_min, ld_max = cross_T_raw[(sp,max_T_sp)]['lambda'][0], cross_T_raw[(sp,max_T_sp)]['lambda'][-1]
-                            inter_cross_highT = interpolate.interp1d(cross_T_raw[(sp,max_T_sp)]['lambda'], cross_T_raw[(sp,max_T_sp)]['cross'], bounds_error=False, fill_value=0)
-                            inter_cross_J_highT = interpolate.interp1d(cross_T_raw[(sp,max_T_sp)]['lambda'], cross_T_raw[(sp,max_T_sp)]['disso'], bounds_error=False, fill_value=0)
-                            for n, ld in enumerate(bins): # looping bins
+                            ld_min, ld_max = (
+                                cross_T_raw[(sp, max_T_sp)]['lambda'][0],
+                                cross_T_raw[(sp, max_T_sp)]['lambda'][-1],
+                            )
+                            inter_cross_highT = interpolate.interp1d(
+                                cross_T_raw[(sp, max_T_sp)]['lambda'],
+                                cross_T_raw[(sp, max_T_sp)]['cross'],
+                                bounds_error=False,
+                                fill_value=0,
+                            )
+                            inter_cross_J_highT = interpolate.interp1d(
+                                cross_T_raw[(sp, max_T_sp)]['lambda'],
+                                cross_T_raw[(sp, max_T_sp)]['disso'],
+                                bounds_error=False,
+                                fill_value=0,
+                            )
+                            for n, ld in enumerate(bins):  # looping bins
                                 # not within the T-cross wavelength range
                                 if ld < ld_min or ld > ld_max:
                                     var.cross_T[sp][lev, n] = var.cross[sp][n]
                                     # don't forget the cross_J_T branches
-                                    for i in range(1,var.n_branch[sp]+1):
-                                        var.cross_J_T[(sp,i)][lev, n] = var.cross_J[(sp,i)][n]
+                                    for i in range(1, var.n_branch[sp] + 1):
+                                        var.cross_J_T[(sp, i)][lev, n] = var.cross_J[(sp, i)][n]
                                 else:
                                     var.cross_T[sp][lev, n] = inter_cross_highT(ld)
 
                                     # using the branching ratio (from the files) to construct the individual cross section of each branch
-                                    for i in range(1,var.n_branch[sp]+1):
-                                        var.cross_J_T[(sp,i)][lev, n] = inter_cross_J_highT(ld) * inter_ratio[i](ld) # same inter_ratio[i](ld) as the standard one above
-
+                                    for i in range(1, var.n_branch[sp] + 1):
+                                        var.cross_J_T[(sp, i)][lev, n] = inter_cross_J_highT(
+                                            ld
+                                        ) * inter_ratio[i](
+                                            ld
+                                        )  # same inter_ratio[i](ld) as the standard one above
 
         if self.cfg.use_ion:
             for sp in ion_sp:
                 if sp not in photo_sp:
-                    inter_cross = interpolate.interp1d(cross_raw[sp]['lambda'], cross_raw[sp]['cross'], bounds_error=False, fill_value=0)
+                    inter_cross = interpolate.interp1d(
+                        cross_raw[sp]['lambda'],
+                        cross_raw[sp]['cross'],
+                        bounds_error=False,
+                        fill_value=0,
+                    )
 
-                inter_cross_Jion = interpolate.interp1d(cross_raw[sp]['lambda'], cross_raw[sp]['ion'], bounds_error=False, fill_value=0)
-                ion_inter_ratio = {} # For ionization branches
+                inter_cross_Jion = interpolate.interp1d(
+                    cross_raw[sp]['lambda'],
+                    cross_raw[sp]['ion'],
+                    bounds_error=False,
+                    fill_value=0,
+                )
+                ion_inter_ratio = {}  # For ionization branches
 
-                for i in range(1,var.ion_branch[sp]+1): # fill_value extends the first and last elements for branching ratios
+                for i in range(
+                    1, var.ion_branch[sp] + 1
+                ):  # fill_value extends the first and last elements for branching ratios
                     br_key = 'br_ratio_' + str(i)
                     try:
-                        ion_inter_ratio[i] = interpolate.interp1d(ion_ratio_raw[sp]['lambda'], ion_ratio_raw[sp][br_key], bounds_error=False, fill_value=(ion_ratio_raw[sp][br_key][0],ion_ratio_raw[sp][br_key][-1]))
+                        ion_inter_ratio[i] = interpolate.interp1d(
+                            ion_ratio_raw[sp]['lambda'],
+                            ion_ratio_raw[sp][br_key],
+                            bounds_error=False,
+                            fill_value=(
+                                ion_ratio_raw[sp][br_key][0],
+                                ion_ratio_raw[sp][br_key][-1],
+                            ),
+                        )
                     except:
-                        log.error("The ionic branches in the network file does not match the branchong ratio file for " + str(sp))
+                        log.error(
+                            'The ionic branches in the network file does not match the branchong ratio file for '
+                            + str(sp)
+                        )
 
                 for n, ld in enumerate(bins):
                     # for species noe appeared in photodissociation but only in photoionization, like H
-                    if sp not in photo_sp: var.cross[sp][n] = inter_cross(ld)
-                    for i in range(1,var.ion_branch[sp]+1):
-                        var.cross_Jion[(sp,i)][n] = inter_cross_Jion(ld) * ion_inter_ratio[i](ld)
+                    if sp not in photo_sp:
+                        var.cross[sp][n] = inter_cross(ld)
+                    for i in range(1, var.ion_branch[sp] + 1):
+                        var.cross_Jion[(sp, i)][n] = inter_cross_Jion(ld) * ion_inter_ratio[i](
+                            ld
+                        )
         # end of if self.cfg.use_ion == True:
 
         # reading in cross sections of Rayleigh Scattering
         for sp in self.cfg.scat_sp:
-            scat_raw[sp] = np.genfromtxt(CROSS_DIR + 'rayleigh/' + sp+'_scat.txt',dtype=float,\
-            skip_header=1, names = ['lambda','cross'])
+            scat_raw[sp] = np.genfromtxt(
+                CROSS_DIR + 'rayleigh/' + sp + '_scat.txt',
+                dtype=float,
+                skip_header=1,
+                names=['lambda', 'cross'],
+            )
 
             # for values outside the boundary => fill_value = 0
-            inter_scat = interpolate.interp1d(scat_raw[sp]['lambda'], scat_raw[sp]['cross'], bounds_error=False, fill_value=0)
+            inter_scat = interpolate.interp1d(
+                scat_raw[sp]['lambda'], scat_raw[sp]['cross'], bounds_error=False, fill_value=0
+            )
 
             for n, ld in enumerate(bins):
                 var.cross_scat[sp][n] = inter_scat(ld)
@@ -703,7 +1015,7 @@ class Integration(object):
     #or class incorporating the esential numerical operations?
     """
 
-    def __init__(self, odesolver, output, vulcan_cfg:Config):
+    def __init__(self, odesolver, output, vulcan_cfg: Config):
 
         self.cfg = vulcan_cfg
         self.mtol = self.cfg.mtol
@@ -716,12 +1028,17 @@ class Integration(object):
 
         # warn about in-development features
         if self.cfg.use_vm_mol:
-            log.warning("New upwind scheme for molecular diffusion has been enabled in VULCAN (in development)")
-            raise RuntimeError("You must disable the upwind scheme by setting `use_vm_mol=False`")
+            log.warning(
+                'New upwind scheme for molecular diffusion has been enabled in VULCAN (in development)'
+            )
+            raise RuntimeError(
+                'You must disable the upwind scheme by setting `use_vm_mol=False`'
+            )
 
         # import AGNI?
         if self.cfg.agni_call_frq > 0:
             from agni import run_agni
+
             self.run_agni = run_agni
 
         # including photoionisation
@@ -732,28 +1049,32 @@ class Integration(object):
             self.non_gas_sp_index = [species.index(sp) for sp in self.non_gas_sp]
             self.condense_sp_index = [species.index(sp) for sp in self.cfg.condense_sp]
 
-
     def __call__(self, var, atm, para, make_atm, atmos=None):
 
         nz = self.cfg.nz
 
-        while not self.stop(var, para, atm): # Looping until the stop condition is satisfied
-
+        while not self.stop(var, para, atm):  # Looping until the stop condition is satisfied
             var = self.backup(var)
 
             # updating tau, flux, and the photolosys rate
             # swtiching to final_update_photo_frq
-            if self.cfg.use_photo and var.longdy < self.cfg.yconv_min*10. and var.longdydt < 1.e-6:
+            if (
+                self.cfg.use_photo
+                and var.longdy < self.cfg.yconv_min * 10.0
+                and var.longdydt < 1.0e-6
+            ):
                 self.update_photo_frq = self.cfg.final_update_photo_frq
                 if para.switch_final_photo_frq == False:
-                    log.debug('update_photo_frq changed to ' + str(self.cfg.final_update_photo_frq))
+                    log.debug(
+                        'update_photo_frq changed to ' + str(self.cfg.final_update_photo_frq)
+                    )
                     para.switch_final_photo_frq = True
 
-            if self.cfg.use_photo  and para.count % self.update_photo_frq == 0:
+            if self.cfg.use_photo and para.count % self.update_photo_frq == 0:
                 self.odesolver.compute_tau(var, atm)
                 self.odesolver.compute_flux(var, atm)
                 self.odesolver.compute_J(var, atm)
-                if self.cfg.use_ion: # photoionisation rate
+                if self.cfg.use_ion:  # photoionisation rate
                     self.odesolver.compute_Jion(var, atm)
 
             # integrating one step
@@ -761,85 +1082,114 @@ class Integration(object):
             self.loss_criteria = 0.0005
 
             # # TEST 2025: using atom_loss to reduce rtol
-            if self.cfg.use_adapt_rtol and para.count%10 == 0:
-                if max([np.abs(loss) for loss in var.atom_loss.values()]) >= self.loss_criteria: 
-                    self.loss_criteria *= 2.
+            if self.cfg.use_adapt_rtol and para.count % 10 == 0:
+                if max([np.abs(loss) for loss in var.atom_loss.values()]) >= self.loss_criteria:
+                    self.loss_criteria *= 2.0
                     self.cfg.rtol *= 0.75
                     self.cfg.rtol = max(self.cfg.rtol, self.cfg.rtol_min)
                     if self.cfg.rtol != self.cfg.rtol_min:
                         log.debug('rtol reduced to ' + str(self.cfg.rtol))
-                        log.debug (spacer)
+                        log.debug(spacer)
 
-            if self.cfg.use_adapt_rtol and para.count%1000 == 0 and para.count>0:
-                if max([np.abs(loss) for loss in var.atom_loss.values()]) < 2e-4: #
+            if self.cfg.use_adapt_rtol and para.count % 1000 == 0 and para.count > 0:
+                if max([np.abs(loss) for loss in var.atom_loss.values()]) < 2e-4:  #
                     self.cfg.rtol *= 1.25
                     self.cfg.rtol = min(self.cfg.rtol, self.cfg.rtol_max)
                     if self.cfg.rtol != self.cfg.rtol_max:
-                        log.debug ('rtol increased to ' + str(self.cfg.rtol))
-                        log.debug (spacer)
+                        log.debug('rtol increased to ' + str(self.cfg.rtol))
+                        log.debug(spacer)
             #
             # # TEST 2025
 
             # Condensation (needs to be after solver.one_step)
-            if self.cfg.use_condense and var.t >= self.cfg.start_conden_time and para.fix_species_start == False:
+            if (
+                self.cfg.use_condense
+                and var.t >= self.cfg.start_conden_time
+                and para.fix_species_start == False
+            ):
                 # updating the condensation rates
-                var = self.conden(var,atm)
+                var = self.conden(var, atm)
 
                 if self.cfg.fix_species and var.t > self.cfg.stop_conden_time:
-
-                    if para.fix_species_start == False: # switch to run for the first time
-
+                    if para.fix_species_start == False:  # switch to run for the first time
                         para.fix_species_start = True
                         self.cfg.rtol = self.cfg.post_conden_rtol
-                        log.debug("rtol changed to " + str(self.cfg.rtol) + " after fixing the condensed species.")
+                        log.debug(
+                            'rtol changed to '
+                            + str(self.cfg.rtol)
+                            + ' after fixing the condensed species.'
+                        )
                         atm.vs *= 0
-                        log.debug("Turn off the settling velocity of all species")
+                        log.debug('Turn off the settling velocity of all species')
                         # updated 2023
 
                         var.fix_y = {}
                         for sp in self.cfg.fix_species:
-                            var.fix_y[sp] = np.copy(var.y[:,species.index(sp)])
+                            var.fix_y[sp] = np.copy(var.y[:, species.index(sp)])
 
                             # record the cold trap levels
                             if self.cfg.fix_species_from_coldtrap_lev:
-
-                                if sp == 'H2O_l_s' or sp == 'H2SO4_l' or sp == 'NH3_l_s' or sp == 'S8_l_s': atm.conden_min_lev[sp] = nz-1 # fix condensates through the whole amtosphere
-                                    # updated 2023
+                                if (
+                                    sp == 'H2O_l_s'
+                                    or sp == 'H2SO4_l'
+                                    or sp == 'NH3_l_s'
+                                    or sp == 'S8_l_s'
+                                ):
+                                    atm.conden_min_lev[sp] = (
+                                        nz - 1
+                                    )  # fix condensates through the whole amtosphere
+                                # updated 2023
                                 else:
                                     sat_rho = atm.n_0 * atm.sat_mix[sp]
-                                    conden_status = var.y[:,species.index(sp)] >= sat_rho
-                                    atm.conden_status = conden_status 
-                                    
-                                    if list(var.y[conden_status,species.index(sp)]): # if it condenses
-                                        min_sat = np.amin(atm.sat_mix[sp][conden_status]) # the mininum value of the saturation p within the saturation region
+                                    conden_status = var.y[:, species.index(sp)] >= sat_rho
+                                    atm.conden_status = conden_status
+
+                                    if list(
+                                        var.y[conden_status, species.index(sp)]
+                                    ):  # if it condenses
+                                        min_sat = np.amin(
+                                            atm.sat_mix[sp][conden_status]
+                                        )  # the mininum value of the saturation p within the saturation region
                                         atm.min_sat = min_sat
-                                        conden_min_lev = np.where(atm.sat_mix[sp] == min_sat)[0].item()
+                                        conden_min_lev = np.where(atm.sat_mix[sp] == min_sat)[
+                                            0
+                                        ].item()
                                         atm.conden_min_lev[sp] = conden_min_lev
-                                        log.debug(sp + " is now fixed from " + "{:.2f}".format(atm.pco[atm.conden_min_lev[sp]]/1e6) + " bar." )
+                                        log.debug(
+                                            sp
+                                            + ' is now fixed from '
+                                            + '{:.2f}'.format(
+                                                atm.pco[atm.conden_min_lev[sp]] / 1e6
+                                            )
+                                            + ' bar.'
+                                        )
                                     else:
-                                        log.debug(sp + " not condensed.")
+                                        log.debug(sp + ' not condensed.')
                                         atm.conden_min_lev[sp] = 0
 
-                    else: pass # do nothing after fix_species has started
+                    else:
+                        pass  # do nothing after fix_species has started
 
                 # this is inside the fix_species_start == False loop
                 if self.cfg.use_relax:
                     if 'H2O' in self.cfg.use_relax:
-                        var = self.h2o_conden_evap_relax(var,atm)
+                        var = self.h2o_conden_evap_relax(var, atm)
                     if 'NH3' in self.cfg.use_relax:
-                        var = self.nh3_conden_evap_relax(var,atm)
+                        var = self.nh3_conden_evap_relax(var, atm)
 
-            if para.count % self.cfg.update_frq == 0: # updating mu and dz (dzi) due to diffusion
+            if (
+                para.count % self.cfg.update_frq == 0
+            ):  # updating mu and dz (dzi) due to diffusion
                 atm = self.update_mu_dz(var, atm, make_atm)
-                atm = self.update_phi_esc(var, atm) # updating the diffusion-limited flux
+                atm = self.update_phi_esc(var, atm)  # updating the diffusion-limited flux
 
             # MAINTAINING HYDROSTATIC BALANCE
             if self.cfg.use_condense:
-                #var.v_ratio = np.sum(var.y[:,atm.gas_indx], axis=1) / atm.n_0
-                var.y[:,atm.gas_indx] = np.vstack(atm.n_0)*var.ymix[:,atm.gas_indx]
+                # var.v_ratio = np.sum(var.y[:,atm.gas_indx], axis=1) / atm.n_0
+                var.y[:, atm.gas_indx] = np.vstack(atm.n_0) * var.ymix[:, atm.gas_indx]
             else:
-                #var.v_ratio = np.sum(var.y, axis=1) / atm.n_0 # how the volumn has changed while the P and number density are fixed
-                var.y = np.vstack(atm.n_0)*var.ymix
+                # var.v_ratio = np.sum(var.y, axis=1) / atm.n_0 # how the volumn has changed while the P and number density are fixed
+                var.y = np.vstack(atm.n_0) * var.ymix
 
             # calculating the changing of y
             var = self.f_dy(var, para)
@@ -848,22 +1198,29 @@ class Integration(object):
             var, para = self.save_step(var, para)
 
             # adjusting the step-size
-            var = self.odesolver.step_size(var, para,
-                                           dt_var_min=self.cfg.dt_var_min,
-                                           dt_var_max=self.cfg.dt_var_max,
-                                           dt_min=self.cfg.dt_min,
-                                           dt_max=self.cfg.dt_max)
+            var = self.odesolver.step_size(
+                var,
+                para,
+                dt_var_min=self.cfg.dt_var_min,
+                dt_var_max=self.cfg.dt_var_max,
+                dt_min=self.cfg.dt_min,
+                dt_max=self.cfg.dt_max,
+            )
 
             # call atmosphere solver?
             if atmos and (para.count % self.cfg.agni_call_frq == 0):
                 atmos = self.run_agni(atmos, self.cfg, atm, var)
 
             # print info to user
-            if self.cfg.use_print_prog and (para.count % self.cfg.print_prog_num==0):
-                self.output.print_prog(var,para)
+            if self.cfg.use_print_prog and (para.count % self.cfg.print_prog_num == 0):
+                self.output.print_prog(var, para)
 
             # make plots
-            if self.cfg.use_live_flux and self.cfg.use_photo and (para.count % self.cfg.live_plot_frq ==0):
+            if (
+                self.cfg.use_live_flux
+                and self.cfg.use_photo
+                and (para.count % self.cfg.live_plot_frq == 0)
+            ):
                 self.output.plot_flux_update(var, atm, para)
 
             if self.cfg.use_live_plot and (para.count % self.cfg.live_plot_frq == 0):
@@ -871,15 +1228,13 @@ class Integration(object):
 
         return atmos
 
-
-
     def backup(self, var):
         var.y_prev = np.copy(var.y)
         var.dy_prev = np.copy(var.dy)
         var.atom_loss_prev = var.atom_loss.copy()
         return var
 
-    def update_mu_dz(self, var, atm, make_atm): #y, ni, spec, Tco, pco
+    def update_mu_dz(self, var, atm, make_atm):  # y, ni, spec, Tco, pco
 
         # gravity
         gz = atm.g
@@ -890,116 +1245,143 @@ class Integration(object):
         Hp = atm.Hp
         nz = self.cfg.nz
 
-        for i in range(pref_indx,nz):
+        for i in range(pref_indx, nz):
             if i == pref_indx:
                 atm.g[i] = atm.gs
-                Hp[i] = kb*Tco[i]/(atm.mu[i]/Navo*atm.gs)
+                Hp[i] = kb * Tco[i] / (atm.mu[i] / Navo * atm.gs)
             else:
-                atm.g[i] = atm.gs * (self.cfg.Rp/(self.cfg.Rp+ atm.zco[i]))**2
-                Hp[i] = kb*Tco[i]/(atm.mu[i]/Navo*atm.g[i])
-            atm.dz[i] = Hp[i] * np.log(pico[i]/pico[i+1]) # pico[i+1] has a lower P than pico[i] (higer height)
-            atm.zco[i+1] = atm.zco[i] + atm.dz[i] # zco is set zero at 1bar for gas giants
+                atm.g[i] = atm.gs * (self.cfg.Rp / (self.cfg.Rp + atm.zco[i])) ** 2
+                Hp[i] = kb * Tco[i] / (atm.mu[i] / Navo * atm.g[i])
+            atm.dz[i] = Hp[i] * np.log(
+                pico[i] / pico[i + 1]
+            )  # pico[i+1] has a lower P than pico[i] (higer height)
+            atm.zco[i + 1] = atm.zco[i] + atm.dz[i]  # zco is set zero at 1bar for gas giants
 
         # for pref_indx != zero
         if not pref_indx == 0:
-            for i in range(pref_indx-1,-1,-1):
-                atm.g[i] = atm.gs * (self.cfg.Rp/(self.cfg.Rp + atm.zco[i+1]))**2
-                Hp[i] = kb*Tco[i]/(atm.mu[i]/Navo*atm.g[i])
-                atm.dz[i] = Hp[i] * np.log(pico[i]/pico[i+1])
-                atm.zco[i] = atm.zco[i+1] - atm.dz[i] # from i+1 propogating down to i
+            for i in range(pref_indx - 1, -1, -1):
+                atm.g[i] = atm.gs * (self.cfg.Rp / (self.cfg.Rp + atm.zco[i + 1])) ** 2
+                Hp[i] = kb * Tco[i] / (atm.mu[i] / Navo * atm.g[i])
+                atm.dz[i] = Hp[i] * np.log(pico[i] / pico[i + 1])
+                atm.zco[i] = atm.zco[i + 1] - atm.dz[i]  # from i+1 propogating down to i
 
-        zmco = 0.5*(atm.zco + np.roll(atm.zco,-1))
+        zmco = 0.5 * (atm.zco + np.roll(atm.zco, -1))
         atm.zmco = zmco[:-1]
-        dzi = 0.5*(atm.dz + np.roll(atm.dz,1))
+        dzi = 0.5 * (atm.dz + np.roll(atm.dz, 1))
         atm.dzi = dzi[1:]
 
         # for the molecular diffsuion
         if self.cfg.use_moldiff:
-            Ti = 0.5*(Tco + np.roll(Tco,-1))
+            Ti = 0.5 * (Tco + np.roll(Tco, -1))
             atm.Ti = Ti[:-1]
-            Hpi = 0.5*(Hp + np.roll(Hp,-1))
+            Hpi = 0.5 * (Hp + np.roll(Hp, -1))
             atm.Hpi = Hpi[:-1]
 
         return atm
 
-    def update_phi_esc(self, var, atm): # updating diffusion-mimited escape
+    def update_phi_esc(self, var, atm):  # updating diffusion-mimited escape
 
         # Diffusion limited escape
         for sp in self.cfg.diff_esc:
-
-            #atm.top_flux[species.index(sp)] = - atm.Dzz[-1,species.index(sp)] *var.y[-1,species.index(sp)] /atm.Hp[-1]
-            atm.top_flux[species.index(sp)] = - atm.Dzz[-1,species.index(sp)]*var.y[-1,species.index(sp)]*( 1./atm.Hp[-1] -atm.ms[species.index(sp)]* atm.g[-1]/(Navo*kb*atm.Tco[-1])     )
-            atm.top_flux[species.index(sp)] = max(atm.top_flux[species.index(sp)], self.cfg.max_flux*(-1))
+            # atm.top_flux[species.index(sp)] = - atm.Dzz[-1,species.index(sp)] *var.y[-1,species.index(sp)] /atm.Hp[-1]
+            atm.top_flux[species.index(sp)] = (
+                -atm.Dzz[-1, species.index(sp)]
+                * var.y[-1, species.index(sp)]
+                * (
+                    1.0 / atm.Hp[-1]
+                    - atm.ms[species.index(sp)] * atm.g[-1] / (Navo * kb * atm.Tco[-1])
+                )
+            )
+            atm.top_flux[species.index(sp)] = max(
+                atm.top_flux[species.index(sp)], self.cfg.max_flux * (-1)
+            )
 
         return atm
 
-
     # function calculating the change of y
-    def f_dy(self, var, para): # y, y_prev, ymix, yconv, count, dt
+    def f_dy(self, var, para):  # y, y_prev, ymix, yconv, count, dt
         if para.count == 0:
-            var.dy, var.dydt = 1., 1.
+            var.dy, var.dydt = 1.0, 1.0
             return var
         y, ymix, y_prev = var.y, var.ymix, var.y_prev
-        dy =  np.abs(y - y_prev)
+        dy = np.abs(y - y_prev)
         dy[ymix < self.cfg.mtol] = 0
         dy[y < self.cfg.atol] = 0
-        dy = np.amax( dy[y>0]/y[y>0] )
+        dy = np.amax(dy[y > 0] / y[y > 0])
 
-        var.dy, var.dydt = dy, dy/var.dt
+        var.dy, var.dydt = dy, dy / var.dt
 
         return var
 
-
     def conv(self, var, para, atm, out=False, print_freq=100):
-        '''
+        """
         funtion returns TRUE if the convergence condition is satisfied
-        '''
-        st_factor, mtol_conv, atol, yconv_cri, slope_cri, yconv_min =\
-         self.cfg.st_factor, self.cfg.mtol_conv, self.cfg.atol, self.cfg.yconv_cri, self.cfg.slope_cri, self.cfg.yconv_min
+        """
+        st_factor, mtol_conv, atol, yconv_cri, slope_cri, yconv_min = (
+            self.cfg.st_factor,
+            self.cfg.mtol_conv,
+            self.cfg.atol,
+            self.cfg.yconv_cri,
+            self.cfg.slope_cri,
+            self.cfg.yconv_min,
+        )
         y, ymix, y_time, t_time = var.y.copy(), var.ymix.copy(), var.y_time, var.t_time
         count = para.count
 
-        #slope_min = min( np.amin(atm.Kzz)/np.amax(0.1*atm.Hp)**2 , 1.e-8)
-        slope_min = min( np.amin(atm.Kzz/(0.1*atm.Hp[:-1])**2) , 1.e-8)
-        slope_min = max(slope_min, 1.e-10)
+        # slope_min = min( np.amin(atm.Kzz)/np.amax(0.1*atm.Hp)**2 , 1.e-8)
+        slope_min = min(np.amin(atm.Kzz / (0.1 * atm.Hp[:-1]) ** 2), 1.0e-8)
+        slope_min = max(slope_min, 1.0e-10)
 
-        indx = np.abs(t_time-var.t*st_factor).argmin()
-        if indx == para.count-1: indx-=1  #Important!! For dt larger than half of the runtime (count-1 is the last one)
+        indx = np.abs(t_time - var.t * st_factor).argmin()
+        if indx == para.count - 1:
+            indx -= 1  # Important!! For dt larger than half of the runtime (count-1 is the last one)
 
         # Don't check more than self.cfg.conv_step (1000) steps back
-        indx = max(para.count-self.cfg.conv_step, indx)
+        indx = max(para.count - self.cfg.conv_step, indx)
 
         # TEST
-        longdy = np.abs((y_time[count-1] - y_time[indx])/np.vstack(atm.n_0))
+        longdy = np.abs((y_time[count - 1] - y_time[indx]) / np.vstack(atm.n_0))
         longdy[ymix < mtol_conv] = 0
         longdy[y < atol] = 0
 
         # to get rid off non-convergent species, e.g. HC3N without sinks
         if 'conver_ignore' in dir(self.cfg):
-            for sp in self.cfg.conver_ignore: longdy[:,species.index(sp)] = 0 # added 2023
+            for sp in self.cfg.conver_ignore:
+                longdy[:, species.index(sp)] = 0  # added 2023
 
         if self.cfg.use_condense == True:
-            longdy[:,self.non_gas_sp_index] = 0
+            longdy[:, self.non_gas_sp_index] = 0
 
-        with np.errstate(divide='ignore',invalid='ignore'): # ignoring nan when devided by zero
-            where_varies_most = longdy/ymix
+        with np.errstate(
+            divide='ignore', invalid='ignore'
+        ):  # ignoring nan when devided by zero
+            where_varies_most = longdy / ymix
         para.where_varies_most = where_varies_most
 
-        longdy = np.amax( longdy[ymix>0]/ymix[ymix>0] )
-        longdydt = longdy/(t_time[-1]-t_time[indx])
+        longdy = np.amax(longdy[ymix > 0] / ymix[ymix > 0])
+        longdydt = longdy / (t_time[-1] - t_time[indx])
         # store longdy and longdydt
         var.longdy, var.longdydt = longdy, longdydt
 
-        if (longdy < yconv_cri and longdydt < slope_cri or longdy < yconv_min and longdydt < slope_min) and var.aflux_change<self.cfg.flux_cri:
+        if (
+            longdy < yconv_cri
+            and longdydt < slope_cri
+            or longdy < yconv_min
+            and longdydt < slope_min
+        ) and var.aflux_change < self.cfg.flux_cri:
             return True
 
         return False
 
     def stop(self, var, para, atm):
-        '''
+        """
         To check the convergence criteria and stop the integration
-        '''
-        if var.t > self.cfg.trun_min and para.count > self.cfg.count_min and self.conv(var, para, atm):
+        """
+        if (
+            var.t > self.cfg.trun_min
+            and para.count > self.cfg.count_min
+            and self.conv(var, para, atm)
+        ):
             log.info('Integration successful with ' + str(para.count) + ' steps')
             log.info('long dy, long dydt = ' + str(var.longdy) + ', ' + str(var.longdydt))
             log.debug('Actinic flux change: ' + '{:.2E}'.format(var.aflux_change))
@@ -1007,49 +1389,54 @@ class Integration(object):
             para.end_case = 1
             return True
         elif var.t > self.cfg.runtime:
-            log.warning("After ------- %s seconds -------" % ( time.time()- para.start_time ) + ' s CPU time')
+            log.warning(
+                'After ------- %s seconds -------' % (time.time() - para.start_time)
+                + ' s CPU time'
+            )
             log.warning('Integration not completed...')
-            log.warning('Maximal allowed runtime exceeded ('+ str (self.cfg.runtime) + ' sec)!')
+            log.warning('Maximal allowed runtime exceeded (' + str(self.cfg.runtime) + ' sec)!')
             para.end_case = 2
             return True
         elif para.count > self.cfg.count_max:
-            log.warning("After ------- %s seconds -------" % ( time.time()- para.start_time ) + ' s CPU time')
+            log.warning(
+                'After ------- %s seconds -------' % (time.time() - para.start_time)
+                + ' s CPU time'
+            )
             log.warning('Integration not completed...')
-            log.warning('Maximal allowed steps exceeded (' + str (self.cfg.count_max) + ')!')
+            log.warning('Maximal allowed steps exceeded (' + str(self.cfg.count_max) + ')!')
             para.end_case = 3
             return True
 
     def save_step(self, var, para):
-        '''
+        """
         save current values of y and add 1 to the counter
-        '''
+        """
         var.t += var.dt
         para.count += 1
 
         # tmp = list(var.y)
-        #if para.count % self.y_time_freq ==0:
+        # if para.count % self.y_time_freq ==0:
         var.y_time.append(var.y)
-        #var.ymix_time.append(var.ymix.copy())
+        # var.ymix_time.append(var.ymix.copy())
         var.t_time.append(var.t)
 
         # only used in PI_control
         # var.dy_time.append(var.y)
         # var.dydt_time.append(var.dydt)
-        var.atom_loss_time.append(list(var.atom_loss.values()) )
+        var.atom_loss_time.append(list(var.atom_loss.values()))
 
         return var, para
 
-
     # TESTing condensation
     def conden(self, var, atm):
-        '''
+        """
         Updating the condensation reactions according to the new number density
         using the condensation growth timescale in the contiuum regime (not in the kinetic regime)
 
         Note that when n_g -> n_s, n_s is still the number density of "molecules", not "particles."
         So I scaled down the evaporation rate by n_mol.
         n_s / n_mol should also be used for plotting.
-        '''
+        """
 
         nz = self.cfg.nz
 
@@ -1057,293 +1444,378 @@ class Integration(object):
             if var.Rf[re] == 'H2O -> H2O_l_s' and 'H2O' in self.cfg.condense_sp:
                 # using realxation for water condensation
                 if self.cfg.use_relax:
-                    var.k[re] = np.repeat(0.,nz)
-                    var.k[re+1] = np.repeat(0.,nz)
+                    var.k[re] = np.repeat(0.0, nz)
+                    var.k[re + 1] = np.repeat(0.0, nz)
                 else:
-                    m = 18./Navo
+                    m = 18.0 / Navo
                     rho_p = atm.rho_p['H2O_l_s']
                     r_p = atm.r_p['H2O_l_s']
                     # relative humidity
-                    sat_humidity = atm.sat_p['H2O']/kb/atm.Tco * self.cfg.humidity
+                    sat_humidity = atm.sat_p['H2O'] / kb / atm.Tco * self.cfg.humidity
 
                     # this is based on the kinetic regime
-                    rate_c = m/(4*rho_p)*(8*kb*atm.Tco/np.pi/m)**0.5 *(var.y[:,species.index('H2O')]-sat_humidity)/r_p
+                    rate_c = (
+                        m
+                        / (4 * rho_p)
+                        * (8 * kb * atm.Tco / np.pi / m) ** 0.5
+                        * (var.y[:, species.index('H2O')] - sat_humidity)
+                        / r_p
+                    )
 
                     # new approach: contiuum regime DM/rho c
-                    Dg = np.insert(atm.Dzz[:,species.index('H2O')], 0, atm.Dzz[0,species.index('H2O')])
-                    rate = Dg * m/rho_p /r_p**2 * (var.y[:,species.index('H2O')]-sat_humidity)
+                    Dg = np.insert(
+                        atm.Dzz[:, species.index('H2O')], 0, atm.Dzz[0, species.index('H2O')]
+                    )
+                    rate = (
+                        Dg
+                        * m
+                        / rho_p
+                        / r_p**2
+                        * (var.y[:, species.index('H2O')] - sat_humidity)
+                    )
 
                     # how many gas molecules are contained in one particle with the assumed size r_p
-                    n_mol = 4./3*np.pi*r_p**3 *rho_p /m
+                    n_mol = 4.0 / 3 * np.pi * r_p**3 * rho_p / m
 
                     var.k[re] = rate
-                    var.k[re+1] = rate #/n_mol
+                    var.k[re + 1] = rate  # /n_mol
 
                     # positive: condensation
                     var.k[re] = np.maximum(var.k[re], 0)
                     # negative: evaporation
-                    var.k[re+1] = np.minimum(var.k[re+1], 0)
-                    var.k[re+1] = np.abs(var.k[re+1])
-
+                    var.k[re + 1] = np.minimum(var.k[re + 1], 0)
+                    var.k[re + 1] = np.abs(var.k[re + 1])
 
             elif var.Rf[re] == 'NH3 -> NH3_l' and 'NH3' in self.cfg.condense_sp:
                 # using realxation for water condensation
                 if self.cfg.use_relax:
-                    var.k[re] = np.repeat(0.,nz)
-                    var.k[re+1] = np.repeat(0.,nz)
+                    var.k[re] = np.repeat(0.0, nz)
+                    var.k[re + 1] = np.repeat(0.0, nz)
                 else:
-                    m = 17./Navo
+                    m = 17.0 / Navo
                     rho_p = atm.rho_p['NH3_l_s']
-                    r_p = atm.r_p['NH3_l_s'] # assuming 1 micron
+                    r_p = atm.r_p['NH3_l_s']  # assuming 1 micron
 
-                    #rate_c = m/(4*rho_p)*(8*kb*atm.Tco/np.pi/m)**0.5 *(var.y[:,species.index('NH3')]-atm.sat_p['NH3']/kb/atm.Tco)/r_p
+                    # rate_c = m/(4*rho_p)*(8*kb*atm.Tco/np.pi/m)**0.5 *(var.y[:,species.index('NH3')]-atm.sat_p['NH3']/kb/atm.Tco)/r_p
 
                     # new approach: contiuum regime DM/rho c
-                    Dg = np.insert(atm.Dzz[:,species.index('NH3')], 0, atm.Dzz[0,species.index('NH3')])
-                    rate = Dg * m/rho_p /r_p**2 * (var.y[:,species.index('NH3')] - atm.sat_p['NH3']/kb/atm.Tco)
+                    Dg = np.insert(
+                        atm.Dzz[:, species.index('NH3')], 0, atm.Dzz[0, species.index('NH3')]
+                    )
+                    rate = (
+                        Dg
+                        * m
+                        / rho_p
+                        / r_p**2
+                        * (var.y[:, species.index('NH3')] - atm.sat_p['NH3'] / kb / atm.Tco)
+                    )
 
                     # how many gas molecules are contained in one particle with the assumed size r_p
-                    n_mol = 4./3*np.pi*r_p**3 *rho_p /m
+                    n_mol = 4.0 / 3 * np.pi * r_p**3 * rho_p / m
 
                     var.k[re] = rate
-                    var.k[re+1] = rate #/n_mol
+                    var.k[re + 1] = rate  # /n_mol
 
                     # positive: condensation
                     var.k[re] = np.maximum(var.k[re], 0)
                     # negative: evaporation
-                    var.k[re+1] = np.minimum(var.k[re+1], 0)
-                    var.k[re+1] = np.abs(var.k[re+1])
+                    var.k[re + 1] = np.minimum(var.k[re + 1], 0)
+                    var.k[re + 1] = np.abs(var.k[re + 1])
 
             elif var.Rf[re] == 'H2SO4 -> H2SO4_l' and 'H2SO4' in self.cfg.condense_sp:
-                m = 98.022/Navo
+                m = 98.022 / Navo
                 rho_p = atm.rho_p['H2SO4_l']
                 r_p = atm.r_p['H2SO4_l']
 
                 # new approach: contiuum regime DM/rho c
-                Dg = np.insert(atm.Dzz[:,species.index('H2SO4')], 0, atm.Dzz[0,species.index('H2SO4')])
-                rate = Dg * m/rho_p /r_p**2 * (var.y[:,species.index('H2SO4')] - atm.sat_p['H2SO4']/kb/atm.Tco)
+                Dg = np.insert(
+                    atm.Dzz[:, species.index('H2SO4')], 0, atm.Dzz[0, species.index('H2SO4')]
+                )
+                rate = (
+                    Dg
+                    * m
+                    / rho_p
+                    / r_p**2
+                    * (var.y[:, species.index('H2SO4')] - atm.sat_p['H2SO4'] / kb / atm.Tco)
+                )
 
-                #rate_c = m/(4*rho_p)*(8*kb*atm.Tco/np.pi/m)**0.5 *(var.y[:,species.index('H2SO4')]-atm.sat_p['H2SO4']/kb/atm.Tco)/r_p
+                # rate_c = m/(4*rho_p)*(8*kb*atm.Tco/np.pi/m)**0.5 *(var.y[:,species.index('H2SO4')]-atm.sat_p['H2SO4']/kb/atm.Tco)/r_p
 
                 # how many gas molecules are contained in one particle with the assumed size r_p
-                n_mol = 4./3*np.pi*r_p**3 *rho_p /m
+                n_mol = 4.0 / 3 * np.pi * r_p**3 * rho_p / m
 
                 var.k[re] = rate
-                var.k[re+1] = rate #/n_mol
+                var.k[re + 1] = rate  # /n_mol
 
                 # positive: condensation
                 var.k[re] = np.maximum(var.k[re], 0)
                 # negative: evaporation
-                var.k[re+1] = np.minimum(var.k[re+1], 0)
-                var.k[re+1] = np.abs(var.k[re+1])
+                var.k[re + 1] = np.minimum(var.k[re + 1], 0)
+                var.k[re + 1] = np.abs(var.k[re + 1])
 
             elif var.Rf[re] == 'S2 -> S2_l_s' and 'S2' in self.cfg.condense_sp:
-                m = 45.019/Navo
+                m = 45.019 / Navo
                 rho_p = atm.rho_p['S2_l_s']
                 r_p = atm.r_p['S2_l_s']
 
                 # new approach: contiuum regime DM/rho c
-                Dg = np.insert(atm.Dzz[:,species.index('S2')], 0, atm.Dzz[0,species.index('S2')])
-                rate = Dg * m/rho_p /r_p**2 * (var.y[:,species.index('S2')] - atm.sat_p['S2']/kb/atm.Tco)
+                Dg = np.insert(
+                    atm.Dzz[:, species.index('S2')], 0, atm.Dzz[0, species.index('S2')]
+                )
+                rate = (
+                    Dg
+                    * m
+                    / rho_p
+                    / r_p**2
+                    * (var.y[:, species.index('S2')] - atm.sat_p['S2'] / kb / atm.Tco)
+                )
 
                 # how many gas molecules are contained in one particle with the assumed size r_p
-                n_mol = 4./3*np.pi*r_p**3 *rho_p /m
+                n_mol = 4.0 / 3 * np.pi * r_p**3 * rho_p / m
 
                 var.k[re] = rate
-                var.k[re+1] = rate #/n_mol
+                var.k[re + 1] = rate  # /n_mol
 
                 # positive: condensation
                 var.k[re] = np.maximum(var.k[re], 0)
                 # negative: evaporation
-                var.k[re+1] = np.minimum(var.k[re+1], 0)
-                var.k[re+1] = np.abs(var.k[re+1])
+                var.k[re + 1] = np.minimum(var.k[re + 1], 0)
+                var.k[re + 1] = np.abs(var.k[re + 1])
 
             elif var.Rf[re] == 'S4 -> S4_l_s' and 'S4' in self.cfg.condense_sp:
-                m = 32.06*4/Navo
+                m = 32.06 * 4 / Navo
                 rho_p = atm.rho_p['S4_l_s']
                 r_p = atm.r_p['S4_l_s']
 
                 # new approach: contiuum regime DM/rho c
-                Dg = np.insert(atm.Dzz[:,species.index('S4')], 0, atm.Dzz[0,species.index('S4')])
-                rate = Dg * m/rho_p /r_p**2 * (var.y[:,species.index('S4')] - atm.sat_p['S4']/kb/atm.Tco)
+                Dg = np.insert(
+                    atm.Dzz[:, species.index('S4')], 0, atm.Dzz[0, species.index('S4')]
+                )
+                rate = (
+                    Dg
+                    * m
+                    / rho_p
+                    / r_p**2
+                    * (var.y[:, species.index('S4')] - atm.sat_p['S4'] / kb / atm.Tco)
+                )
 
                 # how many gas molecules are contained in one particle with the assumed size r_p
-                n_mol = 4./3*np.pi*r_p**3 *rho_p /m
+                n_mol = 4.0 / 3 * np.pi * r_p**3 * rho_p / m
 
                 # acc_ratio = var.y[:,species.index('S4_l_s')]/n_mol /self.cfg.n_ccn # accomdation ratio: 0 all ccn available 1=no more free ccn
                 # lim_factor = 1-acc_ratio
                 # lim_factor[lim_factor<0] = 0
 
-                var.k[re] = rate #*lim_factor
-                var.k[re+1] = rate #/n_mol
+                var.k[re] = rate  # *lim_factor
+                var.k[re + 1] = rate  # /n_mol
 
                 # positive: condensation
                 var.k[re] = np.maximum(var.k[re], 0)
                 # negative: evaporation
-                var.k[re+1] = np.minimum(var.k[re+1], 0)
-                var.k[re+1] = np.abs(var.k[re+1])
+                var.k[re + 1] = np.minimum(var.k[re + 1], 0)
+                var.k[re + 1] = np.abs(var.k[re + 1])
 
             elif var.Rf[re] == 'S8 -> S8_l_s' and 'S8' in self.cfg.condense_sp:
-                m = 360.152/Navo
+                m = 360.152 / Navo
                 rho_p = atm.rho_p['S8_l_s']
                 r_p = atm.r_p['S8_l_s']
 
                 # new approach: contiuum regime DM/rho c
-                Dg = np.insert(atm.Dzz[:,species.index('S8')], 0, atm.Dzz[0,species.index('S8')])
-                rate = Dg * m/rho_p /r_p**2 * (var.y[:,species.index('S8')] - atm.sat_p['S8']/kb/atm.Tco)
+                Dg = np.insert(
+                    atm.Dzz[:, species.index('S8')], 0, atm.Dzz[0, species.index('S8')]
+                )
+                rate = (
+                    Dg
+                    * m
+                    / rho_p
+                    / r_p**2
+                    * (var.y[:, species.index('S8')] - atm.sat_p['S8'] / kb / atm.Tco)
+                )
 
                 # how many gas molecules are contained in one particle with the assumed size r_p
-                n_mol = 4./3*np.pi*r_p**3 *rho_p /m
+                n_mol = 4.0 / 3 * np.pi * r_p**3 * rho_p / m
 
                 var.k[re] = rate
-                var.k[re+1] = rate #/n_mol
+                var.k[re + 1] = rate  # /n_mol
 
                 # positive: condensation
                 var.k[re] = np.maximum(var.k[re], 0)
                 # negative: evaporation
-                var.k[re+1] = np.minimum(var.k[re+1], 0)
-                var.k[re+1] = np.abs(var.k[re+1])
+                var.k[re + 1] = np.minimum(var.k[re + 1], 0)
+                var.k[re + 1] = np.abs(var.k[re + 1])
 
             elif var.Rf[re] == 'C -> C_s' and 'C' in self.cfg.condense_sp:
-                m = 12.011/Navo
+                m = 12.011 / Navo
                 rho_p = atm.rho_p['C_s']
                 r_p = atm.r_p['C_s']
 
                 # new approach: contiuum regime DM/rho c
-                Dg = np.insert(atm.Dzz[:,species.index('C')], 0, atm.Dzz[0,species.index('C')])
-                rate = Dg * m/rho_p /r_p**2 * (var.y[:,species.index('C')] - atm.sat_p['C']/kb/atm.Tco)
+                Dg = np.insert(
+                    atm.Dzz[:, species.index('C')], 0, atm.Dzz[0, species.index('C')]
+                )
+                rate = (
+                    Dg
+                    * m
+                    / rho_p
+                    / r_p**2
+                    * (var.y[:, species.index('C')] - atm.sat_p['C'] / kb / atm.Tco)
+                )
 
                 # how many gas molecules are contained in one particle with the assumed size r_p
-                n_mol = 4./3*np.pi*r_p**3 *rho_p /m
+                n_mol = 4.0 / 3 * np.pi * r_p**3 * rho_p / m
 
                 var.k[re] = rate
-                var.k[re+1] = rate #/n_mol
+                var.k[re + 1] = rate  # /n_mol
 
                 # positive: condensation
                 var.k[re] = np.maximum(var.k[re], 0)
                 # negative: evaporation
-                var.k[re+1] = np.minimum(var.k[re+1], 0)
-                var.k[re+1] = np.abs(var.k[re+1])
+                var.k[re + 1] = np.minimum(var.k[re + 1], 0)
+                var.k[re + 1] = np.abs(var.k[re + 1])
 
         return var
 
     def h2o_conden_relax(self, var, atm):
-        m = 18./Navo
-        rho_p = 0.95 # mix of water and ice
+        m = 18.0 / Navo
+        rho_p = 0.95  # mix of water and ice
         r_p = atm.r_p['H2O_l_s']
         # relative humidity
-        sat_humidity = atm.sat_p['H2O']/kb/atm.Tco * self.cfg.humidity
+        sat_humidity = atm.sat_p['H2O'] / kb / atm.Tco * self.cfg.humidity
 
         # new approach: contiuum regime DM/rho c
-        Dg = np.insert(atm.Dzz[:,species.index('H2O')], 0, atm.Dzz[0,species.index('H2O')])
-        tau = np.abs( 1./(Dg * m/rho_p /r_p**2 * (var.y[:,species.index('H2O')]-sat_humidity) ) )
-        sat_mix = sat_humidity/atm.n_0
+        Dg = np.insert(atm.Dzz[:, species.index('H2O')], 0, atm.Dzz[0, species.index('H2O')])
+        tau = np.abs(
+            1.0 / (Dg * m / rho_p / r_p**2 * (var.y[:, species.index('H2O')] - sat_humidity))
+        )
+        sat_mix = sat_humidity / atm.n_0
 
         # implicit-Euler to remove water
-        y_conden = (var.ymix[:,species.index('H2O')] + var.dt/tau*sat_mix) / (1. + var.dt/tau)
-        conden_indx = np.where( var.ymix[:,species.index('H2O')] > sat_mix )
+        y_conden = (var.ymix[:, species.index('H2O')] + var.dt / tau * sat_mix) / (
+            1.0 + var.dt / tau
+        )
+        conden_indx = np.where(var.ymix[:, species.index('H2O')] > sat_mix)
 
         # how many gas molecules are contained in one particle with the assumed size r_p
-        n_mol = 4./3*np.pi*r_p**3 *rho_p /m
+        n_mol = 4.0 / 3 * np.pi * r_p**3 * rho_p / m
         # and converting the mixing ratio of molecules /cm3 to droplets/cm3
         # "move" the condensed water to H2O_l_s
-        var.ymix[conden_indx,species.index('H2O_l_s')] += (var.ymix[conden_indx,species.index('H2O')] - y_conden[conden_indx]) #/n_mol
+        var.ymix[conden_indx, species.index('H2O_l_s')] += (
+            var.ymix[conden_indx, species.index('H2O')] - y_conden[conden_indx]
+        )  # /n_mol
 
-        var.ymix[conden_indx,species.index('H2O')] = y_conden[conden_indx]
+        var.ymix[conden_indx, species.index('H2O')] = y_conden[conden_indx]
         # restore the unsaturated parts (only relax where ymix > ysat)
 
-        var.y = var.ymix * np.vstack( np.sum(var.y[:,atm.gas_indx], axis=1) )
+        var.y = var.ymix * np.vstack(np.sum(var.y[:, atm.gas_indx], axis=1))
 
         return var
 
     def h2o_conden_evap_relax(self, var, atm):
-        m = 18./Navo
-        rho_p = atm.rho_p['H2O_l_s'] # mix of water and ice
+        m = 18.0 / Navo
+        rho_p = atm.rho_p['H2O_l_s']  # mix of water and ice
         r_p = atm.r_p['H2O_l_s']
         # relative humidity
-        sat_humidity = atm.sat_p['H2O']/kb/atm.Tco * self.cfg.humidity
+        sat_humidity = atm.sat_p['H2O'] / kb / atm.Tco * self.cfg.humidity
 
         # new approach: contiuum regime DM/rho c
-        Dg = np.insert(atm.Dzz[:,species.index('H2O')], 0, atm.Dzz[0,species.index('H2O')])
-        tau = 1./(Dg * m/rho_p /r_p**2 * (var.y[:,species.index('H2O')]-sat_humidity) )
-        conden_indx = np.where( tau > 0 )
+        Dg = np.insert(atm.Dzz[:, species.index('H2O')], 0, atm.Dzz[0, species.index('H2O')])
+        tau = 1.0 / (Dg * m / rho_p / r_p**2 * (var.y[:, species.index('H2O')] - sat_humidity))
+        conden_indx = np.where(tau > 0)
         evap_indx = np.where(tau < 0)
-        sat_mix = sat_humidity/atm.n_0
-        #tau = np.abs(tau)
+        sat_mix = sat_humidity / atm.n_0
+        # tau = np.abs(tau)
 
         # implicit-Euler to remove water
-        y_conden = (var.ymix[:,species.index('H2O')] + var.dt/tau*sat_mix) / (1. + var.dt/tau)
+        y_conden = (var.ymix[:, species.index('H2O')] + var.dt / tau * sat_mix) / (
+            1.0 + var.dt / tau
+        )
 
         # evaporation to remove ice/water(liquid)
-        ice_loss = (var.y[:,species.index('H2O')] - sat_humidity)*var.dt/tau # both tau < 0 and y_H2O - sat < 0
+        ice_loss = (
+            (var.y[:, species.index('H2O')] - sat_humidity) * var.dt / tau
+        )  # both tau < 0 and y_H2O - sat < 0
         # cannot lose more than it has
-        ice_loss = np.minimum(var.y[:,species.index('H2O_l_s')], ice_loss)
+        ice_loss = np.minimum(var.y[:, species.index('H2O_l_s')], ice_loss)
 
         # how many gas molecules are contained in one particle with the assumed size r_p
         # n_mol = 4./3*np.pi*r_p**3 *rho_p /m
         # and converting the mixing ratio of molecules /cm3 to droplets/cm3
         # "move" the condensed water to H2O_l_s
-        var.ymix[conden_indx,species.index('H2O_l_s')] += (var.ymix[conden_indx,species.index('H2O')] - y_conden[conden_indx])
-        var.ymix[conden_indx,species.index('H2O')] = y_conden[conden_indx]
+        var.ymix[conden_indx, species.index('H2O_l_s')] += (
+            var.ymix[conden_indx, species.index('H2O')] - y_conden[conden_indx]
+        )
+        var.ymix[conden_indx, species.index('H2O')] = y_conden[conden_indx]
         # store the saturated parts (only relax where ymix > ysat)
 
-        var.ymix[evap_indx,species.index('H2O')] += ice_loss[evap_indx]/atm.n_0[evap_indx]
-        var.ymix[evap_indx,species.index('H2O_l_s')] -= ice_loss[evap_indx]/atm.n_0[evap_indx]
+        var.ymix[evap_indx, species.index('H2O')] += ice_loss[evap_indx] / atm.n_0[evap_indx]
+        var.ymix[evap_indx, species.index('H2O_l_s')] -= (
+            ice_loss[evap_indx] / atm.n_0[evap_indx]
+        )
 
-        var.y = var.ymix * np.vstack( np.sum(var.y[:,atm.gas_indx], axis=1) )
+        var.y = var.ymix * np.vstack(np.sum(var.y[:, atm.gas_indx], axis=1))
 
         return var
 
     def nh3_conden_evap_relax(self, var, atm):
-        m = 17./Navo
-        rho_p = atm.rho_p['NH3_l_s'] # mix of water and ice
+        m = 17.0 / Navo
+        rho_p = atm.rho_p['NH3_l_s']  # mix of water and ice
         r_p = atm.r_p['NH3_l_s']
         # relative humidity
-        sat_p = atm.sat_p['NH3']/kb/atm.Tco
-        sat_mix = sat_p/atm.n_0
+        sat_p = atm.sat_p['NH3'] / kb / atm.Tco
+        sat_mix = sat_p / atm.n_0
 
         conden_top = np.argmin(sat_mix)
 
         # new approach: contiuum regime DM/rho c
-        Dg = np.insert(atm.Dzz[:,species.index('NH3')], 0, atm.Dzz[0,species.index('NH3')])
-        tau = 1./(Dg * m/rho_p /r_p**2 * (var.y[:,species.index('NH3')]-sat_p) )
-        conden_indx = np.where( tau > 0 )[0]
+        Dg = np.insert(atm.Dzz[:, species.index('NH3')], 0, atm.Dzz[0, species.index('NH3')])
+        tau = 1.0 / (Dg * m / rho_p / r_p**2 * (var.y[:, species.index('NH3')] - sat_p))
+        conden_indx = np.where(tau > 0)[0]
         evap_indx = np.where(tau < 0)[0]
 
         # above the top of condensation zone, there should NOT be any condensation when using the relaxiation method
         conden_indx = [i for i in conden_indx if i <= conden_top]
-        #evap_indx = [i for i in evap_indx if i <= conden_top]
+        # evap_indx = [i for i in evap_indx if i <= conden_top]
 
         # implicit-Euler to remove water
-        y_conden = (var.ymix[:,species.index('NH3')] + var.dt/tau*sat_mix) / (1. + var.dt/tau)
+        y_conden = (var.ymix[:, species.index('NH3')] + var.dt / tau * sat_mix) / (
+            1.0 + var.dt / tau
+        )
 
         # evaporation to remove ice/water(liquid)
-        ice_loss =  (var.y[:,species.index('NH3')] - sat_p)*var.dt/tau # both tau < 0 and y_H2O - sat < 0
+        ice_loss = (
+            (var.y[:, species.index('NH3')] - sat_p) * var.dt / tau
+        )  # both tau < 0 and y_H2O - sat < 0
         # cannot lose more than it has
-        ice_loss = np.minimum(var.y[:,species.index('NH3_l_s')], ice_loss)
+        ice_loss = np.minimum(var.y[:, species.index('NH3_l_s')], ice_loss)
 
         # how many gas molecules are contained in one particle with the assumed size r_p
         # n_mol = 4./3*np.pi*r_p**3 *rho_p /m
         # and converting the mixing ratio of molecules /cm3 to droplets/cm3
         # "move" the condensed water to H2O_l_s
-        var.ymix[conden_indx,species.index('NH3_l_s')] += (var.ymix[conden_indx,species.index('NH3')] - y_conden[conden_indx])
-        var.ymix[conden_indx,species.index('NH3')] = y_conden[conden_indx]
+        var.ymix[conden_indx, species.index('NH3_l_s')] += (
+            var.ymix[conden_indx, species.index('NH3')] - y_conden[conden_indx]
+        )
+        var.ymix[conden_indx, species.index('NH3')] = y_conden[conden_indx]
         # store the saturated parts (only relax where ymix > ysat)
 
-        var.ymix[evap_indx,species.index('NH3')] += ice_loss[evap_indx]/atm.n_0[evap_indx]
+        var.ymix[evap_indx, species.index('NH3')] += ice_loss[evap_indx] / atm.n_0[evap_indx]
         # instaneous evaporation
-        var.ymix[evap_indx,species.index('NH3_l_s')] -= ice_loss[evap_indx]/atm.n_0[evap_indx]
-        #var.ymix[evap_indx,species.index('NH3_l_s')] = 0
+        var.ymix[evap_indx, species.index('NH3_l_s')] -= (
+            ice_loss[evap_indx] / atm.n_0[evap_indx]
+        )
+        # var.ymix[evap_indx,species.index('NH3_l_s')] = 0
 
-        var.ymix[:,species.index('NH3_l_s')] = np.maximum(var.ymix[:,species.index('NH3_l_s')], 0) # cannot lose more than it has
+        var.ymix[:, species.index('NH3_l_s')] = np.maximum(
+            var.ymix[:, species.index('NH3_l_s')], 0
+        )  # cannot lose more than it has
 
-        var.y = var.ymix * np.vstack( np.sum(var.y[:,atm.gas_indx], axis=1) )
+        var.y = var.ymix * np.vstack(np.sum(var.y[:, atm.gas_indx], axis=1))
 
         return var
 
-class ODESolver(object):
 
-    def __init__(self, vulcan_cfg:Config): # do I always need to update var, atm, para ?
+class ODESolver(object):
+    def __init__(self, vulcan_cfg: Config):  # do I always need to update var, atm, para ?
 
         self.cfg = vulcan_cfg
         self.mtol = self.cfg.mtol
@@ -1355,7 +1827,9 @@ class ODESolver(object):
             self.condense_sp_index = [species.index(sp) for sp in self.cfg.condense_sp]
 
         self.fix_sp_bot_index = [species.index(sp) for sp in self.cfg.use_fix_sp_bot.keys()]
-        self.fix_sp_bot_mix = np.array([self.cfg.use_fix_sp_bot[sp] for sp in self.cfg.use_fix_sp_bot.keys()])
+        self.fix_sp_bot_mix = np.array(
+            [self.cfg.use_fix_sp_bot[sp] for sp in self.cfg.use_fix_sp_bot.keys()]
+        )
 
     def diffdf_no_mol(self, y, atm):
         """
@@ -1368,8 +1842,9 @@ class ODESolver(object):
         y = y.copy()
         # TEST excluding non-gaseous species
         if self.cfg.non_gas_sp:
-            ysum = np.sum(y[:,atm.gas_indx], axis=1)
-        else: ysum = np.sum(y, axis=1)
+            ysum = np.sum(y[:, atm.gas_indx], axis=1)
+        else:
+            ysum = np.sum(y, axis=1)
         # TEST excluding non-gaseous species
         dzi = atm.dzi.copy()
         Kzz = atm.Kzz.copy()
@@ -1377,45 +1852,89 @@ class ODESolver(object):
 
         A, B, C = np.zeros(nz), np.zeros(nz), np.zeros(nz)
 
-        A[0] = -1./(dzi[0])*(Kzz[0]/dzi[0]) *(ysum[1]+ysum[0])/2. /ysum[0]
-        B[0] = 1./(dzi[0])*(Kzz[0]/dzi[0]) *(ysum[1]+ysum[0])/2. /ysum[1]
+        A[0] = -1.0 / (dzi[0]) * (Kzz[0] / dzi[0]) * (ysum[1] + ysum[0]) / 2.0 / ysum[0]
+        B[0] = 1.0 / (dzi[0]) * (Kzz[0] / dzi[0]) * (ysum[1] + ysum[0]) / 2.0 / ysum[1]
         C[0] = 0
-        A[nz-1] = -1./(dzi[nz-2])*(Kzz[nz-2]/dzi[nz-2]) *(ysum[nz-1]+ysum[nz-2])/2. /ysum[nz-1]
-        B[nz-1] = 0
-        C[nz-1] = 1./(dzi[nz-2])*(Kzz[nz-2]/dzi[nz-2]) *(ysum[nz-1]+ysum[nz-2])/2. /ysum[nz-2]
+        A[nz - 1] = (
+            -1.0
+            / (dzi[nz - 2])
+            * (Kzz[nz - 2] / dzi[nz - 2])
+            * (ysum[nz - 1] + ysum[nz - 2])
+            / 2.0
+            / ysum[nz - 1]
+        )
+        B[nz - 1] = 0
+        C[nz - 1] = (
+            1.0
+            / (dzi[nz - 2])
+            * (Kzz[nz - 2] / dzi[nz - 2])
+            * (ysum[nz - 1] + ysum[nz - 2])
+            / 2.0
+            / ysum[nz - 2]
+        )
 
         # vertical adection with zero-flux B.C.
-        A[0] += -( (vz[0]>0)*vz[0] )/dzi[0]
-        B[0] += -( (vz[0]<0)*vz[0] )/dzi[0]
-        A[-1] += ( (vz[-1]<0)*vz[-1] )/dzi[-1]
-        C[-1] += ( (vz[-1]>0)*vz[-1] )/dzi[-1]
+        A[0] += -((vz[0] > 0) * vz[0]) / dzi[0]
+        B[0] += -((vz[0] < 0) * vz[0]) / dzi[0]
+        A[-1] += ((vz[-1] < 0) * vz[-1]) / dzi[-1]
+        C[-1] += ((vz[-1] > 0) * vz[-1]) / dzi[-1]
         # vertical adection
 
-        for j in range(1,nz-1):
-            dz_ave = 0.5*(dzi[j-1] + dzi[j])
-            A[j] = -2./(dzi[j-1] + dzi[j])* ( Kzz[j]/dzi[j]*(ysum[j+1]+ysum[j])/2. + Kzz[j-1]/dzi[j-1]*(ysum[j]+ysum[j-1])/2. ) /ysum[j]
-            B[j] = 2./(dzi[j-1] + dzi[j])*Kzz[j]/dzi[j] *(ysum[j+1]+ysum[j])/2. /ysum[j+1]
-            C[j] = 2./(dzi[j-1] + dzi[j])*Kzz[j-1]/dzi[j-1] *(ysum[j]+ysum[j-1])/2. /ysum[j-1]
+        for j in range(1, nz - 1):
+            dz_ave = 0.5 * (dzi[j - 1] + dzi[j])
+            A[j] = (
+                -2.0
+                / (dzi[j - 1] + dzi[j])
+                * (
+                    Kzz[j] / dzi[j] * (ysum[j + 1] + ysum[j]) / 2.0
+                    + Kzz[j - 1] / dzi[j - 1] * (ysum[j] + ysum[j - 1]) / 2.0
+                )
+                / ysum[j]
+            )
+            B[j] = (
+                2.0
+                / (dzi[j - 1] + dzi[j])
+                * Kzz[j]
+                / dzi[j]
+                * (ysum[j + 1] + ysum[j])
+                / 2.0
+                / ysum[j + 1]
+            )
+            C[j] = (
+                2.0
+                / (dzi[j - 1] + dzi[j])
+                * Kzz[j - 1]
+                / dzi[j - 1]
+                * (ysum[j] + ysum[j - 1])
+                / 2.0
+                / ysum[j - 1]
+            )
 
             # vertical adection
-            A[j] += -( (vz[j]>0)*vz[j] - (vz[j-1]<0)*vz[j-1] )/dz_ave
-            B[j] += -( (vz[j]<0)*vz[j] )/dz_ave
-            C[j] += ( (vz[j-1]>0)*vz[j-1] )/dz_ave
+            A[j] += -((vz[j] > 0) * vz[j] - (vz[j - 1] < 0) * vz[j - 1]) / dz_ave
+            B[j] += -((vz[j] < 0) * vz[j]) / dz_ave
+            C[j] += ((vz[j - 1] > 0) * vz[j - 1]) / dz_ave
             # vertical adection
 
-        tmp0 = A[0]*y[0] + B[0]*y[1]
-        tmp1 = np.ndarray.flatten( (np.vstack(A[1:nz-1])*y[1:(nz-1)] + np.vstack(B[1:nz-1])*y[1+1:(nz-1)+1] + np.vstack(C[1:nz-1])*y[1-1:(nz-1)-1]) )
-        tmp2 = (A[nz-1]*y[nz-1] +C[nz-1]*y[nz-2])
+        tmp0 = A[0] * y[0] + B[0] * y[1]
+        tmp1 = np.ndarray.flatten(
+            (
+                np.vstack(A[1 : nz - 1]) * y[1 : (nz - 1)]
+                + np.vstack(B[1 : nz - 1]) * y[1 + 1 : (nz - 1) + 1]
+                + np.vstack(C[1 : nz - 1]) * y[1 - 1 : (nz - 1) - 1]
+            )
+        )
+        tmp2 = A[nz - 1] * y[nz - 1] + C[nz - 1] * y[nz - 2]
         diff = np.append(np.append(tmp0, tmp1), tmp2)
-        diff = diff.reshape(nz,ni)
+        diff = diff.reshape(nz, ni)
 
         if self.cfg.use_topflux:
             # Don't forget dz!!! -d phi/ dz
             ### the const flux has no contribution to the jacobian ###
-            diff[-1] += atm.top_flux /dzi[-1]
+            diff[-1] += atm.top_flux / dzi[-1]
         if self.cfg.use_botflux:
             ### the deposition term needs to be included in the jacobian!!!
-            diff[0] += (atm.bot_flux - y[0]*atm.bot_vdep) /dzi[0]
+            diff[0] += (atm.bot_flux - y[0] * atm.bot_vdep) / dzi[0]
         return diff
 
     def diffdf(self, y, atm):
@@ -1430,8 +1949,9 @@ class ODESolver(object):
 
         # TEST condensation excluding non-gaseous species
         if self.cfg.non_gas_sp:
-            ysum = np.sum(y[:,atm.gas_indx], axis=1)
-        else: ysum = np.sum(y, axis=1)
+            ysum = np.sum(y[:, atm.gas_indx], axis=1)
+        else:
+            ysum = np.sum(y, axis=1)
         # TEST condensation excluding non-gaseous species
 
         dzi = atm.dzi.copy()
@@ -1456,73 +1976,182 @@ class ODESolver(object):
         # atm.Hpi = Hpi
 
         A, B, C = np.zeros(nz), np.zeros(nz), np.zeros(nz)
-        Ai, Bi, Ci = [ np.zeros((nz,ni)) for i in range(3)]
+        Ai, Bi, Ci = [np.zeros((nz, ni)) for i in range(3)]
 
-        A[0] = -1./(dzi[0])*(Kzz[0]/dzi[0]) *(ysum[1]+ysum[0])/2. /ysum[0]
-        B[0] = 1./(dzi[0])*(Kzz[0]/dzi[0]) *(ysum[1]+ysum[0])/2. /ysum[1]
+        A[0] = -1.0 / (dzi[0]) * (Kzz[0] / dzi[0]) * (ysum[1] + ysum[0]) / 2.0 / ysum[0]
+        B[0] = 1.0 / (dzi[0]) * (Kzz[0] / dzi[0]) * (ysum[1] + ysum[0]) / 2.0 / ysum[1]
         C[0] = 0
-        A[nz-1] = -1./(dzi[nz-2])*(Kzz[nz-2]/dzi[nz-2]) *(ysum[nz-1]+ysum[nz-2])/2. /ysum[nz-1]
-        B[nz-1] = 0
-        C[nz-1] = 1./(dzi[nz-2])*(Kzz[nz-2]/dzi[nz-2]) *(ysum[nz-1]+ysum[nz-2])/2. /ysum[nz-2]
+        A[nz - 1] = (
+            -1.0
+            / (dzi[nz - 2])
+            * (Kzz[nz - 2] / dzi[nz - 2])
+            * (ysum[nz - 1] + ysum[nz - 2])
+            / 2.0
+            / ysum[nz - 1]
+        )
+        B[nz - 1] = 0
+        C[nz - 1] = (
+            1.0
+            / (dzi[nz - 2])
+            * (Kzz[nz - 2] / dzi[nz - 2])
+            * (ysum[nz - 1] + ysum[nz - 2])
+            / 2.0
+            / ysum[nz - 2]
+        )
 
         # vertical adection (with closed B.C.)
-        A[0] += -( (vz[0]>0)*vz[0] )/dzi[0]
-        B[0] += -( (vz[0]<0)*vz[0] )/dzi[0]
-        A[-1] += ( (vz[-1]<0)*vz[-1] )/dzi[-1]
-        C[-1] += ( (vz[-1]>0)*vz[-1] )/dzi[-1]
+        A[0] += -((vz[0] > 0) * vz[0]) / dzi[0]
+        B[0] += -((vz[0] < 0) * vz[0]) / dzi[0]
+        A[-1] += ((vz[-1] < 0) * vz[-1]) / dzi[-1]
+        C[-1] += ((vz[-1] > 0) * vz[-1]) / dzi[-1]
         # vertical adection
 
         # shape of ni-long 1D array
-        Ai[0] = -1./(dzi[0])*(Dzz[0]/dzi[0]) *(ysum[1]+ysum[0])/2. /ysum[0] +\
-        1./(dzi[0])* Dzz[0]/2.*(-1./Hpi[0]+ms*g[0]/(Navo*kb*Ti[0])+alpha/Ti[0]*(Tco[1]-Tco[0])/dzi[0] )
-        Bi[0] = 1./(dzi[0])*(Dzz[0]/dzi[0]) *(ysum[1]+ysum[0])/2. /ysum[1] +\
-        1./(dzi[0])* Dzz[0]/2.*(-1./Hpi[0]+ms*g[0]/(Navo*kb*Ti[0])+alpha/Ti[0]*(Tco[1]-Tco[0])/dzi[0] )
+        Ai[0] = -1.0 / (dzi[0]) * (Dzz[0] / dzi[0]) * (ysum[1] + ysum[0]) / 2.0 / ysum[
+            0
+        ] + 1.0 / (dzi[0]) * Dzz[0] / 2.0 * (
+            -1.0 / Hpi[0]
+            + ms * g[0] / (Navo * kb * Ti[0])
+            + alpha / Ti[0] * (Tco[1] - Tco[0]) / dzi[0]
+        )
+        Bi[0] = 1.0 / (dzi[0]) * (Dzz[0] / dzi[0]) * (ysum[1] + ysum[0]) / 2.0 / ysum[
+            1
+        ] + 1.0 / (dzi[0]) * Dzz[0] / 2.0 * (
+            -1.0 / Hpi[0]
+            + ms * g[0] / (Navo * kb * Ti[0])
+            + alpha / Ti[0] * (Tco[1] - Tco[0]) / dzi[0]
+        )
         Ci[0] = 0
-        Ai[nz-1] = -1./(dzi[-1])*(Dzz[nz-2]/dzi[-1]) *(ysum[nz-1]+ysum[nz-2])/2. /ysum[nz-1] \
-        -1./(dzi[-1])* Dzz[-1]/2.*(-1./Hpi[-1]+ms*g[-1]/(Navo*kb*Ti[-1])+alpha/Ti[-1]*(Tco[-1]-Tco[-2])/dzi[-1] )
-        Bi[nz-1] = 0
-        Ci[nz-1] = 1./(dzi[-1])*(Dzz[nz-2]/dzi[-1]) *(ysum[nz-1]+ysum[nz-2])/2. /ysum[nz-2] \
-        -1./(dzi[-1])* Dzz[-1]/2.*(-1./Hpi[-1]+ms*g[-1]/(Navo*kb*Ti[-1])+alpha/Ti[-1]*(Tco[-1]-Tco[-2])/dzi[-1] )
+        Ai[nz - 1] = -1.0 / (dzi[-1]) * (Dzz[nz - 2] / dzi[-1]) * (
+            ysum[nz - 1] + ysum[nz - 2]
+        ) / 2.0 / ysum[nz - 1] - 1.0 / (dzi[-1]) * Dzz[-1] / 2.0 * (
+            -1.0 / Hpi[-1]
+            + ms * g[-1] / (Navo * kb * Ti[-1])
+            + alpha / Ti[-1] * (Tco[-1] - Tco[-2]) / dzi[-1]
+        )
+        Bi[nz - 1] = 0
+        Ci[nz - 1] = 1.0 / (dzi[-1]) * (Dzz[nz - 2] / dzi[-1]) * (
+            ysum[nz - 1] + ysum[nz - 2]
+        ) / 2.0 / ysum[nz - 2] - 1.0 / (dzi[-1]) * Dzz[-1] / 2.0 * (
+            -1.0 / Hpi[-1]
+            + ms * g[-1] / (Navo * kb * Ti[-1])
+            + alpha / Ti[-1] * (Tco[-1] - Tco[-2]) / dzi[-1]
+        )
 
-        for j in range(1,nz-1):
-            dz_ave = 0.5*(dzi[j-1] + dzi[j])
-            A[j] = -1./dz_ave * ( Kzz[j]/dzi[j]*(ysum[j+1]+ysum[j])/2. + Kzz[j-1]/dzi[j-1]*(ysum[j]+ysum[j-1])/2. ) /ysum[j]
-            B[j] = 1./dz_ave * Kzz[j]/dzi[j] *(ysum[j+1]+ysum[j])/2. /ysum[j+1]
-            C[j] = 1./dz_ave * Kzz[j-1]/dzi[j-1] *(ysum[j]+ysum[j-1])/2. /ysum[j-1]
+        for j in range(1, nz - 1):
+            dz_ave = 0.5 * (dzi[j - 1] + dzi[j])
+            A[j] = (
+                -1.0
+                / dz_ave
+                * (
+                    Kzz[j] / dzi[j] * (ysum[j + 1] + ysum[j]) / 2.0
+                    + Kzz[j - 1] / dzi[j - 1] * (ysum[j] + ysum[j - 1]) / 2.0
+                )
+                / ysum[j]
+            )
+            B[j] = 1.0 / dz_ave * Kzz[j] / dzi[j] * (ysum[j + 1] + ysum[j]) / 2.0 / ysum[j + 1]
+            C[j] = (
+                1.0
+                / dz_ave
+                * Kzz[j - 1]
+                / dzi[j - 1]
+                * (ysum[j] + ysum[j - 1])
+                / 2.0
+                / ysum[j - 1]
+            )
 
             # vertical adection
-            A[j] += -( (vz[j]>0)*vz[j] - (vz[j-1]<0)*vz[j-1] )/dz_ave
-            B[j] += -( (vz[j]<0)*vz[j] )/dz_ave
-            C[j] += ( (vz[j-1]>0)*vz[j-1] )/dz_ave
+            A[j] += -((vz[j] > 0) * vz[j] - (vz[j - 1] < 0) * vz[j - 1]) / dz_ave
+            B[j] += -((vz[j] < 0) * vz[j]) / dz_ave
+            C[j] += ((vz[j - 1] > 0) * vz[j - 1]) / dz_ave
             # vertical adection
 
             # Ai in the shape of nz*ni and Ai[j] in the shape of ni
-            Ai[j] = -1./dz_ave * ( Dzz[j]/dzi[j]*(ysum[j+1]+ysum[j])/2. + Dzz[j-1]/dzi[j-1]*(ysum[j]+ysum[j-1])/2. ) /ysum[j]
-            Bi[j] = 1./dz_ave * Dzz[j]/dzi[j] *(ysum[j+1]+ysum[j])/2. /ysum[j+1]
-            Ci[j] = 1./dz_ave * Dzz[j-1]/dzi[j-1] *(ysum[j]+ysum[j-1])/2. /ysum[j-1]
+            Ai[j] = (
+                -1.0
+                / dz_ave
+                * (
+                    Dzz[j] / dzi[j] * (ysum[j + 1] + ysum[j]) / 2.0
+                    + Dzz[j - 1] / dzi[j - 1] * (ysum[j] + ysum[j - 1]) / 2.0
+                )
+                / ysum[j]
+            )
+            Bi[j] = 1.0 / dz_ave * Dzz[j] / dzi[j] * (ysum[j + 1] + ysum[j]) / 2.0 / ysum[j + 1]
+            Ci[j] = (
+                1.0
+                / dz_ave
+                * Dzz[j - 1]
+                / dzi[j - 1]
+                * (ysum[j] + ysum[j - 1])
+                / 2.0
+                / ysum[j - 1]
+            )
 
-            Ai[j] += 1./(2.*dz_ave)*( Dzz[j]*(-1./Hpi[j]+ms*g[j]/(Navo*kb*Ti[j])+alpha/Ti[j]*(Tco[j+1]-Tco[j])/dzi[j] ) \
-            - Dzz[j-1]*(-1./Hpi[j-1]+ms*g[j]/(Navo*kb*Ti[j-1])+ alpha/Ti[j-1]*(Tco[j]-Tco[j-1])/dzi[j-1] ) ) #/ysum[j]
-            Bi[j] += 1./(2.*dz_ave)* Dzz[j]*(-1./Hpi[j]+ms*g[j+1]/(Navo*kb*Ti[j])+alpha/Ti[j]*(Tco[j+1]-Tco[j])/dzi[j] )
-            Ci[j] += -1./(2.*dz_ave)* Dzz[j-1]*(-1./Hpi[j-1]+ms*g[j-1]/(Navo*kb*Ti[j-1])+alpha/Ti[j-1]*(Tco[j]-Tco[j-1])/dzi[j-1] )
+            Ai[j] += (
+                1.0
+                / (2.0 * dz_ave)
+                * (
+                    Dzz[j]
+                    * (
+                        -1.0 / Hpi[j]
+                        + ms * g[j] / (Navo * kb * Ti[j])
+                        + alpha / Ti[j] * (Tco[j + 1] - Tco[j]) / dzi[j]
+                    )
+                    - Dzz[j - 1]
+                    * (
+                        -1.0 / Hpi[j - 1]
+                        + ms * g[j] / (Navo * kb * Ti[j - 1])
+                        + alpha / Ti[j - 1] * (Tco[j] - Tco[j - 1]) / dzi[j - 1]
+                    )
+                )
+            )  # /ysum[j]
+            Bi[j] += (
+                1.0
+                / (2.0 * dz_ave)
+                * Dzz[j]
+                * (
+                    -1.0 / Hpi[j]
+                    + ms * g[j + 1] / (Navo * kb * Ti[j])
+                    + alpha / Ti[j] * (Tco[j + 1] - Tco[j]) / dzi[j]
+                )
+            )
+            Ci[j] += (
+                -1.0
+                / (2.0 * dz_ave)
+                * Dzz[j - 1]
+                * (
+                    -1.0 / Hpi[j - 1]
+                    + ms * g[j - 1] / (Navo * kb * Ti[j - 1])
+                    + alpha / Ti[j - 1] * (Tco[j] - Tco[j - 1]) / dzi[j - 1]
+                )
+            )
 
-        tmp0 = (A[0] + Ai[0])*y[0] + (B[0] + Bi[0])*y[1] # shape of ni-long 1D array
-        tmp1 = np.ndarray.flatten( (np.vstack(A[1:nz-1])*y[1:(nz-1)] + np.vstack(B[1:nz-1])*y[1+1:(nz-1)+1] + np.vstack(C[1:nz-1])*y[1-1:(nz-1)-1]) )
-        tmp1 += np.ndarray.flatten( Ai[1:nz-1]*y[1:(nz-1)] + Bi[1:nz-1]*y[1+1:(nz-1)+1] + Ci[1:nz-1]*y[1-1:(nz-1)-1] ) # shape of (nz-2,ni)
-        tmp2 = (A[nz-1] + Ai[nz-1])*y[nz-1] + (C[nz-1] + Ci[nz-1])*y[nz-2]
+        tmp0 = (A[0] + Ai[0]) * y[0] + (B[0] + Bi[0]) * y[1]  # shape of ni-long 1D array
+        tmp1 = np.ndarray.flatten(
+            (
+                np.vstack(A[1 : nz - 1]) * y[1 : (nz - 1)]
+                + np.vstack(B[1 : nz - 1]) * y[1 + 1 : (nz - 1) + 1]
+                + np.vstack(C[1 : nz - 1]) * y[1 - 1 : (nz - 1) - 1]
+            )
+        )
+        tmp1 += np.ndarray.flatten(
+            Ai[1 : nz - 1] * y[1 : (nz - 1)]
+            + Bi[1 : nz - 1] * y[1 + 1 : (nz - 1) + 1]
+            + Ci[1 : nz - 1] * y[1 - 1 : (nz - 1) - 1]
+        )  # shape of (nz-2,ni)
+        tmp2 = (A[nz - 1] + Ai[nz - 1]) * y[nz - 1] + (C[nz - 1] + Ci[nz - 1]) * y[nz - 2]
         diff = np.append(np.append(tmp0, tmp1), tmp2)
-        diff = diff.reshape(nz,ni)
+        diff = diff.reshape(nz, ni)
 
         if self.cfg.use_topflux:
             # Don't forget dz!!! -d phi/ dz
             ### the const flux has no contribution to the jacobian ###
-            diff[-1] += atm.top_flux /dzi[-1]
+            diff[-1] += atm.top_flux / dzi[-1]
         if self.cfg.use_botflux:
             ### the deposition term needs to be included in the jacobian!!!
-            diff[0] += (atm.bot_flux - y[0]*atm.bot_vdep) /dzi[0]
+            diff[0] += (atm.bot_flux - y[0] * atm.bot_vdep) / dzi[0]
 
         return diff
-
 
     def diffdf_settling(self, y, atm):
         """
@@ -1536,8 +2165,9 @@ class ODESolver(object):
 
         # TEST condensation excluding non-gaseous species
         if self.cfg.non_gas_sp:
-            ysum = np.sum(y[:,atm.gas_indx], axis=1)
-        else: ysum = np.sum(y, axis=1)
+            ysum = np.sum(y[:, atm.gas_indx], axis=1)
+        else:
+            ysum = np.sum(y, axis=1)
         # TEST condensation excluding non-gaseous species
 
         dzi = atm.dzi.copy()
@@ -1553,99 +2183,248 @@ class ODESolver(object):
         Ti = atm.Ti
         Hpi = atm.Hpi
         # # define T_1/2 for the molecular diffusion
-#         Ti = 0.5*(Tco + np.roll(Tco,-1))
-#         Ti = Ti[:-1]
-#         Hpi = 0.5*(Hp + np.roll(Hp,-1))
-#         Hpi = Hpi[:-1]
-#         # store Ti and Hpi
-#         atm.Ti = Ti
-#         atm.Hpi = Hpi
+        #         Ti = 0.5*(Tco + np.roll(Tco,-1))
+        #         Ti = Ti[:-1]
+        #         Hpi = 0.5*(Hp + np.roll(Hp,-1))
+        #         Hpi = Hpi[:-1]
+        #         # store Ti and Hpi
+        #         atm.Ti = Ti
+        #         atm.Hpi = Hpi
 
         A, B, C = np.zeros(nz), np.zeros(nz), np.zeros(nz)
-        Ai, Bi, Ci = [ np.zeros((nz,ni)) for i in range(3)]
+        Ai, Bi, Ci = [np.zeros((nz, ni)) for i in range(3)]
 
-        A[0] = -1./(dzi[0])*(Kzz[0]/dzi[0]) *(ysum[1]+ysum[0])/2. /ysum[0]
-        B[0] = 1./(dzi[0])*(Kzz[0]/dzi[0]) *(ysum[1]+ysum[0])/2. /ysum[1]
+        A[0] = -1.0 / (dzi[0]) * (Kzz[0] / dzi[0]) * (ysum[1] + ysum[0]) / 2.0 / ysum[0]
+        B[0] = 1.0 / (dzi[0]) * (Kzz[0] / dzi[0]) * (ysum[1] + ysum[0]) / 2.0 / ysum[1]
         C[0] = 0
-        A[nz-1] = -1./(dzi[nz-2])*(Kzz[nz-2]/dzi[nz-2]) *(ysum[nz-1]+ysum[nz-2])/2. /ysum[nz-1]
-        B[nz-1] = 0
-        C[nz-1] = 1./(dzi[nz-2])*(Kzz[nz-2]/dzi[nz-2]) *(ysum[nz-1]+ysum[nz-2])/2. /ysum[nz-2]
+        A[nz - 1] = (
+            -1.0
+            / (dzi[nz - 2])
+            * (Kzz[nz - 2] / dzi[nz - 2])
+            * (ysum[nz - 1] + ysum[nz - 2])
+            / 2.0
+            / ysum[nz - 1]
+        )
+        B[nz - 1] = 0
+        C[nz - 1] = (
+            1.0
+            / (dzi[nz - 2])
+            * (Kzz[nz - 2] / dzi[nz - 2])
+            * (ysum[nz - 1] + ysum[nz - 2])
+            / 2.0
+            / ysum[nz - 2]
+        )
 
         # vertical adection (with closed B.C.)
-        A[0] += -( (vz[0]>0)*vz[0] )/dzi[0]
-        B[0] += -( (vz[0]<0)*vz[0] )/dzi[0]
-        A[-1] += ( (vz[-1]<0)*vz[-1] )/dzi[-1]
-        C[-1] += ( (vz[-1]>0)*vz[-1] )/dzi[-1]
+        A[0] += -((vz[0] > 0) * vz[0]) / dzi[0]
+        B[0] += -((vz[0] < 0) * vz[0]) / dzi[0]
+        A[-1] += ((vz[-1] < 0) * vz[-1]) / dzi[-1]
+        C[-1] += ((vz[-1] > 0) * vz[-1]) / dzi[-1]
         # vertical adection
 
         # shape of ni-long 1D array
         # Including the settling velocity of the particles
-        Ai[0] = -1./(dzi[0])*(Dzz[0]/dzi[0]) *(ysum[1]+ysum[0])/2. /ysum[0] +\
-        1./(dzi[0])* Dzz[0]/2.*(-1./Hpi[0]+ms*g[0]/(Navo*kb*Ti[0])+alpha/Ti[0]*(Tco[1]-Tco[0])/dzi[0] )  -( (vs[0]>0)*vs[0] )/dzi[0]
-        Bi[0] = 1./(dzi[0])*(Dzz[0]/dzi[0]) *(ysum[1]+ysum[0])/2. /ysum[1] +\
-        1./(dzi[0])* Dzz[0]/2.*(-1./Hpi[0]+ms*g[0]/(Navo*kb*Ti[0])+alpha/Ti[0]*(Tco[1]-Tco[0])/dzi[0] )  -( (vs[0]<0)*vs[0] )/dzi[0]
-        #Ci[0] = 0
-        Ai[nz-1] = -1./(dzi[-1])*(Dzz[nz-2]/dzi[-1]) *(ysum[nz-1]+ysum[nz-2])/2. /ysum[nz-1] \
-        -1./(dzi[-1])* Dzz[-1]/2.*(-1./Hpi[-1]+ms*g[-1]/(Navo*kb*Ti[-1])+alpha/Ti[-1]*(Tco[-1]-Tco[-2])/dzi[-1] )  +( (vs[-1]<0)*vs[-1] )/dzi[-1]
-        #Bi[nz-1] = 0
-        Ci[nz-1] = 1./(dzi[-1])*(Dzz[nz-2]/dzi[-1]) *(ysum[nz-1]+ysum[nz-2])/2. /ysum[nz-2] \
-        -1./(dzi[-1])* Dzz[-1]/2.*(-1./Hpi[-1]+ms*g[-1]/(Navo*kb*Ti[-1])+alpha/Ti[-1]*(Tco[-1]-Tco[-2])/dzi[-1] )  +( (vs[-1]>0)*vs[-1] )/dzi[-1]
+        Ai[0] = (
+            -1.0 / (dzi[0]) * (Dzz[0] / dzi[0]) * (ysum[1] + ysum[0]) / 2.0 / ysum[0]
+            + 1.0
+            / (dzi[0])
+            * Dzz[0]
+            / 2.0
+            * (
+                -1.0 / Hpi[0]
+                + ms * g[0] / (Navo * kb * Ti[0])
+                + alpha / Ti[0] * (Tco[1] - Tco[0]) / dzi[0]
+            )
+            - ((vs[0] > 0) * vs[0]) / dzi[0]
+        )
+        Bi[0] = (
+            1.0 / (dzi[0]) * (Dzz[0] / dzi[0]) * (ysum[1] + ysum[0]) / 2.0 / ysum[1]
+            + 1.0
+            / (dzi[0])
+            * Dzz[0]
+            / 2.0
+            * (
+                -1.0 / Hpi[0]
+                + ms * g[0] / (Navo * kb * Ti[0])
+                + alpha / Ti[0] * (Tco[1] - Tco[0]) / dzi[0]
+            )
+            - ((vs[0] < 0) * vs[0]) / dzi[0]
+        )
+        # Ci[0] = 0
+        Ai[nz - 1] = (
+            -1.0
+            / (dzi[-1])
+            * (Dzz[nz - 2] / dzi[-1])
+            * (ysum[nz - 1] + ysum[nz - 2])
+            / 2.0
+            / ysum[nz - 1]
+            - 1.0
+            / (dzi[-1])
+            * Dzz[-1]
+            / 2.0
+            * (
+                -1.0 / Hpi[-1]
+                + ms * g[-1] / (Navo * kb * Ti[-1])
+                + alpha / Ti[-1] * (Tco[-1] - Tco[-2]) / dzi[-1]
+            )
+            + ((vs[-1] < 0) * vs[-1]) / dzi[-1]
+        )
+        # Bi[nz-1] = 0
+        Ci[nz - 1] = (
+            1.0
+            / (dzi[-1])
+            * (Dzz[nz - 2] / dzi[-1])
+            * (ysum[nz - 1] + ysum[nz - 2])
+            / 2.0
+            / ysum[nz - 2]
+            - 1.0
+            / (dzi[-1])
+            * Dzz[-1]
+            / 2.0
+            * (
+                -1.0 / Hpi[-1]
+                + ms * g[-1] / (Navo * kb * Ti[-1])
+                + alpha / Ti[-1] * (Tco[-1] - Tco[-2]) / dzi[-1]
+            )
+            + ((vs[-1] > 0) * vs[-1]) / dzi[-1]
+        )
 
-        for j in range(1,nz-1):
-            dz_ave = 0.5*(dzi[j-1] + dzi[j])
-            A[j] = -1./dz_ave * ( Kzz[j]/dzi[j]*(ysum[j+1]+ysum[j])/2. + Kzz[j-1]/dzi[j-1]*(ysum[j]+ysum[j-1])/2. ) /ysum[j]
-            B[j] = 1./dz_ave * Kzz[j]/dzi[j] *(ysum[j+1]+ysum[j])/2. /ysum[j+1]
-            C[j] = 1./dz_ave * Kzz[j-1]/dzi[j-1] *(ysum[j]+ysum[j-1])/2. /ysum[j-1]
+        for j in range(1, nz - 1):
+            dz_ave = 0.5 * (dzi[j - 1] + dzi[j])
+            A[j] = (
+                -1.0
+                / dz_ave
+                * (
+                    Kzz[j] / dzi[j] * (ysum[j + 1] + ysum[j]) / 2.0
+                    + Kzz[j - 1] / dzi[j - 1] * (ysum[j] + ysum[j - 1]) / 2.0
+                )
+                / ysum[j]
+            )
+            B[j] = 1.0 / dz_ave * Kzz[j] / dzi[j] * (ysum[j + 1] + ysum[j]) / 2.0 / ysum[j + 1]
+            C[j] = (
+                1.0
+                / dz_ave
+                * Kzz[j - 1]
+                / dzi[j - 1]
+                * (ysum[j] + ysum[j - 1])
+                / 2.0
+                / ysum[j - 1]
+            )
 
             # vertical adection
-            A[j] += -( (vz[j]>0)*vz[j] - (vz[j-1]<0)*vz[j-1] )/dz_ave
-            B[j] += -( (vz[j]<0)*vz[j] )/dz_ave
-            C[j] += ( (vz[j-1]>0)*vz[j-1] )/dz_ave
+            A[j] += -((vz[j] > 0) * vz[j] - (vz[j - 1] < 0) * vz[j - 1]) / dz_ave
+            B[j] += -((vz[j] < 0) * vz[j]) / dz_ave
+            C[j] += ((vz[j - 1] > 0) * vz[j - 1]) / dz_ave
             # vertical adection
 
             # Ai in the shape of nz*ni and Ai[j] in the shape of ni
             # Including the settling velocity of the particles
-            Ai[j] = -1./dz_ave * ( Dzz[j]/dzi[j]*(ysum[j+1]+ysum[j])/2. + Dzz[j-1]/dzi[j-1]*(ysum[j]+ysum[j-1])/2. ) /ysum[j] -( (vs[j]>0)*vs[j] - (vs[j-1]<0)*vs[j-1] )/dz_ave
-            Bi[j] = 1./dz_ave * Dzz[j]/dzi[j] *(ysum[j+1]+ysum[j])/2. /ysum[j+1]  -( (vs[j]<0)*vs[j] )/dz_ave
-            Ci[j] = 1./dz_ave * Dzz[j-1]/dzi[j-1] *(ysum[j]+ysum[j-1])/2. /ysum[j-1]  +( (vs[j-1]>0)*vs[j-1] )/dz_ave
+            Ai[j] = (
+                -1.0
+                / dz_ave
+                * (
+                    Dzz[j] / dzi[j] * (ysum[j + 1] + ysum[j]) / 2.0
+                    + Dzz[j - 1] / dzi[j - 1] * (ysum[j] + ysum[j - 1]) / 2.0
+                )
+                / ysum[j]
+                - ((vs[j] > 0) * vs[j] - (vs[j - 1] < 0) * vs[j - 1]) / dz_ave
+            )
+            Bi[j] = (
+                1.0 / dz_ave * Dzz[j] / dzi[j] * (ysum[j + 1] + ysum[j]) / 2.0 / ysum[j + 1]
+                - ((vs[j] < 0) * vs[j]) / dz_ave
+            )
+            Ci[j] = (
+                1.0
+                / dz_ave
+                * Dzz[j - 1]
+                / dzi[j - 1]
+                * (ysum[j] + ysum[j - 1])
+                / 2.0
+                / ysum[j - 1]
+                + ((vs[j - 1] > 0) * vs[j - 1]) / dz_ave
+            )
 
-            Ai[j] += 1./(2.*dz_ave)*( Dzz[j]*(-1./Hpi[j]+ms*g[j]/(Navo*kb*Ti[j])+alpha/Ti[j]*(Tco[j+1]-Tco[j])/dzi[j] ) \
-            - Dzz[j-1]*(-1./Hpi[j-1]+ms*g[j]/(Navo*kb*Ti[j-1])+ alpha/Ti[j-1]*(Tco[j]-Tco[j-1])/dzi[j-1] ) ) #/ysum[j]
-            Bi[j] += 1./(2.*dz_ave)* Dzz[j]*(-1./Hpi[j]+ms*g[j+1]/(Navo*kb*Ti[j])+alpha/Ti[j]*(Tco[j+1]-Tco[j])/dzi[j] )
-            Ci[j] += -1./(2.*dz_ave)* Dzz[j-1]*(-1./Hpi[j-1]+ms*g[j-1]/(Navo*kb*Ti[j-1])+alpha/Ti[j-1]*(Tco[j]-Tco[j-1])/dzi[j-1] )
+            Ai[j] += (
+                1.0
+                / (2.0 * dz_ave)
+                * (
+                    Dzz[j]
+                    * (
+                        -1.0 / Hpi[j]
+                        + ms * g[j] / (Navo * kb * Ti[j])
+                        + alpha / Ti[j] * (Tco[j + 1] - Tco[j]) / dzi[j]
+                    )
+                    - Dzz[j - 1]
+                    * (
+                        -1.0 / Hpi[j - 1]
+                        + ms * g[j] / (Navo * kb * Ti[j - 1])
+                        + alpha / Ti[j - 1] * (Tco[j] - Tco[j - 1]) / dzi[j - 1]
+                    )
+                )
+            )  # /ysum[j]
+            Bi[j] += (
+                1.0
+                / (2.0 * dz_ave)
+                * Dzz[j]
+                * (
+                    -1.0 / Hpi[j]
+                    + ms * g[j + 1] / (Navo * kb * Ti[j])
+                    + alpha / Ti[j] * (Tco[j + 1] - Tco[j]) / dzi[j]
+                )
+            )
+            Ci[j] += (
+                -1.0
+                / (2.0 * dz_ave)
+                * Dzz[j - 1]
+                * (
+                    -1.0 / Hpi[j - 1]
+                    + ms * g[j - 1] / (Navo * kb * Ti[j - 1])
+                    + alpha / Ti[j - 1] * (Tco[j] - Tco[j - 1]) / dzi[j - 1]
+                )
+            )
 
-        tmp0 = (A[0] + Ai[0])*y[0] + (B[0] + Bi[0])*y[1] # shape of ni-long 1D array
-        tmp1 = np.ndarray.flatten( (np.vstack(A[1:nz-1])*y[1:(nz-1)] + np.vstack(B[1:nz-1])*y[1+1:(nz-1)+1] + np.vstack(C[1:nz-1])*y[1-1:(nz-1)-1]) )
-        tmp1 += np.ndarray.flatten( Ai[1:nz-1]*y[1:(nz-1)] + Bi[1:nz-1]*y[1+1:(nz-1)+1] + Ci[1:nz-1]*y[1-1:(nz-1)-1] ) # shape of (nz-2,ni)
-        tmp2 = (A[nz-1] + Ai[nz-1])*y[nz-1] + (C[nz-1] + Ci[nz-1])*y[nz-2]
+        tmp0 = (A[0] + Ai[0]) * y[0] + (B[0] + Bi[0]) * y[1]  # shape of ni-long 1D array
+        tmp1 = np.ndarray.flatten(
+            (
+                np.vstack(A[1 : nz - 1]) * y[1 : (nz - 1)]
+                + np.vstack(B[1 : nz - 1]) * y[1 + 1 : (nz - 1) + 1]
+                + np.vstack(C[1 : nz - 1]) * y[1 - 1 : (nz - 1) - 1]
+            )
+        )
+        tmp1 += np.ndarray.flatten(
+            Ai[1 : nz - 1] * y[1 : (nz - 1)]
+            + Bi[1 : nz - 1] * y[1 + 1 : (nz - 1) + 1]
+            + Ci[1 : nz - 1] * y[1 - 1 : (nz - 1) - 1]
+        )  # shape of (nz-2,ni)
+        tmp2 = (A[nz - 1] + Ai[nz - 1]) * y[nz - 1] + (C[nz - 1] + Ci[nz - 1]) * y[nz - 2]
         diff = np.append(np.append(tmp0, tmp1), tmp2)
-        diff = diff.reshape(nz,ni)
+        diff = diff.reshape(nz, ni)
 
         if self.cfg.use_topflux == True:
             # Don't forget dz!!! -d phi/ dz
             ### the const flux has no contribution to the jacobian ###
-            diff[-1] += atm.top_flux /dzi[-1]
+            diff[-1] += atm.top_flux / dzi[-1]
         if self.cfg.use_botflux == True:
-            ### the deposition term needs to be included in the jacobian!!!   
-            diff[0] += (atm.bot_flux - y[0]*atm.bot_vdep) /dzi[0]
-        
+            ### the deposition term needs to be included in the jacobian!!!
+            diff[0] += (atm.bot_flux - y[0] * atm.bot_vdep) / dzi[0]
+
         return diff
-            
-    
-    def diffdf_settling_vm(self, y, atm): 
+
+    def diffdf_settling_vm(self, y, atm):
         """
         added vm for molecular diffusion
         function of eddy diffusion including molecular diffusion and the settling velocity for particles, with zero-flux boundary conditions and non-uniform grids (dzi)
         in the form of Aj*y_j + Bj+1*y_j+1 + Cj-1*y_j-1
         """
-        
+
         nz = self.cfg.nz
         y = y.copy()
-        
+
         if self.cfg.non_gas_sp:
-            ysum = np.sum(y[:,atm.gas_indx], axis=1)
-        else: ysum = np.sum(y, axis=1)
-        
+            ysum = np.sum(y[:, atm.gas_indx], axis=1)
+        else:
+            ysum = np.sum(y, axis=1)
+
         dzi = atm.dzi.copy()
         Kzz = atm.Kzz.copy()
         vz = atm.vz.copy()
@@ -1658,87 +2437,166 @@ class ODESolver(object):
         g = atm.g
         Ti = atm.Ti
         Hpi = atm.Hpi
-        
+
         vm = atm.vm
         # shape: nz x ni
         # vm defined in build.py
         # vm = - Dzz_cen * ( ms[np.newaxis,:]*g[:,np.newaxis]/(Navo*kb*Tco[:,np.newaxis]) - 1./Hp[:,np.newaxis] +  alpha/Tco[:,np.newaxis]*(delta_T[:,np.newaxis])/dz[:,np.newaxis]  )
 
-            
         A, B, C = np.zeros(nz), np.zeros(nz), np.zeros(nz)
-        Ai, Bi, Ci = [ np.zeros((nz,ni)) for i in range(3)]
-        
-        A[0] = -1./(dzi[0])*(Kzz[0]/dzi[0]) *(ysum[1]+ysum[0])/2. /ysum[0]     
-        B[0] = 1./(dzi[0])*(Kzz[0]/dzi[0]) *(ysum[1]+ysum[0])/2. /ysum[1] 
-        C[0] = 0 
-        A[nz-1] = -1./(dzi[nz-2])*(Kzz[nz-2]/dzi[nz-2]) *(ysum[nz-1]+ysum[nz-2])/2. /ysum[nz-1] 
-        B[nz-1] = 0 
-        C[nz-1] = 1./(dzi[nz-2])*(Kzz[nz-2]/dzi[nz-2]) *(ysum[nz-1]+ysum[nz-2])/2. /ysum[nz-2] 
-        
-        # vertical adection (with closed B.C.) 
-        A[0] += -( (vz[0]>0)*vz[0] )/dzi[0]
-        B[0] += -( (vz[0]<0)*vz[0] )/dzi[0]
-        A[-1] += ( (vz[-1]<0)*vz[-1] )/dzi[-1]
-        C[-1] += ( (vz[-1]>0)*vz[-1] )/dzi[-1]
+        Ai, Bi, Ci = [np.zeros((nz, ni)) for i in range(3)]
+
+        A[0] = -1.0 / (dzi[0]) * (Kzz[0] / dzi[0]) * (ysum[1] + ysum[0]) / 2.0 / ysum[0]
+        B[0] = 1.0 / (dzi[0]) * (Kzz[0] / dzi[0]) * (ysum[1] + ysum[0]) / 2.0 / ysum[1]
+        C[0] = 0
+        A[nz - 1] = (
+            -1.0
+            / (dzi[nz - 2])
+            * (Kzz[nz - 2] / dzi[nz - 2])
+            * (ysum[nz - 1] + ysum[nz - 2])
+            / 2.0
+            / ysum[nz - 1]
+        )
+        B[nz - 1] = 0
+        C[nz - 1] = (
+            1.0
+            / (dzi[nz - 2])
+            * (Kzz[nz - 2] / dzi[nz - 2])
+            * (ysum[nz - 1] + ysum[nz - 2])
+            / 2.0
+            / ysum[nz - 2]
+        )
+
+        # vertical adection (with closed B.C.)
+        A[0] += -((vz[0] > 0) * vz[0]) / dzi[0]
+        B[0] += -((vz[0] < 0) * vz[0]) / dzi[0]
+        A[-1] += ((vz[-1] < 0) * vz[-1]) / dzi[-1]
+        C[-1] += ((vz[-1] > 0) * vz[-1]) / dzi[-1]
         # vertical adection
-        
+
         # shape of ni-long 1D array
         # Including the settling velocity of the particles and the advective component of molecular diffusion
-        Ai[0] = -1./(dzi[0])*(Dzz[0]/dzi[0]) *(ysum[1]+ysum[0])/2. /ysum[0] \
-        -( (vs[0]>0)*vs[0] )/dzi[0]  
-        Bi[0] = 1./(dzi[0])*(Dzz[0]/dzi[0]) *(ysum[1]+ysum[0])/2. /ysum[1] \
-        -( (vs[0]<0)*vs[0] )/dzi[0]
-        #Ci[0] = 0 
-        Ai[nz-1] = -1./(dzi[-1])*(Dzz[nz-2]/dzi[-1]) *(ysum[nz-1]+ysum[nz-2])/2. /ysum[nz-1] \
-        +( (vm[-1]<0)*vm[-1] )/dzi[-1]  +( (vs[-1]<0)*vs[-1] )/dzi[-1]
-        #Bi[nz-1] = 0
-        Ci[nz-1] = 1./(dzi[-1])*(Dzz[nz-2]/dzi[-1]) *(ysum[nz-1]+ysum[nz-2])/2. /ysum[nz-2] \
-        +( (vm[-1]>0)*vm[-1] )/dzi[-1]  +( (vs[-1]>0)*vs[-1] )/dzi[-1]
-        
-        for j in range(1,nz-1):
-            dz_ave = 0.5*(dzi[j-1] + dzi[j])
-            A[j] = -1./dz_ave * ( Kzz[j]/dzi[j]*(ysum[j+1]+ysum[j])/2. + Kzz[j-1]/dzi[j-1]*(ysum[j]+ysum[j-1])/2. ) /ysum[j]  
-            B[j] = 1./dz_ave * Kzz[j]/dzi[j] *(ysum[j+1]+ysum[j])/2. /ysum[j+1]
-            C[j] = 1./dz_ave * Kzz[j-1]/dzi[j-1] *(ysum[j]+ysum[j-1])/2. /ysum[j-1]
-            
+        Ai[0] = (
+            -1.0 / (dzi[0]) * (Dzz[0] / dzi[0]) * (ysum[1] + ysum[0]) / 2.0 / ysum[0]
+            - ((vs[0] > 0) * vs[0]) / dzi[0]
+        )
+        Bi[0] = (
+            1.0 / (dzi[0]) * (Dzz[0] / dzi[0]) * (ysum[1] + ysum[0]) / 2.0 / ysum[1]
+            - ((vs[0] < 0) * vs[0]) / dzi[0]
+        )
+        # Ci[0] = 0
+        Ai[nz - 1] = (
+            -1.0
+            / (dzi[-1])
+            * (Dzz[nz - 2] / dzi[-1])
+            * (ysum[nz - 1] + ysum[nz - 2])
+            / 2.0
+            / ysum[nz - 1]
+            + ((vm[-1] < 0) * vm[-1]) / dzi[-1]
+            + ((vs[-1] < 0) * vs[-1]) / dzi[-1]
+        )
+        # Bi[nz-1] = 0
+        Ci[nz - 1] = (
+            1.0
+            / (dzi[-1])
+            * (Dzz[nz - 2] / dzi[-1])
+            * (ysum[nz - 1] + ysum[nz - 2])
+            / 2.0
+            / ysum[nz - 2]
+            + ((vm[-1] > 0) * vm[-1]) / dzi[-1]
+            + ((vs[-1] > 0) * vs[-1]) / dzi[-1]
+        )
+
+        for j in range(1, nz - 1):
+            dz_ave = 0.5 * (dzi[j - 1] + dzi[j])
+            A[j] = (
+                -1.0
+                / dz_ave
+                * (
+                    Kzz[j] / dzi[j] * (ysum[j + 1] + ysum[j]) / 2.0
+                    + Kzz[j - 1] / dzi[j - 1] * (ysum[j] + ysum[j - 1]) / 2.0
+                )
+                / ysum[j]
+            )
+            B[j] = 1.0 / dz_ave * Kzz[j] / dzi[j] * (ysum[j + 1] + ysum[j]) / 2.0 / ysum[j + 1]
+            C[j] = (
+                1.0
+                / dz_ave
+                * Kzz[j - 1]
+                / dzi[j - 1]
+                * (ysum[j] + ysum[j - 1])
+                / 2.0
+                / ysum[j - 1]
+            )
+
             # vertical adection
-            A[j] += -( (vz[j]>0)*vz[j] - (vz[j-1]<0)*vz[j-1] )/dz_ave
-            B[j] += -( (vz[j]<0)*vz[j] )/dz_ave
-            C[j] += ( (vz[j-1]>0)*vz[j-1] )/dz_ave
+            A[j] += -((vz[j] > 0) * vz[j] - (vz[j - 1] < 0) * vz[j - 1]) / dz_ave
+            B[j] += -((vz[j] < 0) * vz[j]) / dz_ave
+            C[j] += ((vz[j - 1] > 0) * vz[j - 1]) / dz_ave
             # vertical adection
-            
-            # Ai in the shape of nz*ni and Ai[j] in the shape of ni 
+
+            # Ai in the shape of nz*ni and Ai[j] in the shape of ni
             # Including the settling velocity of the particles
-            
+
             # diffusion component
-            Ai[j] = -1./dz_ave * ( Dzz[j]/dzi[j]*(ysum[j+1]+ysum[j])/2. + Dzz[j-1]/dzi[j-1]*(ysum[j]+ysum[j-1])/2. ) /ysum[j] 
-            Bi[j] = 1./dz_ave * Dzz[j]/dzi[j] *(ysum[j+1]+ysum[j])/2. /ysum[j+1]  
-            Ci[j] = 1./dz_ave * Dzz[j-1]/dzi[j-1] *(ysum[j]+ysum[j-1])/2. /ysum[j-1]  
+            Ai[j] = (
+                -1.0
+                / dz_ave
+                * (
+                    Dzz[j] / dzi[j] * (ysum[j + 1] + ysum[j]) / 2.0
+                    + Dzz[j - 1] / dzi[j - 1] * (ysum[j] + ysum[j - 1]) / 2.0
+                )
+                / ysum[j]
+            )
+            Bi[j] = 1.0 / dz_ave * Dzz[j] / dzi[j] * (ysum[j + 1] + ysum[j]) / 2.0 / ysum[j + 1]
+            Ci[j] = (
+                1.0
+                / dz_ave
+                * Dzz[j - 1]
+                / dzi[j - 1]
+                * (ysum[j] + ysum[j - 1])
+                / 2.0
+                / ysum[j - 1]
+            )
             # diffusion component
-            
+
             # advective component using upwind (inc. from Dzz and from vs)
-            Ai[j] += -( (vm[j]>0)*vm[j] - (vm[j-1]<0)*vm[j-1] )/dz_ave  -( (vs[j]>0)*vs[j] - (vs[j-1]<0)*vs[j-1] )/dz_ave
-            Bi[j] += -( (vm[j]<0)*vm[j] )/dz_ave  -( (vs[j]<0)*vs[j] )/dz_ave
-            Ci[j] += +( (vm[j-1]>0)*vm[j-1] )/dz_ave  +( (vs[j-1]>0)*vs[j-1] )/dz_ave 
+            Ai[j] += (
+                -((vm[j] > 0) * vm[j] - (vm[j - 1] < 0) * vm[j - 1]) / dz_ave
+                - ((vs[j] > 0) * vs[j] - (vs[j - 1] < 0) * vs[j - 1]) / dz_ave
+            )
+            Bi[j] += -((vm[j] < 0) * vm[j]) / dz_ave - ((vs[j] < 0) * vs[j]) / dz_ave
+            Ci[j] += (
+                +((vm[j - 1] > 0) * vm[j - 1]) / dz_ave + ((vs[j - 1] > 0) * vs[j - 1]) / dz_ave
+            )
             # advective component using upwind
-            
-        tmp0 = (A[0] + Ai[0])*y[0] + (B[0] + Bi[0])*y[1] # shape of ni-long 1D array  
-        tmp1 = np.ndarray.flatten( (np.vstack(A[1:nz-1])*y[1:(nz-1)] + np.vstack(B[1:nz-1])*y[1+1:(nz-1)+1] + np.vstack(C[1:nz-1])*y[1-1:(nz-1)-1]) ) 
-        tmp1 += np.ndarray.flatten( Ai[1:nz-1]*y[1:(nz-1)] + Bi[1:nz-1]*y[1+1:(nz-1)+1] + Ci[1:nz-1]*y[1-1:(nz-1)-1] ) # shape of (nz-2,ni)
-        tmp2 = (A[nz-1] + Ai[nz-1])*y[nz-1] + (C[nz-1] + Ci[nz-1])*y[nz-2]
+
+        tmp0 = (A[0] + Ai[0]) * y[0] + (B[0] + Bi[0]) * y[1]  # shape of ni-long 1D array
+        tmp1 = np.ndarray.flatten(
+            (
+                np.vstack(A[1 : nz - 1]) * y[1 : (nz - 1)]
+                + np.vstack(B[1 : nz - 1]) * y[1 + 1 : (nz - 1) + 1]
+                + np.vstack(C[1 : nz - 1]) * y[1 - 1 : (nz - 1) - 1]
+            )
+        )
+        tmp1 += np.ndarray.flatten(
+            Ai[1 : nz - 1] * y[1 : (nz - 1)]
+            + Bi[1 : nz - 1] * y[1 + 1 : (nz - 1) + 1]
+            + Ci[1 : nz - 1] * y[1 - 1 : (nz - 1) - 1]
+        )  # shape of (nz-2,ni)
+        tmp2 = (A[nz - 1] + Ai[nz - 1]) * y[nz - 1] + (C[nz - 1] + Ci[nz - 1]) * y[nz - 2]
         diff = np.append(np.append(tmp0, tmp1), tmp2)
-        diff = diff.reshape(nz,ni)
+        diff = diff.reshape(nz, ni)
 
         if self.cfg.use_topflux == True:
             # Don't forget dz!!! -d phi/ dz
-            ### the const flux has no contribution to the jacobian ### 
-            diff[-1] += atm.top_flux /dzi[-1]
+            ### the const flux has no contribution to the jacobian ###
+            diff[-1] += atm.top_flux / dzi[-1]
         if self.cfg.use_botflux == True:
             ### the deposition term needs to be included in the jacobian!!!
-            diff[0] += (atm.bot_flux - y[0]*atm.bot_vdep) /dzi[0]
+            diff[0] += (atm.bot_flux - y[0] * atm.bot_vdep) / dzi[0]
 
         return diff
-
 
     def jac_tot(self, var, atm):
         """
@@ -1748,11 +2606,12 @@ class ODESolver(object):
 
         nz = self.cfg.nz
         y = var.y.copy()
-        
+
         # TEST condensation excluding non-gaseous species
         if self.cfg.non_gas_sp:
-            ysum = np.sum(y[:,atm.gas_indx], axis=1)
-        else: ysum = np.sum(y, axis=1)
+            ysum = np.sum(y[:, atm.gas_indx], axis=1)
+        else:
+            ysum = np.sum(y, axis=1)
         # TEST condensation excluding non-gaseous species
         dzi = atm.dzi.copy()
         Kzz = atm.Kzz.copy()
@@ -1760,57 +2619,141 @@ class ODESolver(object):
         vz = atm.vz.copy()
         alpha = atm.alpha.copy()
         Tco = atm.Tco
-        mu, ms = atm.mu.copy(),  atm.ms.copy()
+        mu, ms = atm.mu.copy(), atm.ms.copy()
         g = atm.g
 
         # define T_1/2 for the molecular diffusion
-        #Ti = 0.5*(Tco + np.roll(Tco,-1))
-        #Ti = Ti[:-1]
+        # Ti = 0.5*(Tco + np.roll(Tco,-1))
+        # Ti = Ti[:-1]
 
         Ti = atm.Ti.copy()
         Hpi = atm.Hpi.copy()
-
 
         dfdy = achemjac(y, atm.M, var.k)
         j_indx = []
 
         for j in range(nz):
-            j_indx.append( np.arange(j*ni,j*ni+ni) )
+            j_indx.append(np.arange(j * ni, j * ni + ni))
 
-        for j in range(1,nz-1):
+        for j in range(1, nz - 1):
             # excluding the buttom and the top cell
             # at j level consists of ni species
-            dz_ave = 0.5*(dzi[j-1] + dzi[j])
-            dfdy[j_indx[j], j_indx[j]] +=  -1./dz_ave*( Kzz[j]/dzi[j]*(ysum[j+1]+ysum[j])/2. + Kzz[j-1]/dzi[j-1]*(ysum[j-1]+ysum[j])/2. ) /ysum[j] -( (vz[j]>0)*vz[j] - (vz[j-1]<0)*vz[j-1] )/dz_ave
-            dfdy[j_indx[j], j_indx[j+1]] += 1./dz_ave*( Kzz[j]/dzi[j]*(ysum[j+1]+ysum[j])/(2.*ysum[j+1]) ) -( (vz[j]<0)*vz[j] )/dz_ave
-            dfdy[j_indx[j], j_indx[j-1]] += 1./dz_ave*( Kzz[j-1]/dzi[j-1]*(ysum[j-1]+ysum[j])/(2.*ysum[j-1]) ) +( (vz[j-1]>0)*vz[j-1] )/dz_ave
+            dz_ave = 0.5 * (dzi[j - 1] + dzi[j])
+            dfdy[j_indx[j], j_indx[j]] += (
+                -1.0
+                / dz_ave
+                * (
+                    Kzz[j] / dzi[j] * (ysum[j + 1] + ysum[j]) / 2.0
+                    + Kzz[j - 1] / dzi[j - 1] * (ysum[j - 1] + ysum[j]) / 2.0
+                )
+                / ysum[j]
+                - ((vz[j] > 0) * vz[j] - (vz[j - 1] < 0) * vz[j - 1]) / dz_ave
+            )
+            dfdy[j_indx[j], j_indx[j + 1]] += (
+                1.0 / dz_ave * (Kzz[j] / dzi[j] * (ysum[j + 1] + ysum[j]) / (2.0 * ysum[j + 1]))
+                - ((vz[j] < 0) * vz[j]) / dz_ave
+            )
+            dfdy[j_indx[j], j_indx[j - 1]] += (
+                1.0
+                / dz_ave
+                * (Kzz[j - 1] / dzi[j - 1] * (ysum[j - 1] + ysum[j]) / (2.0 * ysum[j - 1]))
+                + ((vz[j - 1] > 0) * vz[j - 1]) / dz_ave
+            )
 
             # [j_indx[j], j_indx[j]] has size ni*ni
-            dfdy[j_indx[j], j_indx[j]] +=  -1./dz_ave*( Dzz[j]/dzi[j]*(ysum[j+1]+ysum[j])/2. + Dzz[j-1]/dzi[j-1]*(ysum[j-1]+ysum[j])/2. ) /ysum[j]\
-            +1./(2.*dz_ave)*( Dzz[j]*(-1./Hpi[j]+ms*g[j]/(Navo*kb*Ti[j])+alpha/Ti[j]*(Tco[j+1]-Tco[j])/dzi[j] ) \
-            - Dzz[j-1]*(-1./Hpi[j-1]+ms*g[j]/(Navo*kb*Ti[j-1])+alpha/Ti[j-1]*(Tco[j]-Tco[j-1])/dzi[j-1] ) )
-            dfdy[j_indx[j], j_indx[j+1]] += 1./dz_ave*( Dzz[j]/dzi[j]*(ysum[j+1]+ysum[j])/(2.*ysum[j+1]) ) \
-            +1./(2.*dz_ave)* Dzz[j]*(-1./Hpi[j]+ms*g[j+1]/(Navo*kb*Ti[j])+alpha/Ti[j]*(Tco[j+1]-Tco[j])/dzi[j] )
-            dfdy[j_indx[j], j_indx[j-1]] += 1./dz_ave*( Dzz[j-1]/dzi[j-1]*(ysum[j-1]+ysum[j])/(2.*ysum[j-1]) ) \
-            -1./(2.*dz_ave)* Dzz[j-1]*(-1./Hpi[j-1]+ms*g[j-1]/(Navo*kb*Ti[j-1])+alpha/Ti[j-1]*(Tco[j]-Tco[j-1])/dzi[j-1] )
+            dfdy[j_indx[j], j_indx[j]] += -1.0 / dz_ave * (
+                Dzz[j] / dzi[j] * (ysum[j + 1] + ysum[j]) / 2.0
+                + Dzz[j - 1] / dzi[j - 1] * (ysum[j - 1] + ysum[j]) / 2.0
+            ) / ysum[j] + 1.0 / (2.0 * dz_ave) * (
+                Dzz[j]
+                * (
+                    -1.0 / Hpi[j]
+                    + ms * g[j] / (Navo * kb * Ti[j])
+                    + alpha / Ti[j] * (Tco[j + 1] - Tco[j]) / dzi[j]
+                )
+                - Dzz[j - 1]
+                * (
+                    -1.0 / Hpi[j - 1]
+                    + ms * g[j] / (Navo * kb * Ti[j - 1])
+                    + alpha / Ti[j - 1] * (Tco[j] - Tco[j - 1]) / dzi[j - 1]
+                )
+            )
+            dfdy[j_indx[j], j_indx[j + 1]] += 1.0 / dz_ave * (
+                Dzz[j] / dzi[j] * (ysum[j + 1] + ysum[j]) / (2.0 * ysum[j + 1])
+            ) + 1.0 / (2.0 * dz_ave) * Dzz[j] * (
+                -1.0 / Hpi[j]
+                + ms * g[j + 1] / (Navo * kb * Ti[j])
+                + alpha / Ti[j] * (Tco[j + 1] - Tco[j]) / dzi[j]
+            )
+            dfdy[j_indx[j], j_indx[j - 1]] += 1.0 / dz_ave * (
+                Dzz[j - 1] / dzi[j - 1] * (ysum[j - 1] + ysum[j]) / (2.0 * ysum[j - 1])
+            ) - 1.0 / (2.0 * dz_ave) * Dzz[j - 1] * (
+                -1.0 / Hpi[j - 1]
+                + ms * g[j - 1] / (Navo * kb * Ti[j - 1])
+                + alpha / Ti[j - 1] * (Tco[j] - Tco[j - 1]) / dzi[j - 1]
+            )
 
-
-        dfdy[j_indx[0], j_indx[0]] += -1./(dzi[0])*(Kzz[0]/dzi[0]) * (ysum[1]+ysum[0])/(2.*ysum[0]) -( (vz[0]>0)*vz[0] )/dzi[0]
-        dfdy[j_indx[0], j_indx[0]] += -1./(dzi[0])*(Dzz[0]/dzi[0]) * (ysum[1]+ysum[0])/(2.*ysum[0]) \
-        +1./(dzi[0])* Dzz[0]/2.*(-1./Hpi[0]+ms*g[0]/(Navo*kb*Ti[0])+alpha/Ti[0]*(Tco[1]-Tco[0])/dzi[0] )
+        dfdy[j_indx[0], j_indx[0]] += (
+            -1.0 / (dzi[0]) * (Kzz[0] / dzi[0]) * (ysum[1] + ysum[0]) / (2.0 * ysum[0])
+            - ((vz[0] > 0) * vz[0]) / dzi[0]
+        )
+        dfdy[j_indx[0], j_indx[0]] += -1.0 / (dzi[0]) * (Dzz[0] / dzi[0]) * (
+            ysum[1] + ysum[0]
+        ) / (2.0 * ysum[0]) + 1.0 / (dzi[0]) * Dzz[0] / 2.0 * (
+            -1.0 / Hpi[0]
+            + ms * g[0] / (Navo * kb * Ti[0])
+            + alpha / Ti[0] * (Tco[1] - Tco[0]) / dzi[0]
+        )
         # deposition velocity
-        if self.cfg.use_botflux == True: dfdy[j_indx[0], j_indx[0]] += -1.*atm.bot_vdep /dzi[0]
+        if self.cfg.use_botflux == True:
+            dfdy[j_indx[0], j_indx[0]] += -1.0 * atm.bot_vdep / dzi[0]
 
-        dfdy[j_indx[0], j_indx[1]] += 1./(dzi[0])*(Kzz[0]/dzi[0]) * (ysum[1]+ysum[0])/(2.*ysum[1]) -( (vz[0]<0)*vz[0] )/dzi[0]
-        dfdy[j_indx[0], j_indx[1]] += 1./(dzi[0])*(Dzz[0]/dzi[0]) * (ysum[1]+ysum[0])/(2.*ysum[1]) \
-        +1./(dzi[0])* Dzz[0]/2.*(-1./Hpi[0]+ms*g[0]/(Navo*kb*Ti[0])+alpha/Ti[0]*(Tco[1]-Tco[0])/dzi[0] )
+        dfdy[j_indx[0], j_indx[1]] += (
+            1.0 / (dzi[0]) * (Kzz[0] / dzi[0]) * (ysum[1] + ysum[0]) / (2.0 * ysum[1])
+            - ((vz[0] < 0) * vz[0]) / dzi[0]
+        )
+        dfdy[j_indx[0], j_indx[1]] += 1.0 / (dzi[0]) * (Dzz[0] / dzi[0]) * (
+            ysum[1] + ysum[0]
+        ) / (2.0 * ysum[1]) + 1.0 / (dzi[0]) * Dzz[0] / 2.0 * (
+            -1.0 / Hpi[0]
+            + ms * g[0] / (Navo * kb * Ti[0])
+            + alpha / Ti[0] * (Tco[1] - Tco[0]) / dzi[0]
+        )
 
-        dfdy[j_indx[nz-1], j_indx[nz-1]] += -1./(dzi[nz-2])*(Kzz[nz-2]/dzi[nz-2]) *(ysum[(nz-1)-1]+ysum[nz-1])/(2.*ysum[nz-1]) +( (vz[-1]<0)*vz[-1] )/dzi[-1]
-        dfdy[j_indx[nz-1], j_indx[nz-1]] += -1./(dzi[nz-2])*(Dzz[nz-2]/dzi[nz-2]) *(ysum[nz-1]+ysum[nz-2])/(2.*ysum[nz-1]) \
-        - 1./(dzi[-1])* Dzz[-1]/2.*(-1./Hpi[-1]+ms*g[-1]/(Navo*kb*Ti[-1])+alpha/Ti[-1]*(Tco[-1]-Tco[-2])/dzi[-1] )
-        dfdy[j_indx[nz-1], j_indx[(nz-1)-1]] += 1./(dzi[nz-2])*(Kzz[nz-2]/dzi[nz-2])* (ysum[(nz-1)-1]+ysum[nz-1])/(2.*ysum[(nz-1)-1]) +( (vz[-1]>0)*vz[-1] )/dzi[-1]
-        dfdy[j_indx[nz-1], j_indx[(nz-1)-1]] += 1./(dzi[nz-2])*(Dzz[nz-2]/dzi[nz-2]) *(ysum[nz-1]+ysum[nz-2])/(2.*ysum[(nz-1)-1]) \
-                -1./(dzi[-1])* Dzz[-1]/2.*(-1./Hpi[-1]+ms*g[-1]/(Navo*kb*Ti[-1])+alpha/Ti[-1]*(Tco[-1]-Tco[-2])/dzi[-1] )
+        dfdy[j_indx[nz - 1], j_indx[nz - 1]] += (
+            -1.0
+            / (dzi[nz - 2])
+            * (Kzz[nz - 2] / dzi[nz - 2])
+            * (ysum[(nz - 1) - 1] + ysum[nz - 1])
+            / (2.0 * ysum[nz - 1])
+            + ((vz[-1] < 0) * vz[-1]) / dzi[-1]
+        )
+        dfdy[j_indx[nz - 1], j_indx[nz - 1]] += -1.0 / (dzi[nz - 2]) * (
+            Dzz[nz - 2] / dzi[nz - 2]
+        ) * (ysum[nz - 1] + ysum[nz - 2]) / (2.0 * ysum[nz - 1]) - 1.0 / (dzi[-1]) * Dzz[
+            -1
+        ] / 2.0 * (
+            -1.0 / Hpi[-1]
+            + ms * g[-1] / (Navo * kb * Ti[-1])
+            + alpha / Ti[-1] * (Tco[-1] - Tco[-2]) / dzi[-1]
+        )
+        dfdy[j_indx[nz - 1], j_indx[(nz - 1) - 1]] += (
+            1.0
+            / (dzi[nz - 2])
+            * (Kzz[nz - 2] / dzi[nz - 2])
+            * (ysum[(nz - 1) - 1] + ysum[nz - 1])
+            / (2.0 * ysum[(nz - 1) - 1])
+            + ((vz[-1] > 0) * vz[-1]) / dzi[-1]
+        )
+        dfdy[j_indx[nz - 1], j_indx[(nz - 1) - 1]] += 1.0 / (dzi[nz - 2]) * (
+            Dzz[nz - 2] / dzi[nz - 2]
+        ) * (ysum[nz - 1] + ysum[nz - 2]) / (2.0 * ysum[(nz - 1) - 1]) - 1.0 / (dzi[-1]) * Dzz[
+            -1
+        ] / 2.0 * (
+            -1.0 / Hpi[-1]
+            + ms * g[-1] / (Navo * kb * Ti[-1])
+            + alpha / Ti[-1] * (Tco[-1] - Tco[-2]) / dzi[-1]
+        )
 
         return dfdy
 
@@ -1826,9 +2769,10 @@ class ODESolver(object):
         y = var.y.copy()
         # TEST condensation excluding non-gaseous species
         if self.cfg.use_condense == True:
-            ysum = np.sum(y[:,atm.gas_indx], axis=1)
-            #ysum = np.sum(y, axis=1)
-        else: ysum = np.sum(y, axis=1)
+            ysum = np.sum(y[:, atm.gas_indx], axis=1)
+            # ysum = np.sum(y, axis=1)
+        else:
+            ysum = np.sum(y, axis=1)
         # TEST condensation excluding non-gaseous species
         dzi = atm.dzi.copy()
         Kzz = atm.Kzz.copy()
@@ -1836,59 +2780,145 @@ class ODESolver(object):
         vz = atm.vz.copy()
         alpha = atm.alpha.copy()
         Tco = atm.Tco
-        mu, ms = atm.mu.copy(),  atm.ms.copy()
+        mu, ms = atm.mu.copy(), atm.ms.copy()
         g = atm.g
 
         Ti = atm.Ti.copy()
         Hpi = atm.Hpi.copy()
 
         # c0 = 1./(r*h) where r = 1. + 1./2.**0.5
-        r = 1. + 1./2.**0.5
-        c0 = 1./(r*var.dt)
+        r = 1.0 + 1.0 / 2.0**0.5
+        c0 = 1.0 / (r * var.dt)
         dfdy = neg_achemjac(y, atm.M, var.k, self.cfg.nz)
         np.fill_diagonal(dfdy, c0 + np.diag(dfdy))
         j_indx = []
 
         for j in range(nz):
-            j_indx.append( np.arange(j*ni,j*ni+ni) )
+            j_indx.append(np.arange(j * ni, j * ni + ni))
 
-        for j in range(1,nz-1):
+        for j in range(1, nz - 1):
             # excluding the buttom and the top cell
             # at j level consists of ni species
-            dz_ave = 0.5*(dzi[j-1] + dzi[j])
-            dfdy[j_indx[j], j_indx[j]] -=  -1./dz_ave*( Kzz[j]/dzi[j]*(ysum[j+1]+ysum[j])/2. + Kzz[j-1]/dzi[j-1]*(ysum[j-1]+ysum[j])/2. ) /ysum[j] -( (vz[j]>0)*vz[j] - (vz[j-1]<0)*vz[j-1] )/dz_ave
-            dfdy[j_indx[j], j_indx[j+1]] -= 1./dz_ave*( Kzz[j]/dzi[j]*(ysum[j+1]+ysum[j])/(2.*ysum[j+1]) ) -( (vz[j]<0)*vz[j] )/dz_ave
-            dfdy[j_indx[j], j_indx[j-1]] -= 1./dz_ave*( Kzz[j-1]/dzi[j-1]*(ysum[j-1]+ysum[j])/(2.*ysum[j-1]) ) +( (vz[j-1]>0)*vz[j-1] )/dz_ave
+            dz_ave = 0.5 * (dzi[j - 1] + dzi[j])
+            dfdy[j_indx[j], j_indx[j]] -= (
+                -1.0
+                / dz_ave
+                * (
+                    Kzz[j] / dzi[j] * (ysum[j + 1] + ysum[j]) / 2.0
+                    + Kzz[j - 1] / dzi[j - 1] * (ysum[j - 1] + ysum[j]) / 2.0
+                )
+                / ysum[j]
+                - ((vz[j] > 0) * vz[j] - (vz[j - 1] < 0) * vz[j - 1]) / dz_ave
+            )
+            dfdy[j_indx[j], j_indx[j + 1]] -= (
+                1.0 / dz_ave * (Kzz[j] / dzi[j] * (ysum[j + 1] + ysum[j]) / (2.0 * ysum[j + 1]))
+                - ((vz[j] < 0) * vz[j]) / dz_ave
+            )
+            dfdy[j_indx[j], j_indx[j - 1]] -= (
+                1.0
+                / dz_ave
+                * (Kzz[j - 1] / dzi[j - 1] * (ysum[j - 1] + ysum[j]) / (2.0 * ysum[j - 1]))
+                + ((vz[j - 1] > 0) * vz[j - 1]) / dz_ave
+            )
 
             # [j_indx[j], j_indx[j]] has size ni*ni
-            dfdy[j_indx[j], j_indx[j]] -=  -1./dz_ave*( Dzz[j]/dzi[j]*(ysum[j+1]+ysum[j])/2. + Dzz[j-1]/dzi[j-1]*(ysum[j-1]+ysum[j])/2. ) /ysum[j]\
-            +1./(2.*dz_ave)*( Dzz[j]*(-1./Hpi[j]+ms*g[j]/(Navo*kb*Ti[j])+alpha/Ti[j]*(Tco[j+1]-Tco[j])/dzi[j] ) \
-            - Dzz[j-1]*(-1./Hpi[j-1]+ms*g[j]/(Navo*kb*Ti[j-1])+alpha/Ti[j-1]*(Tco[j]-Tco[j-1])/dzi[j-1] ) )
-            dfdy[j_indx[j], j_indx[j+1]] -= 1./dz_ave*( Dzz[j]/dzi[j]*(ysum[j+1]+ysum[j])/(2.*ysum[j+1]) ) \
-            +1./(2.*dz_ave)* Dzz[j]*(-1./Hpi[j]+ms*g[j+1]/(Navo*kb*Ti[j])+alpha/Ti[j]*(Tco[j+1]-Tco[j])/dzi[j] )
-            dfdy[j_indx[j], j_indx[j-1]] -= 1./dz_ave*( Dzz[j-1]/dzi[j-1]*(ysum[j-1]+ysum[j])/(2.*ysum[j-1]) ) \
-            -1./(2.*dz_ave)* Dzz[j-1]*(-1./Hpi[j-1]+ms*g[j-1]/(Navo*kb*Ti[j-1])+alpha/Ti[j-1]*(Tco[j]-Tco[j-1])/dzi[j-1] )
+            dfdy[j_indx[j], j_indx[j]] -= -1.0 / dz_ave * (
+                Dzz[j] / dzi[j] * (ysum[j + 1] + ysum[j]) / 2.0
+                + Dzz[j - 1] / dzi[j - 1] * (ysum[j - 1] + ysum[j]) / 2.0
+            ) / ysum[j] + 1.0 / (2.0 * dz_ave) * (
+                Dzz[j]
+                * (
+                    -1.0 / Hpi[j]
+                    + ms * g[j] / (Navo * kb * Ti[j])
+                    + alpha / Ti[j] * (Tco[j + 1] - Tco[j]) / dzi[j]
+                )
+                - Dzz[j - 1]
+                * (
+                    -1.0 / Hpi[j - 1]
+                    + ms * g[j] / (Navo * kb * Ti[j - 1])
+                    + alpha / Ti[j - 1] * (Tco[j] - Tco[j - 1]) / dzi[j - 1]
+                )
+            )
+            dfdy[j_indx[j], j_indx[j + 1]] -= 1.0 / dz_ave * (
+                Dzz[j] / dzi[j] * (ysum[j + 1] + ysum[j]) / (2.0 * ysum[j + 1])
+            ) + 1.0 / (2.0 * dz_ave) * Dzz[j] * (
+                -1.0 / Hpi[j]
+                + ms * g[j + 1] / (Navo * kb * Ti[j])
+                + alpha / Ti[j] * (Tco[j + 1] - Tco[j]) / dzi[j]
+            )
+            dfdy[j_indx[j], j_indx[j - 1]] -= 1.0 / dz_ave * (
+                Dzz[j - 1] / dzi[j - 1] * (ysum[j - 1] + ysum[j]) / (2.0 * ysum[j - 1])
+            ) - 1.0 / (2.0 * dz_ave) * Dzz[j - 1] * (
+                -1.0 / Hpi[j - 1]
+                + ms * g[j - 1] / (Navo * kb * Ti[j - 1])
+                + alpha / Ti[j - 1] * (Tco[j] - Tco[j - 1]) / dzi[j - 1]
+            )
 
-        dfdy[j_indx[0], j_indx[0]] -= -1./(dzi[0])*(Kzz[0]/dzi[0]) * (ysum[1]+ysum[0])/(2.*ysum[0]) -( (vz[0]>0)*vz[0] )/dzi[0]
-        dfdy[j_indx[0], j_indx[0]] -= -1./(dzi[0])*(Dzz[0]/dzi[0]) * (ysum[1]+ysum[0])/(2.*ysum[0]) \
-        +1./(dzi[0])* Dzz[0]/2.*(-1./Hpi[0]+ms*g[0]/(Navo*kb*Ti[0])+alpha/Ti[0]*(Tco[1]-Tco[0])/dzi[0] )
+        dfdy[j_indx[0], j_indx[0]] -= (
+            -1.0 / (dzi[0]) * (Kzz[0] / dzi[0]) * (ysum[1] + ysum[0]) / (2.0 * ysum[0])
+            - ((vz[0] > 0) * vz[0]) / dzi[0]
+        )
+        dfdy[j_indx[0], j_indx[0]] -= -1.0 / (dzi[0]) * (Dzz[0] / dzi[0]) * (
+            ysum[1] + ysum[0]
+        ) / (2.0 * ysum[0]) + 1.0 / (dzi[0]) * Dzz[0] / 2.0 * (
+            -1.0 / Hpi[0]
+            + ms * g[0] / (Navo * kb * Ti[0])
+            + alpha / Ti[0] * (Tco[1] - Tco[0]) / dzi[0]
+        )
         # deposition velocity
-        if self.cfg.use_botflux == True: dfdy[j_indx[0], j_indx[0]] -= -1.*atm.bot_vdep /dzi[0]
-        
-        dfdy[j_indx[0], j_indx[1]] -= 1./(dzi[0])*(Kzz[0]/dzi[0]) * (ysum[1]+ysum[0])/(2.*ysum[1]) -( (vz[0]<0)*vz[0] )/dzi[0]
-        dfdy[j_indx[0], j_indx[1]] -= 1./(dzi[0])*(Dzz[0]/dzi[0]) * (ysum[1]+ysum[0])/(2.*ysum[1]) \
-        +1./(dzi[0])* Dzz[0]/2.*(-1./Hpi[0]+ms*g[0]/(Navo*kb*Ti[0])+alpha/Ti[0]*(Tco[1]-Tco[0])/dzi[0] )
+        if self.cfg.use_botflux == True:
+            dfdy[j_indx[0], j_indx[0]] -= -1.0 * atm.bot_vdep / dzi[0]
 
-        dfdy[j_indx[nz-1], j_indx[nz-1]] -= -1./(dzi[nz-2])*(Kzz[nz-2]/dzi[nz-2]) *(ysum[(nz-1)-1]+ysum[nz-1])/(2.*ysum[nz-1]) +( (vz[-1]<0)*vz[-1] )/dzi[-1]  
-        dfdy[j_indx[nz-1], j_indx[nz-1]] -= -1./(dzi[nz-2])*(Dzz[nz-2]/dzi[nz-2]) *(ysum[nz-1]+ysum[nz-2])/(2.*ysum[nz-1]) \
-        - 1./(dzi[-1])* Dzz[-1]/2.*(-1./Hpi[-1]+ms*g[-1]/(Navo*kb*Ti[-1])+alpha/Ti[-1]*(Tco[-1]-Tco[-2])/dzi[-1] )
-        dfdy[j_indx[nz-1], j_indx[(nz-1)-1]] -= 1./(dzi[nz-2])*(Kzz[nz-2]/dzi[nz-2])* (ysum[(nz-1)-1]+ysum[nz-1])/(2.*ysum[(nz-1)-1]) +( (vz[-1]>0)*vz[-1] )/dzi[-1]  
-        dfdy[j_indx[nz-1], j_indx[(nz-1)-1]] -= 1./(dzi[nz-2])*(Dzz[nz-2]/dzi[nz-2]) *(ysum[nz-1]+ysum[nz-2])/(2.*ysum[(nz-1)-1]) \
-                -1./(dzi[-1])* Dzz[-1]/2.*(-1./Hpi[-1]+ms*g[-1]/(Navo*kb*Ti[-1])+alpha/Ti[-1]*(Tco[-1]-Tco[-2])/dzi[-1] )
+        dfdy[j_indx[0], j_indx[1]] -= (
+            1.0 / (dzi[0]) * (Kzz[0] / dzi[0]) * (ysum[1] + ysum[0]) / (2.0 * ysum[1])
+            - ((vz[0] < 0) * vz[0]) / dzi[0]
+        )
+        dfdy[j_indx[0], j_indx[1]] -= 1.0 / (dzi[0]) * (Dzz[0] / dzi[0]) * (
+            ysum[1] + ysum[0]
+        ) / (2.0 * ysum[1]) + 1.0 / (dzi[0]) * Dzz[0] / 2.0 * (
+            -1.0 / Hpi[0]
+            + ms * g[0] / (Navo * kb * Ti[0])
+            + alpha / Ti[0] * (Tco[1] - Tco[0]) / dzi[0]
+        )
 
-        return dfdy    
+        dfdy[j_indx[nz - 1], j_indx[nz - 1]] -= (
+            -1.0
+            / (dzi[nz - 2])
+            * (Kzz[nz - 2] / dzi[nz - 2])
+            * (ysum[(nz - 1) - 1] + ysum[nz - 1])
+            / (2.0 * ysum[nz - 1])
+            + ((vz[-1] < 0) * vz[-1]) / dzi[-1]
+        )
+        dfdy[j_indx[nz - 1], j_indx[nz - 1]] -= -1.0 / (dzi[nz - 2]) * (
+            Dzz[nz - 2] / dzi[nz - 2]
+        ) * (ysum[nz - 1] + ysum[nz - 2]) / (2.0 * ysum[nz - 1]) - 1.0 / (dzi[-1]) * Dzz[
+            -1
+        ] / 2.0 * (
+            -1.0 / Hpi[-1]
+            + ms * g[-1] / (Navo * kb * Ti[-1])
+            + alpha / Ti[-1] * (Tco[-1] - Tco[-2]) / dzi[-1]
+        )
+        dfdy[j_indx[nz - 1], j_indx[(nz - 1) - 1]] -= (
+            1.0
+            / (dzi[nz - 2])
+            * (Kzz[nz - 2] / dzi[nz - 2])
+            * (ysum[(nz - 1) - 1] + ysum[nz - 1])
+            / (2.0 * ysum[(nz - 1) - 1])
+            + ((vz[-1] > 0) * vz[-1]) / dzi[-1]
+        )
+        dfdy[j_indx[nz - 1], j_indx[(nz - 1) - 1]] -= 1.0 / (dzi[nz - 2]) * (
+            Dzz[nz - 2] / dzi[nz - 2]
+        ) * (ysum[nz - 1] + ysum[nz - 2]) / (2.0 * ysum[(nz - 1) - 1]) - 1.0 / (dzi[-1]) * Dzz[
+            -1
+        ] / 2.0 * (
+            -1.0 / Hpi[-1]
+            + ms * g[-1] / (Navo * kb * Ti[-1])
+            + alpha / Ti[-1] * (Tco[-1] - Tco[-2]) / dzi[-1]
+        )
 
-    def lhs_jac_tot_vm(self, var, atm):      
+        return dfdy
+
+    def lhs_jac_tot_vm(self, var, atm):
         """
         directly constructing lhs = 1./(r*h)*sparse.identity(ni*nz) - dfdy
         jacobian matrix for dn/dt + dphi/dz = P - L (including molecular diffusion)
@@ -1900,9 +2930,10 @@ class ODESolver(object):
 
         # TEST condensation excluding non-gaseous species
         if self.cfg.use_condense == True:
-            ysum = np.sum(y[:,atm.gas_indx], axis=1)
-            #ysum = np.sum(y, axis=1)
-        else: ysum = np.sum(y, axis=1)
+            ysum = np.sum(y[:, atm.gas_indx], axis=1)
+            # ysum = np.sum(y, axis=1)
+        else:
+            ysum = np.sum(y, axis=1)
         # TEST condensation excluding non-gaseous species
         dzi = atm.dzi.copy()
         Kzz = atm.Kzz.copy()
@@ -1910,63 +2941,134 @@ class ODESolver(object):
         vz = atm.vz.copy()
         alpha = atm.alpha.copy()
         Tco = atm.Tco.copy()
-        mu, ms = atm.mu.copy(),  atm.ms.copy()
+        mu, ms = atm.mu.copy(), atm.ms.copy()
         g = atm.g
         vm = atm.vm
-        
+
         Ti = atm.Ti.copy()
         Hpi = atm.Hpi.copy()
 
         # c0 = 1./(r*h) where r = 1. + 1./2.**0.5
-        r = 1. + 1./2.**0.5
-        c0 = 1./(r*var.dt)
+        r = 1.0 + 1.0 / 2.0**0.5
+        c0 = 1.0 / (r * var.dt)
         dfdy = neg_achemjac(y, atm.M, var.k)
-        np.fill_diagonal(dfdy, c0 + np.diag(dfdy)) 
+        np.fill_diagonal(dfdy, c0 + np.diag(dfdy))
         j_indx = []
-        
-        for j in range(nz):
-            j_indx.append( np.arange(j*ni,j*ni+ni) )
 
-        for j in range(1,nz-1):
+        for j in range(nz):
+            j_indx.append(np.arange(j * ni, j * ni + ni))
+
+        for j in range(1, nz - 1):
             # excluding the buttom and the top cell
             # at j level consists of ni species
-            dz_ave = 0.5*(dzi[j-1] + dzi[j])
-            dfdy[j_indx[j], j_indx[j]] -=  -1./dz_ave*( Kzz[j]/dzi[j]*(ysum[j+1]+ysum[j])/2. + Kzz[j-1]/dzi[j-1]*(ysum[j-1]+ysum[j])/2. ) /ysum[j] -( (vz[j]>0)*vz[j] - (vz[j-1]<0)*vz[j-1] )/dz_ave
-            dfdy[j_indx[j], j_indx[j+1]] -= 1./dz_ave*( Kzz[j]/dzi[j]*(ysum[j+1]+ysum[j])/(2.*ysum[j+1]) ) -( (vz[j]<0)*vz[j] )/dz_ave
-            dfdy[j_indx[j], j_indx[j-1]] -= 1./dz_ave*( Kzz[j-1]/dzi[j-1]*(ysum[j-1]+ysum[j])/(2.*ysum[j-1]) ) +( (vz[j-1]>0)*vz[j-1] )/dz_ave
+            dz_ave = 0.5 * (dzi[j - 1] + dzi[j])
+            dfdy[j_indx[j], j_indx[j]] -= (
+                -1.0
+                / dz_ave
+                * (
+                    Kzz[j] / dzi[j] * (ysum[j + 1] + ysum[j]) / 2.0
+                    + Kzz[j - 1] / dzi[j - 1] * (ysum[j - 1] + ysum[j]) / 2.0
+                )
+                / ysum[j]
+                - ((vz[j] > 0) * vz[j] - (vz[j - 1] < 0) * vz[j - 1]) / dz_ave
+            )
+            dfdy[j_indx[j], j_indx[j + 1]] -= (
+                1.0 / dz_ave * (Kzz[j] / dzi[j] * (ysum[j + 1] + ysum[j]) / (2.0 * ysum[j + 1]))
+                - ((vz[j] < 0) * vz[j]) / dz_ave
+            )
+            dfdy[j_indx[j], j_indx[j - 1]] -= (
+                1.0
+                / dz_ave
+                * (Kzz[j - 1] / dzi[j - 1] * (ysum[j - 1] + ysum[j]) / (2.0 * ysum[j - 1]))
+                + ((vz[j - 1] > 0) * vz[j - 1]) / dz_ave
+            )
 
             # [j_indx[j], j_indx[j]] has size ni*ni
-            dfdy[j_indx[j], j_indx[j]] -=  -1./dz_ave*( Dzz[j]/dzi[j]*(ysum[j+1]+ysum[j])/2. + Dzz[j-1]/dzi[j-1]*(ysum[j-1]+ysum[j])/2. ) /ysum[j]\
-            -( (vm[j]>0)*vm[j] - (vm[j-1]<0)*vm[j-1] )/dz_ave
-            dfdy[j_indx[j], j_indx[j+1]] -= 1./dz_ave*( Dzz[j]/dzi[j]*(ysum[j+1]+ysum[j])/(2.*ysum[j+1]) ) \
-            -( (vm[j]<0)*vm[j] )/dz_ave
-            dfdy[j_indx[j], j_indx[j-1]] -= 1./dz_ave*( Dzz[j-1]/dzi[j-1]*(ysum[j-1]+ysum[j])/(2.*ysum[j-1]) ) \
-            +( (vm[j-1]>0)*vm[j-1] )/dz_ave
-    
-        dfdy[j_indx[0], j_indx[0]] -= -1./(dzi[0])*(Kzz[0]/dzi[0]) * (ysum[1]+ysum[0])/(2.*ysum[0]) -( (vz[0]>0)*vz[0] )/dzi[0]
-        dfdy[j_indx[0], j_indx[0]] -= -1./(dzi[0])*(Dzz[0]/dzi[0]) * (ysum[1]+ysum[0])/(2.*ysum[0]) -( (vm[0]>0)*vm[0] )/dzi[0]
+            dfdy[j_indx[j], j_indx[j]] -= (
+                -1.0
+                / dz_ave
+                * (
+                    Dzz[j] / dzi[j] * (ysum[j + 1] + ysum[j]) / 2.0
+                    + Dzz[j - 1] / dzi[j - 1] * (ysum[j - 1] + ysum[j]) / 2.0
+                )
+                / ysum[j]
+                - ((vm[j] > 0) * vm[j] - (vm[j - 1] < 0) * vm[j - 1]) / dz_ave
+            )
+            dfdy[j_indx[j], j_indx[j + 1]] -= (
+                1.0 / dz_ave * (Dzz[j] / dzi[j] * (ysum[j + 1] + ysum[j]) / (2.0 * ysum[j + 1]))
+                - ((vm[j] < 0) * vm[j]) / dz_ave
+            )
+            dfdy[j_indx[j], j_indx[j - 1]] -= (
+                1.0
+                / dz_ave
+                * (Dzz[j - 1] / dzi[j - 1] * (ysum[j - 1] + ysum[j]) / (2.0 * ysum[j - 1]))
+                + ((vm[j - 1] > 0) * vm[j - 1]) / dz_ave
+            )
+
+        dfdy[j_indx[0], j_indx[0]] -= (
+            -1.0 / (dzi[0]) * (Kzz[0] / dzi[0]) * (ysum[1] + ysum[0]) / (2.0 * ysum[0])
+            - ((vz[0] > 0) * vz[0]) / dzi[0]
+        )
+        dfdy[j_indx[0], j_indx[0]] -= (
+            -1.0 / (dzi[0]) * (Dzz[0] / dzi[0]) * (ysum[1] + ysum[0]) / (2.0 * ysum[0])
+            - ((vm[0] > 0) * vm[0]) / dzi[0]
+        )
         # deposition velocity
-        if self.cfg.use_botflux == True: dfdy[j_indx[0], j_indx[0]] -= -1.*atm.bot_vdep /dzi[0]
+        if self.cfg.use_botflux == True:
+            dfdy[j_indx[0], j_indx[0]] -= -1.0 * atm.bot_vdep / dzi[0]
         # diffusion-limited escape
-        if self.cfg.diff_esc: # not empty list
+        if self.cfg.diff_esc:  # not empty list
             diff_lim = np.zeros(ni)
             for sp in self.cfg.diff_esc:
-                if y[-1,species.index(sp)] > 0:
-                    diff_lim[species.index(sp)] += atm.top_flux[species.index(sp)] /y[-1,species.index(sp)]
-            dfdy[j_indx[-1], j_indx[-1]] -= diff_lim # negative
+                if y[-1, species.index(sp)] > 0:
+                    diff_lim[species.index(sp)] += (
+                        atm.top_flux[species.index(sp)] / y[-1, species.index(sp)]
+                    )
+            dfdy[j_indx[-1], j_indx[-1]] -= diff_lim  # negative
 
-        dfdy[j_indx[0], j_indx[1]] -= 1./(dzi[0])*(Kzz[0]/dzi[0]) * (ysum[1]+ysum[0])/(2.*ysum[1]) -( (vz[0]<0)*vz[0] )/dzi[0]
-        dfdy[j_indx[0], j_indx[1]] -= 1./(dzi[0])*(Dzz[0]/dzi[0]) * (ysum[1]+ysum[0])/(2.*ysum[1]) -( (vm[0]<0)*vm[0] )/dzi[0]
+        dfdy[j_indx[0], j_indx[1]] -= (
+            1.0 / (dzi[0]) * (Kzz[0] / dzi[0]) * (ysum[1] + ysum[0]) / (2.0 * ysum[1])
+            - ((vz[0] < 0) * vz[0]) / dzi[0]
+        )
+        dfdy[j_indx[0], j_indx[1]] -= (
+            1.0 / (dzi[0]) * (Dzz[0] / dzi[0]) * (ysum[1] + ysum[0]) / (2.0 * ysum[1])
+            - ((vm[0] < 0) * vm[0]) / dzi[0]
+        )
 
-        dfdy[j_indx[nz-1], j_indx[nz-1]] -= -1./(dzi[nz-2])*(Kzz[nz-2]/dzi[nz-2]) *(ysum[(nz-1)-1]+ysum[nz-1])/(2.*ysum[nz-1]) +( (vz[-1]<0)*vz[-1] )/dzi[-1]
-        dfdy[j_indx[nz-1], j_indx[nz-1]] -= -1./(dzi[nz-2])*(Dzz[nz-2]/dzi[nz-2]) *(ysum[nz-1]+ysum[nz-2])/(2.*ysum[nz-1]) \
-        +( (vm[-1]<0)*vm[-1] )/dzi[-1]
-        dfdy[j_indx[nz-1], j_indx[(nz-1)-1]] -= 1./(dzi[nz-2])*(Kzz[nz-2]/dzi[nz-2])* (ysum[(nz-1)-1]+ysum[nz-1])/(2.*ysum[(nz-1)-1]) +( (vz[-1]>0)*vz[-1] )/dzi[-1]
-        dfdy[j_indx[nz-1], j_indx[(nz-1)-1]] -= 1./(dzi[nz-2])*(Dzz[nz-2]/dzi[nz-2]) *(ysum[nz-1]+ysum[nz-2])/(2.*ysum[(nz-1)-1]) \
-        +( (vm[-1]>0)*vm[-1] )/dzi[-1]
+        dfdy[j_indx[nz - 1], j_indx[nz - 1]] -= (
+            -1.0
+            / (dzi[nz - 2])
+            * (Kzz[nz - 2] / dzi[nz - 2])
+            * (ysum[(nz - 1) - 1] + ysum[nz - 1])
+            / (2.0 * ysum[nz - 1])
+            + ((vz[-1] < 0) * vz[-1]) / dzi[-1]
+        )
+        dfdy[j_indx[nz - 1], j_indx[nz - 1]] -= (
+            -1.0
+            / (dzi[nz - 2])
+            * (Dzz[nz - 2] / dzi[nz - 2])
+            * (ysum[nz - 1] + ysum[nz - 2])
+            / (2.0 * ysum[nz - 1])
+            + ((vm[-1] < 0) * vm[-1]) / dzi[-1]
+        )
+        dfdy[j_indx[nz - 1], j_indx[(nz - 1) - 1]] -= (
+            1.0
+            / (dzi[nz - 2])
+            * (Kzz[nz - 2] / dzi[nz - 2])
+            * (ysum[(nz - 1) - 1] + ysum[nz - 1])
+            / (2.0 * ysum[(nz - 1) - 1])
+            + ((vz[-1] > 0) * vz[-1]) / dzi[-1]
+        )
+        dfdy[j_indx[nz - 1], j_indx[(nz - 1) - 1]] -= (
+            1.0
+            / (dzi[nz - 2])
+            * (Dzz[nz - 2] / dzi[nz - 2])
+            * (ysum[nz - 1] + ysum[nz - 2])
+            / (2.0 * ysum[(nz - 1) - 1])
+            + ((vm[-1] > 0) * vm[-1]) / dzi[-1]
+        )
 
         return dfdy
-
 
     def lhs_jac_no_mol(self, var, atm):
         """
@@ -1980,40 +3082,79 @@ class ODESolver(object):
         y = var.y.copy()
         # TEST condensation excluding non-gaseous species
         if self.cfg.non_gas_sp:
-            ysum = np.sum(y[:,atm.gas_indx], axis=1)
-        else: ysum = np.sum(y, axis=1)
+            ysum = np.sum(y[:, atm.gas_indx], axis=1)
+        else:
+            ysum = np.sum(y, axis=1)
         # TEST condensation excluding non-gaseous species
         dzi = atm.dzi.copy()
         Kzz = atm.Kzz.copy()
         vz = atm.vz.copy()
         Tco = atm.Tco
-        mu, ms = atm.mu.copy(),  atm.ms.copy()
+        mu, ms = atm.mu.copy(), atm.ms.copy()
 
-        r = 1. + 1./2.**0.5
-        c0 = 1./(r*var.dt)
+        r = 1.0 + 1.0 / 2.0**0.5
+        c0 = 1.0 / (r * var.dt)
         dfdy = neg_achemjac(y, atm.M, var.k, self.cfg.nz)
         np.fill_diagonal(dfdy, c0 + np.diag(dfdy))
         j_indx = []
 
         for j in range(nz):
-            j_indx.append( np.arange(j*ni,j*ni+ni) )
+            j_indx.append(np.arange(j * ni, j * ni + ni))
 
-        for j in range(1,nz-1):
+        for j in range(1, nz - 1):
             # excluding the buttom and the top cell
             # at j level consists of ni species
-            dz_ave = 0.5*(dzi[j-1] + dzi[j])
-            dfdy[j_indx[j], j_indx[j]] -=  -1./dz_ave*( Kzz[j]/dzi[j]*(ysum[j+1]+ysum[j])/2. + Kzz[j-1]/dzi[j-1]*(ysum[j-1]+ysum[j])/2. ) /ysum[j] -( (vz[j]>0)*vz[j] - (vz[j-1]<0)*vz[j-1] )/dz_ave
-            dfdy[j_indx[j], j_indx[j+1]] -= 1./dz_ave*( Kzz[j]/dzi[j]*(ysum[j+1]+ysum[j])/(2.*ysum[j+1]) ) -( (vz[j]<0)*vz[j] )/dz_ave
-            dfdy[j_indx[j], j_indx[j-1]] -= 1./dz_ave*( Kzz[j-1]/dzi[j-1]*(ysum[j-1]+ysum[j])/(2.*ysum[j-1]) ) +( (vz[j-1]>0)*vz[j-1] )/dz_ave
+            dz_ave = 0.5 * (dzi[j - 1] + dzi[j])
+            dfdy[j_indx[j], j_indx[j]] -= (
+                -1.0
+                / dz_ave
+                * (
+                    Kzz[j] / dzi[j] * (ysum[j + 1] + ysum[j]) / 2.0
+                    + Kzz[j - 1] / dzi[j - 1] * (ysum[j - 1] + ysum[j]) / 2.0
+                )
+                / ysum[j]
+                - ((vz[j] > 0) * vz[j] - (vz[j - 1] < 0) * vz[j - 1]) / dz_ave
+            )
+            dfdy[j_indx[j], j_indx[j + 1]] -= (
+                1.0 / dz_ave * (Kzz[j] / dzi[j] * (ysum[j + 1] + ysum[j]) / (2.0 * ysum[j + 1]))
+                - ((vz[j] < 0) * vz[j]) / dz_ave
+            )
+            dfdy[j_indx[j], j_indx[j - 1]] -= (
+                1.0
+                / dz_ave
+                * (Kzz[j - 1] / dzi[j - 1] * (ysum[j - 1] + ysum[j]) / (2.0 * ysum[j - 1]))
+                + ((vz[j - 1] > 0) * vz[j - 1]) / dz_ave
+            )
 
-        dfdy[j_indx[0], j_indx[0]] -= -1./(dzi[0])*(Kzz[0]/dzi[0]) * (ysum[1]+ysum[0])/(2.*ysum[0]) -( (vz[0]>0)*vz[0] )/dzi[0]
+        dfdy[j_indx[0], j_indx[0]] -= (
+            -1.0 / (dzi[0]) * (Kzz[0] / dzi[0]) * (ysum[1] + ysum[0]) / (2.0 * ysum[0])
+            - ((vz[0] > 0) * vz[0]) / dzi[0]
+        )
         # deposition velocity
-        if self.cfg.use_botflux == True: dfdy[j_indx[0], j_indx[0]] -= -1.*atm.bot_vdep /dzi[0]
+        if self.cfg.use_botflux == True:
+            dfdy[j_indx[0], j_indx[0]] -= -1.0 * atm.bot_vdep / dzi[0]
 
-        dfdy[j_indx[0], j_indx[1]] -= 1./(dzi[0])*(Kzz[0]/dzi[0]) * (ysum[1]+ysum[0])/(2.*ysum[1]) -( (vz[0]<0)*vz[0] )/dzi[0]
+        dfdy[j_indx[0], j_indx[1]] -= (
+            1.0 / (dzi[0]) * (Kzz[0] / dzi[0]) * (ysum[1] + ysum[0]) / (2.0 * ysum[1])
+            - ((vz[0] < 0) * vz[0]) / dzi[0]
+        )
 
-        dfdy[j_indx[nz-1], j_indx[nz-1]] -= -1./(dzi[nz-2])*(Kzz[nz-2]/dzi[nz-2]) *(ysum[(nz-1)-1]+ysum[nz-1])/(2.*ysum[nz-1]) +( (vz[-1]<0)*vz[-1] )/dzi[-1]
-        dfdy[j_indx[nz-1], j_indx[(nz-1)-1]] -= 1./(dzi[nz-2])*(Kzz[nz-2]/dzi[nz-2])* (ysum[(nz-1)-1]+ysum[nz-1])/(2.*ysum[(nz-1)-1]) +( (vz[-1]>0)*vz[-1] )/dzi[-1]
+        dfdy[j_indx[nz - 1], j_indx[nz - 1]] -= (
+            -1.0
+            / (dzi[nz - 2])
+            * (Kzz[nz - 2] / dzi[nz - 2])
+            * (ysum[(nz - 1) - 1] + ysum[nz - 1])
+            / (2.0 * ysum[nz - 1])
+            + ((vz[-1] < 0) * vz[-1]) / dzi[-1]
+        )
+        dfdy[j_indx[nz - 1], j_indx[(nz - 1) - 1]] -= (
+            1.0
+            / (dzi[nz - 2])
+            * (Kzz[nz - 2] / dzi[nz - 2])
+            * (ysum[(nz - 1) - 1] + ysum[nz - 1])
+            / (2.0 * ysum[(nz - 1) - 1])
+            + ((vz[-1] > 0) * vz[-1]) / dzi[-1]
+        )
 
         return dfdy
 
@@ -2029,8 +3170,9 @@ class ODESolver(object):
         y = var.y.copy()
         # TEST condensation excluding non-gaseous species
         if self.cfg.non_gas_sp:
-            ysum = np.sum(y[:,atm.gas_indx], axis=1)
-        else: ysum = np.sum(y, axis=1)
+            ysum = np.sum(y[:, atm.gas_indx], axis=1)
+        else:
+            ysum = np.sum(y, axis=1)
         # TEST condensation excluding non-gaseous species
         dzi = atm.dzi.copy()
         Kzz = atm.Kzz.copy()
@@ -2038,62 +3180,141 @@ class ODESolver(object):
         vz = atm.vz.copy()
         alpha = atm.alpha.copy()
         Tco = atm.Tco
-        mu, ms = atm.mu.copy(),  atm.ms.copy()
+        mu, ms = atm.mu.copy(), atm.ms.copy()
         g = atm.g
 
         Ti = atm.Ti.copy()
         Hpi = atm.Hpi.copy()
 
-        r = 1. + 1./2.**0.5
-        c0 = 1./(r*var.dt)
+        r = 1.0 + 1.0 / 2.0**0.5
+        c0 = 1.0 / (r * var.dt)
         dfdy = neg_achemjac(y, atm.M, var.k, self.cfg.nz)
         np.fill_diagonal(dfdy, c0 + np.diag(dfdy))
         j_indx = []
 
         for j in range(nz):
-            j_indx.append( np.arange(j*ni,j*ni+ni) )
+            j_indx.append(np.arange(j * ni, j * ni + ni))
 
-        for j in range(1,nz-1):
+        for j in range(1, nz - 1):
             # excluding the buttom and the top cell
             # at j level consists of ni species
-            dz_ave = 0.5*(dzi[j-1] + dzi[j])
-            dfdy[j_indx[j], j_indx[j]] -=  -1./dz_ave*( Kzz[j]/dzi[j]*(ysum[j+1]+ysum[j])/2. + Kzz[j-1]/dzi[j-1]*(ysum[j-1]+ysum[j])/2. ) /ysum[j] -( (vz[j]>0)*vz[j] - (vz[j-1]<0)*vz[j-1] )/dz_ave
-            dfdy[j_indx[j], j_indx[j+1]] -= 1./dz_ave*( Kzz[j]/dzi[j]*(ysum[j+1]+ysum[j])/(2.*ysum[j+1]) ) -( (vz[j]<0)*vz[j] )/dz_ave
-            dfdy[j_indx[j], j_indx[j-1]] -= 1./dz_ave*( Kzz[j-1]/dzi[j-1]*(ysum[j-1]+ysum[j])/(2.*ysum[j-1]) ) +( (vz[j-1]>0)*vz[j-1] )/dz_ave
+            dz_ave = 0.5 * (dzi[j - 1] + dzi[j])
+            dfdy[j_indx[j], j_indx[j]] -= (
+                -1.0
+                / dz_ave
+                * (
+                    Kzz[j] / dzi[j] * (ysum[j + 1] + ysum[j]) / 2.0
+                    + Kzz[j - 1] / dzi[j - 1] * (ysum[j - 1] + ysum[j]) / 2.0
+                )
+                / ysum[j]
+                - ((vz[j] > 0) * vz[j] - (vz[j - 1] < 0) * vz[j - 1]) / dz_ave
+            )
+            dfdy[j_indx[j], j_indx[j + 1]] -= (
+                1.0 / dz_ave * (Kzz[j] / dzi[j] * (ysum[j + 1] + ysum[j]) / (2.0 * ysum[j + 1]))
+                - ((vz[j] < 0) * vz[j]) / dz_ave
+            )
+            dfdy[j_indx[j], j_indx[j - 1]] -= (
+                1.0
+                / dz_ave
+                * (Kzz[j - 1] / dzi[j - 1] * (ysum[j - 1] + ysum[j]) / (2.0 * ysum[j - 1]))
+                + ((vz[j - 1] > 0) * vz[j - 1]) / dz_ave
+            )
 
             # [j_indx[j], j_indx[j]] has size ni*ni
-            dfdy[j_indx[j], j_indx[j]] -=  -1./dz_ave*( Dzz[j]/dzi[j]*(ysum[j+1]+ysum[j])/2. + Dzz[j-1]/dzi[j-1]*(ysum[j-1]+ysum[j])/2. ) /ysum[j]\
-            +1./(2.*dz_ave)*( Dzz[j]*(-1./Hpi[j]+ms*g[j]/(Navo*kb*Ti[j])+alpha/Ti[j]*(Tco[j+1]-Tco[j])/dzi[j] ) \
-            - Dzz[j-1]*(-1./Hpi[j-1]+ms*g[j]/(Navo*kb*Ti[j-1])+alpha/Ti[j-1]*(Tco[j]-Tco[j-1])/dzi[j-1] ) )
-            dfdy[j_indx[j], j_indx[j+1]] -= 1./dz_ave*( Dzz[j]/dzi[j]*(ysum[j+1]+ysum[j])/(2.*ysum[j+1]) ) \
-            +1./(2.*dz_ave)* Dzz[j]*(-1./Hpi[j]+ms*g[j+1]/(Navo*kb*Ti[j])+alpha/Ti[j]*(Tco[j+1]-Tco[j])/dzi[j] )
-            dfdy[j_indx[j], j_indx[j-1]] -= 1./dz_ave*( Dzz[j-1]/dzi[j-1]*(ysum[j-1]+ysum[j])/(2.*ysum[j-1]) ) \
-            -1./(2.*dz_ave)* Dzz[j-1]*(-1./Hpi[j-1]+ms*g[j-1]/(Navo*kb*Ti[j-1])+alpha/Ti[j-1]*(Tco[j]-Tco[j-1])/dzi[j-1] )
+            dfdy[j_indx[j], j_indx[j]] -= -1.0 / dz_ave * (
+                Dzz[j] / dzi[j] * (ysum[j + 1] + ysum[j]) / 2.0
+                + Dzz[j - 1] / dzi[j - 1] * (ysum[j - 1] + ysum[j]) / 2.0
+            ) / ysum[j] + 1.0 / (2.0 * dz_ave) * (
+                Dzz[j]
+                * (
+                    -1.0 / Hpi[j]
+                    + ms * g[j] / (Navo * kb * Ti[j])
+                    + alpha / Ti[j] * (Tco[j + 1] - Tco[j]) / dzi[j]
+                )
+                - Dzz[j - 1]
+                * (
+                    -1.0 / Hpi[j - 1]
+                    + ms * g[j] / (Navo * kb * Ti[j - 1])
+                    + alpha / Ti[j - 1] * (Tco[j] - Tco[j - 1]) / dzi[j - 1]
+                )
+            )
+            dfdy[j_indx[j], j_indx[j + 1]] -= 1.0 / dz_ave * (
+                Dzz[j] / dzi[j] * (ysum[j + 1] + ysum[j]) / (2.0 * ysum[j + 1])
+            ) + 1.0 / (2.0 * dz_ave) * Dzz[j] * (
+                -1.0 / Hpi[j]
+                + ms * g[j + 1] / (Navo * kb * Ti[j])
+                + alpha / Ti[j] * (Tco[j + 1] - Tco[j]) / dzi[j]
+            )
+            dfdy[j_indx[j], j_indx[j - 1]] -= 1.0 / dz_ave * (
+                Dzz[j - 1] / dzi[j - 1] * (ysum[j - 1] + ysum[j]) / (2.0 * ysum[j - 1])
+            ) - 1.0 / (2.0 * dz_ave) * Dzz[j - 1] * (
+                -1.0 / Hpi[j - 1]
+                + ms * g[j - 1] / (Navo * kb * Ti[j - 1])
+                + alpha / Ti[j - 1] * (Tco[j] - Tco[j - 1]) / dzi[j - 1]
+            )
 
         # deposition velocity (off with fixed all BC)
         # if self.cfg.use_botflux == True: dfdy[j_indx[0], j_indx[0]] -= -1.*atm.bot_vdep /dzi[0]
 
         # diffusion-limited escape
-        if self.cfg.diff_esc: # not empty list
+        if self.cfg.diff_esc:  # not empty list
             diff_lim = np.zeros(ni)
             for sp in self.cfg.diff_esc:
-                if y[-1,species.index(sp)] > 0:
-                    diff_lim[species.index(sp)] += atm.top_flux[species.index(sp)] /y[-1,species.index(sp)]
-            dfdy[j_indx[-1], j_indx[-1]] -= diff_lim # negative
+                if y[-1, species.index(sp)] > 0:
+                    diff_lim[species.index(sp)] += (
+                        atm.top_flux[species.index(sp)] / y[-1, species.index(sp)]
+                    )
+            dfdy[j_indx[-1], j_indx[-1]] -= diff_lim  # negative
 
         # Fix bottom BC
-        dfdy[:, j_indx[0]] = 0.
+        dfdy[:, j_indx[0]] = 0.0
 
-        dfdy[j_indx[0], j_indx[1]] -= 1./(dzi[0])*(Kzz[0]/dzi[0]) * (ysum[1]+ysum[0])/(2.*ysum[1]) -( (vz[0]<0)*vz[0] )/dzi[0]
-        dfdy[j_indx[0], j_indx[1]] -= 1./(dzi[0])*(Dzz[0]/dzi[0]) * (ysum[1]+ysum[0])/(2.*ysum[1]) \
-        +1./(dzi[0])* Dzz[0]/2.*(-1./Hpi[0]+ms*g[0]/(Navo*kb*Ti[0])+alpha/Ti[0]*(Tco[1]-Tco[0])/dzi[0] )
+        dfdy[j_indx[0], j_indx[1]] -= (
+            1.0 / (dzi[0]) * (Kzz[0] / dzi[0]) * (ysum[1] + ysum[0]) / (2.0 * ysum[1])
+            - ((vz[0] < 0) * vz[0]) / dzi[0]
+        )
+        dfdy[j_indx[0], j_indx[1]] -= 1.0 / (dzi[0]) * (Dzz[0] / dzi[0]) * (
+            ysum[1] + ysum[0]
+        ) / (2.0 * ysum[1]) + 1.0 / (dzi[0]) * Dzz[0] / 2.0 * (
+            -1.0 / Hpi[0]
+            + ms * g[0] / (Navo * kb * Ti[0])
+            + alpha / Ti[0] * (Tco[1] - Tco[0]) / dzi[0]
+        )
 
-        dfdy[j_indx[nz-1], j_indx[nz-1]] -= -1./(dzi[nz-2])*(Kzz[nz-2]/dzi[nz-2]) *(ysum[(nz-1)-1]+ysum[nz-1])/(2.*ysum[nz-1]) +( (vz[-1]<0)*vz[-1] )/dzi[-1]
-        dfdy[j_indx[nz-1], j_indx[nz-1]] -= -1./(dzi[nz-2])*(Dzz[nz-2]/dzi[nz-2]) *(ysum[nz-1]+ysum[nz-2])/(2.*ysum[nz-1]) \
-        - 1./(dzi[-1])* Dzz[-1]/2.*(-1./Hpi[-1]+ms*g[-1]/(Navo*kb*Ti[-1])+alpha/Ti[-1]*(Tco[-1]-Tco[-2])/dzi[-1] )
-        dfdy[j_indx[nz-1], j_indx[(nz-1)-1]] -= 1./(dzi[nz-2])*(Kzz[nz-2]/dzi[nz-2])* (ysum[(nz-1)-1]+ysum[nz-1])/(2.*ysum[(nz-1)-1]) +( (vz[-1]>0)*vz[-1] )/dzi[-1]
-        dfdy[j_indx[nz-1], j_indx[(nz-1)-1]] -= 1./(dzi[nz-2])*(Dzz[nz-2]/dzi[nz-2]) *(ysum[nz-1]+ysum[nz-2])/(2.*ysum[(nz-1)-1]) \
-                -1./(dzi[-1])* Dzz[-1]/2.*(-1./Hpi[-1]+ms*g[-1]/(Navo*kb*Ti[-1])+alpha/Ti[-1]*(Tco[-1]-Tco[-2])/dzi[-1] )
+        dfdy[j_indx[nz - 1], j_indx[nz - 1]] -= (
+            -1.0
+            / (dzi[nz - 2])
+            * (Kzz[nz - 2] / dzi[nz - 2])
+            * (ysum[(nz - 1) - 1] + ysum[nz - 1])
+            / (2.0 * ysum[nz - 1])
+            + ((vz[-1] < 0) * vz[-1]) / dzi[-1]
+        )
+        dfdy[j_indx[nz - 1], j_indx[nz - 1]] -= -1.0 / (dzi[nz - 2]) * (
+            Dzz[nz - 2] / dzi[nz - 2]
+        ) * (ysum[nz - 1] + ysum[nz - 2]) / (2.0 * ysum[nz - 1]) - 1.0 / (dzi[-1]) * Dzz[
+            -1
+        ] / 2.0 * (
+            -1.0 / Hpi[-1]
+            + ms * g[-1] / (Navo * kb * Ti[-1])
+            + alpha / Ti[-1] * (Tco[-1] - Tco[-2]) / dzi[-1]
+        )
+        dfdy[j_indx[nz - 1], j_indx[(nz - 1) - 1]] -= (
+            1.0
+            / (dzi[nz - 2])
+            * (Kzz[nz - 2] / dzi[nz - 2])
+            * (ysum[(nz - 1) - 1] + ysum[nz - 1])
+            / (2.0 * ysum[(nz - 1) - 1])
+            + ((vz[-1] > 0) * vz[-1]) / dzi[-1]
+        )
+        dfdy[j_indx[nz - 1], j_indx[(nz - 1) - 1]] -= 1.0 / (dzi[nz - 2]) * (
+            Dzz[nz - 2] / dzi[nz - 2]
+        ) * (ysum[nz - 1] + ysum[nz - 2]) / (2.0 * ysum[(nz - 1) - 1]) - 1.0 / (dzi[-1]) * Dzz[
+            -1
+        ] / 2.0 * (
+            -1.0 / Hpi[-1]
+            + ms * g[-1] / (Navo * kb * Ti[-1])
+            + alpha / Ti[-1] * (Tco[-1] - Tco[-2]) / dzi[-1]
+        )
 
         return dfdy
 
@@ -2109,43 +3330,78 @@ class ODESolver(object):
         y = var.y.copy()
         # TEST condensation excluding non-gaseous species
         if self.cfg.non_gas_sp:
-            ysum = np.sum(y[:,atm.gas_indx], axis=1)
-        else: ysum = np.sum(y, axis=1)
+            ysum = np.sum(y[:, atm.gas_indx], axis=1)
+        else:
+            ysum = np.sum(y, axis=1)
         # TEST condensation excluding non-gaseous species
         dzi = atm.dzi.copy()
         Kzz = atm.Kzz.copy()
         vz = atm.vz.copy()
         Tco = atm.Tco
-        mu, ms = atm.mu.copy(),  atm.ms.copy()
+        mu, ms = atm.mu.copy(), atm.ms.copy()
 
-        r = 1. + 1./2.**0.5
-        c0 = 1./(r*var.dt)
+        r = 1.0 + 1.0 / 2.0**0.5
+        c0 = 1.0 / (r * var.dt)
         dfdy = neg_achemjac(y, atm.M, var.k, self.cfg.nz)
         np.fill_diagonal(dfdy, c0 + np.diag(dfdy))
         j_indx = []
 
         for j in range(nz):
-            j_indx.append( np.arange(j*ni,j*ni+ni) )
+            j_indx.append(np.arange(j * ni, j * ni + ni))
 
-        for j in range(1,nz-1):
+        for j in range(1, nz - 1):
             # excluding the buttom and the top cell
             # at j level consists of ni species
-            dz_ave = 0.5*(dzi[j-1] + dzi[j])
-            dfdy[j_indx[j], j_indx[j]] -=  -1./dz_ave*( Kzz[j]/dzi[j]*(ysum[j+1]+ysum[j])/2. + Kzz[j-1]/dzi[j-1]*(ysum[j-1]+ysum[j])/2. ) /ysum[j] -( (vz[j]>0)*vz[j] - (vz[j-1]<0)*vz[j-1] )/dz_ave
-            dfdy[j_indx[j], j_indx[j+1]] -= 1./dz_ave*( Kzz[j]/dzi[j]*(ysum[j+1]+ysum[j])/(2.*ysum[j+1]) ) -( (vz[j]<0)*vz[j] )/dz_ave
-            dfdy[j_indx[j], j_indx[j-1]] -= 1./dz_ave*( Kzz[j-1]/dzi[j-1]*(ysum[j-1]+ysum[j])/(2.*ysum[j-1]) ) +( (vz[j-1]>0)*vz[j-1] )/dz_ave
+            dz_ave = 0.5 * (dzi[j - 1] + dzi[j])
+            dfdy[j_indx[j], j_indx[j]] -= (
+                -1.0
+                / dz_ave
+                * (
+                    Kzz[j] / dzi[j] * (ysum[j + 1] + ysum[j]) / 2.0
+                    + Kzz[j - 1] / dzi[j - 1] * (ysum[j - 1] + ysum[j]) / 2.0
+                )
+                / ysum[j]
+                - ((vz[j] > 0) * vz[j] - (vz[j - 1] < 0) * vz[j - 1]) / dz_ave
+            )
+            dfdy[j_indx[j], j_indx[j + 1]] -= (
+                1.0 / dz_ave * (Kzz[j] / dzi[j] * (ysum[j + 1] + ysum[j]) / (2.0 * ysum[j + 1]))
+                - ((vz[j] < 0) * vz[j]) / dz_ave
+            )
+            dfdy[j_indx[j], j_indx[j - 1]] -= (
+                1.0
+                / dz_ave
+                * (Kzz[j - 1] / dzi[j - 1] * (ysum[j - 1] + ysum[j]) / (2.0 * ysum[j - 1]))
+                + ((vz[j - 1] > 0) * vz[j - 1]) / dz_ave
+            )
 
-        #dfdy[j_indx[0], j_indx[0]] -= -1./(dzi[0])*(Kzz[0]/dzi[0]) * (ysum[1]+ysum[0])/(2.*ysum[0]) -( (vz[0]>0)*vz[0] )/dzi[0]
+        # dfdy[j_indx[0], j_indx[0]] -= -1./(dzi[0])*(Kzz[0]/dzi[0]) * (ysum[1]+ysum[0])/(2.*ysum[0]) -( (vz[0]>0)*vz[0] )/dzi[0]
         # deposition velocity (off with fixed all BC)
         # if self.cfg.use_botflux == True: dfdy[j_indx[0], j_indx[0]] -= -1.*atm.bot_vdep /dzi[0]
 
         # Fix bottom BC
-        dfdy[:, j_indx[0]] = 0.
+        dfdy[:, j_indx[0]] = 0.0
 
-        dfdy[j_indx[0], j_indx[1]] -= 1./(dzi[0])*(Kzz[0]/dzi[0]) * (ysum[1]+ysum[0])/(2.*ysum[1]) -( (vz[0]<0)*vz[0] )/dzi[0]
+        dfdy[j_indx[0], j_indx[1]] -= (
+            1.0 / (dzi[0]) * (Kzz[0] / dzi[0]) * (ysum[1] + ysum[0]) / (2.0 * ysum[1])
+            - ((vz[0] < 0) * vz[0]) / dzi[0]
+        )
 
-        dfdy[j_indx[nz-1], j_indx[nz-1]] -= -1./(dzi[nz-2])*(Kzz[nz-2]/dzi[nz-2]) *(ysum[(nz-1)-1]+ysum[nz-1])/(2.*ysum[nz-1]) +( (vz[-1]<0)*vz[-1] )/dzi[-1]
-        dfdy[j_indx[nz-1], j_indx[(nz-1)-1]] -= 1./(dzi[nz-2])*(Kzz[nz-2]/dzi[nz-2])* (ysum[(nz-1)-1]+ysum[nz-1])/(2.*ysum[(nz-1)-1]) +( (vz[-1]>0)*vz[-1] )/dzi[-1]
+        dfdy[j_indx[nz - 1], j_indx[nz - 1]] -= (
+            -1.0
+            / (dzi[nz - 2])
+            * (Kzz[nz - 2] / dzi[nz - 2])
+            * (ysum[(nz - 1) - 1] + ysum[nz - 1])
+            / (2.0 * ysum[nz - 1])
+            + ((vz[-1] < 0) * vz[-1]) / dzi[-1]
+        )
+        dfdy[j_indx[nz - 1], j_indx[(nz - 1) - 1]] -= (
+            1.0
+            / (dzi[nz - 2])
+            * (Kzz[nz - 2] / dzi[nz - 2])
+            * (ysum[(nz - 1) - 1] + ysum[nz - 1])
+            / (2.0 * ysum[(nz - 1) - 1])
+            + ((vz[-1] > 0) * vz[-1]) / dzi[-1]
+        )
 
         return dfdy
 
@@ -2161,8 +3417,9 @@ class ODESolver(object):
         y = var.y.copy()
         # TEST condensation excluding non-gaseous species
         if self.cfg.non_gas_sp:
-            ysum = np.sum(y[:,atm.gas_indx], axis=1)
-        else: ysum = np.sum(y, axis=1)
+            ysum = np.sum(y[:, atm.gas_indx], axis=1)
+        else:
+            ysum = np.sum(y, axis=1)
         # TEST condensation excluding non-gaseous species
         dzi = atm.dzi.copy()
         Kzz = atm.Kzz.copy()
@@ -2171,59 +3428,194 @@ class ODESolver(object):
         vs = atm.vs.copy()
         alpha = atm.alpha.copy()
         Tco = atm.Tco
-        mu, ms = atm.mu.copy(),  atm.ms.copy()
+        mu, ms = atm.mu.copy(), atm.ms.copy()
         g = atm.g
 
         Ti = atm.Ti.copy()
         Hpi = atm.Hpi.copy()
 
         # c0 = 1./(r*h) where r = 1. + 1./2.**0.5
-        r = 1. + 1./2.**0.5
-        c0 = 1./(r*var.dt)
+        r = 1.0 + 1.0 / 2.0**0.5
+        c0 = 1.0 / (r * var.dt)
         dfdy = neg_achemjac(y, atm.M, var.k, self.cfg.nz)
         np.fill_diagonal(dfdy, c0 + np.diag(dfdy))
         j_indx = []
 
         for j in range(nz):
-            j_indx.append( np.arange(j*ni,j*ni+ni) )
+            j_indx.append(np.arange(j * ni, j * ni + ni))
 
-        for j in range(1,nz-1):
+        for j in range(1, nz - 1):
             # excluding the buttom and the top cell
             # at j level consists of ni species
-            dz_ave = 0.5*(dzi[j-1] + dzi[j])
-            dfdy[j_indx[j], j_indx[j]] -=  -1./dz_ave*( Kzz[j]/dzi[j]*(ysum[j+1]+ysum[j])/2. + Kzz[j-1]/dzi[j-1]*(ysum[j-1]+ysum[j])/2. ) /ysum[j] -( (vz[j]>0)*vz[j] - (vz[j-1]<0)*vz[j-1] )/dz_ave
-            dfdy[j_indx[j], j_indx[j+1]] -= 1./dz_ave*( Kzz[j]/dzi[j]*(ysum[j+1]+ysum[j])/(2.*ysum[j+1]) ) -( (vz[j]<0)*vz[j] )/dz_ave
-            dfdy[j_indx[j], j_indx[j-1]] -= 1./dz_ave*( Kzz[j-1]/dzi[j-1]*(ysum[j-1]+ysum[j])/(2.*ysum[j-1]) ) +( (vz[j-1]>0)*vz[j-1] )/dz_ave
+            dz_ave = 0.5 * (dzi[j - 1] + dzi[j])
+            dfdy[j_indx[j], j_indx[j]] -= (
+                -1.0
+                / dz_ave
+                * (
+                    Kzz[j] / dzi[j] * (ysum[j + 1] + ysum[j]) / 2.0
+                    + Kzz[j - 1] / dzi[j - 1] * (ysum[j - 1] + ysum[j]) / 2.0
+                )
+                / ysum[j]
+                - ((vz[j] > 0) * vz[j] - (vz[j - 1] < 0) * vz[j - 1]) / dz_ave
+            )
+            dfdy[j_indx[j], j_indx[j + 1]] -= (
+                1.0 / dz_ave * (Kzz[j] / dzi[j] * (ysum[j + 1] + ysum[j]) / (2.0 * ysum[j + 1]))
+                - ((vz[j] < 0) * vz[j]) / dz_ave
+            )
+            dfdy[j_indx[j], j_indx[j - 1]] -= (
+                1.0
+                / dz_ave
+                * (Kzz[j - 1] / dzi[j - 1] * (ysum[j - 1] + ysum[j]) / (2.0 * ysum[j - 1]))
+                + ((vz[j - 1] > 0) * vz[j - 1]) / dz_ave
+            )
 
             # [j_indx[j], j_indx[j]] has size ni*ni
-            dfdy[j_indx[j], j_indx[j]] -=  -1./dz_ave*( Dzz[j]/dzi[j]*(ysum[j+1]+ysum[j])/2. + Dzz[j-1]/dzi[j-1]*(ysum[j-1]+ysum[j])/2. ) /ysum[j]\
-            +1./(2.*dz_ave)*( Dzz[j]*(-1./Hpi[j]+ms*g[j]/(Navo*kb*Ti[j])+alpha/Ti[j]*(Tco[j+1]-Tco[j])/dzi[j] ) \
-            - Dzz[j-1]*(-1./Hpi[j-1]+ms*g[j]/(Navo*kb*Ti[j-1])+alpha/Ti[j-1]*(Tco[j]-Tco[j-1])/dzi[j-1] ) )  -( (vs[j]>0)*vs[j] - (vs[j-1]<0)*vs[j-1] )/dz_ave
-            dfdy[j_indx[j], j_indx[j+1]] -= 1./dz_ave*( Dzz[j]/dzi[j]*(ysum[j+1]+ysum[j])/(2.*ysum[j+1]) ) \
-            +1./(2.*dz_ave)* Dzz[j]*(-1./Hpi[j]+ms*g[j+1]/(Navo*kb*Ti[j])+alpha/Ti[j]*(Tco[j+1]-Tco[j])/dzi[j] )  -( (vs[j]<0)*vs[j] )/dz_ave
-            dfdy[j_indx[j], j_indx[j-1]] -= 1./dz_ave*( Dzz[j-1]/dzi[j-1]*(ysum[j-1]+ysum[j])/(2.*ysum[j-1]) ) \
-            -1./(2.*dz_ave)* Dzz[j-1]*(-1./Hpi[j-1]+ms*g[j-1]/(Navo*kb*Ti[j-1])+alpha/Ti[j-1]*(Tco[j]-Tco[j-1])/dzi[j-1] )  +( (vs[j-1]>0)*vs[j-1] )/dz_ave
+            dfdy[j_indx[j], j_indx[j]] -= (
+                -1.0
+                / dz_ave
+                * (
+                    Dzz[j] / dzi[j] * (ysum[j + 1] + ysum[j]) / 2.0
+                    + Dzz[j - 1] / dzi[j - 1] * (ysum[j - 1] + ysum[j]) / 2.0
+                )
+                / ysum[j]
+                + 1.0
+                / (2.0 * dz_ave)
+                * (
+                    Dzz[j]
+                    * (
+                        -1.0 / Hpi[j]
+                        + ms * g[j] / (Navo * kb * Ti[j])
+                        + alpha / Ti[j] * (Tco[j + 1] - Tco[j]) / dzi[j]
+                    )
+                    - Dzz[j - 1]
+                    * (
+                        -1.0 / Hpi[j - 1]
+                        + ms * g[j] / (Navo * kb * Ti[j - 1])
+                        + alpha / Ti[j - 1] * (Tco[j] - Tco[j - 1]) / dzi[j - 1]
+                    )
+                )
+                - ((vs[j] > 0) * vs[j] - (vs[j - 1] < 0) * vs[j - 1]) / dz_ave
+            )
+            dfdy[j_indx[j], j_indx[j + 1]] -= (
+                1.0 / dz_ave * (Dzz[j] / dzi[j] * (ysum[j + 1] + ysum[j]) / (2.0 * ysum[j + 1]))
+                + 1.0
+                / (2.0 * dz_ave)
+                * Dzz[j]
+                * (
+                    -1.0 / Hpi[j]
+                    + ms * g[j + 1] / (Navo * kb * Ti[j])
+                    + alpha / Ti[j] * (Tco[j + 1] - Tco[j]) / dzi[j]
+                )
+                - ((vs[j] < 0) * vs[j]) / dz_ave
+            )
+            dfdy[j_indx[j], j_indx[j - 1]] -= (
+                1.0
+                / dz_ave
+                * (Dzz[j - 1] / dzi[j - 1] * (ysum[j - 1] + ysum[j]) / (2.0 * ysum[j - 1]))
+                - 1.0
+                / (2.0 * dz_ave)
+                * Dzz[j - 1]
+                * (
+                    -1.0 / Hpi[j - 1]
+                    + ms * g[j - 1] / (Navo * kb * Ti[j - 1])
+                    + alpha / Ti[j - 1] * (Tco[j] - Tco[j - 1]) / dzi[j - 1]
+                )
+                + ((vs[j - 1] > 0) * vs[j - 1]) / dz_ave
+            )
 
-        dfdy[j_indx[0], j_indx[0]] -= -1./(dzi[0])*(Kzz[0]/dzi[0]) * (ysum[1]+ysum[0])/(2.*ysum[0]) -( (vz[0]>0)*vz[0] )/dzi[0]
-        dfdy[j_indx[0], j_indx[0]] -= -1./(dzi[0])*(Dzz[0]/dzi[0]) * (ysum[1]+ysum[0])/(2.*ysum[0]) \
-        +1./(dzi[0])* Dzz[0]/2.*(-1./Hpi[0]+ms*g[0]/(Navo*kb*Ti[0])+alpha/Ti[0]*(Tco[1]-Tco[0])/dzi[0] )  -( (vs[0]>0)*vs[0] )/dzi[0]
+        dfdy[j_indx[0], j_indx[0]] -= (
+            -1.0 / (dzi[0]) * (Kzz[0] / dzi[0]) * (ysum[1] + ysum[0]) / (2.0 * ysum[0])
+            - ((vz[0] > 0) * vz[0]) / dzi[0]
+        )
+        dfdy[j_indx[0], j_indx[0]] -= (
+            -1.0 / (dzi[0]) * (Dzz[0] / dzi[0]) * (ysum[1] + ysum[0]) / (2.0 * ysum[0])
+            + 1.0
+            / (dzi[0])
+            * Dzz[0]
+            / 2.0
+            * (
+                -1.0 / Hpi[0]
+                + ms * g[0] / (Navo * kb * Ti[0])
+                + alpha / Ti[0] * (Tco[1] - Tco[0]) / dzi[0]
+            )
+            - ((vs[0] > 0) * vs[0]) / dzi[0]
+        )
         # deposition velocity
-        if self.cfg.use_botflux == True: dfdy[j_indx[0], j_indx[0]] -= -1.*atm.bot_vdep /dzi[0]
-        
-        dfdy[j_indx[0], j_indx[1]] -= 1./(dzi[0])*(Kzz[0]/dzi[0]) * (ysum[1]+ysum[0])/(2.*ysum[1]) -( (vz[0]<0)*vz[0] )/dzi[0] 
-        dfdy[j_indx[0], j_indx[1]] -= 1./(dzi[0])*(Dzz[0]/dzi[0]) * (ysum[1]+ysum[0])/(2.*ysum[1]) \
-        +1./(dzi[0])* Dzz[0]/2.*(-1./Hpi[0]+ms*g[0]/(Navo*kb*Ti[0])+alpha/Ti[0]*(Tco[1]-Tco[0])/dzi[0] ) -( (vs[0]<0)*vs[0] )/dzi[0]
+        if self.cfg.use_botflux == True:
+            dfdy[j_indx[0], j_indx[0]] -= -1.0 * atm.bot_vdep / dzi[0]
 
-        dfdy[j_indx[nz-1], j_indx[nz-1]] -= -1./(dzi[nz-2])*(Kzz[nz-2]/dzi[nz-2]) *(ysum[(nz-1)-1]+ysum[nz-1])/(2.*ysum[nz-1]) +( (vz[-1]<0)*vz[-1] )/dzi[-1]  
-        dfdy[j_indx[nz-1], j_indx[nz-1]] -= -1./(dzi[nz-2])*(Dzz[nz-2]/dzi[nz-2]) *(ysum[nz-1]+ysum[nz-2])/(2.*ysum[nz-1]) \
-        - 1./(dzi[-1])* Dzz[-1]/2.*(-1./Hpi[-1]+ms*g[-1]/(Navo*kb*Ti[-1])+alpha/Ti[-1]*(Tco[-1]-Tco[-2])/dzi[-1] ) +( (vs[-1]<0)*vs[-1] )/dzi[-1]
-        dfdy[j_indx[nz-1], j_indx[(nz-1)-1]] -= 1./(dzi[nz-2])*(Kzz[nz-2]/dzi[nz-2])* (ysum[(nz-1)-1]+ysum[nz-1])/(2.*ysum[(nz-1)-1]) +( (vz[-1]>0)*vz[-1] )/dzi[-1]   
-        dfdy[j_indx[nz-1], j_indx[(nz-1)-1]] -= 1./(dzi[nz-2])*(Dzz[nz-2]/dzi[nz-2]) *(ysum[nz-1]+ysum[nz-2])/(2.*ysum[(nz-1)-1]) \
-                -1./(dzi[-1])* Dzz[-1]/2.*(-1./Hpi[-1]+ms*g[-1]/(Navo*kb*Ti[-1])+alpha/Ti[-1]*(Tco[-1]-Tco[-2])/dzi[-1] ) +( (vs[-1]>0)*vs[-1] )/dzi[-1]
+        dfdy[j_indx[0], j_indx[1]] -= (
+            1.0 / (dzi[0]) * (Kzz[0] / dzi[0]) * (ysum[1] + ysum[0]) / (2.0 * ysum[1])
+            - ((vz[0] < 0) * vz[0]) / dzi[0]
+        )
+        dfdy[j_indx[0], j_indx[1]] -= (
+            1.0 / (dzi[0]) * (Dzz[0] / dzi[0]) * (ysum[1] + ysum[0]) / (2.0 * ysum[1])
+            + 1.0
+            / (dzi[0])
+            * Dzz[0]
+            / 2.0
+            * (
+                -1.0 / Hpi[0]
+                + ms * g[0] / (Navo * kb * Ti[0])
+                + alpha / Ti[0] * (Tco[1] - Tco[0]) / dzi[0]
+            )
+            - ((vs[0] < 0) * vs[0]) / dzi[0]
+        )
+
+        dfdy[j_indx[nz - 1], j_indx[nz - 1]] -= (
+            -1.0
+            / (dzi[nz - 2])
+            * (Kzz[nz - 2] / dzi[nz - 2])
+            * (ysum[(nz - 1) - 1] + ysum[nz - 1])
+            / (2.0 * ysum[nz - 1])
+            + ((vz[-1] < 0) * vz[-1]) / dzi[-1]
+        )
+        dfdy[j_indx[nz - 1], j_indx[nz - 1]] -= (
+            -1.0
+            / (dzi[nz - 2])
+            * (Dzz[nz - 2] / dzi[nz - 2])
+            * (ysum[nz - 1] + ysum[nz - 2])
+            / (2.0 * ysum[nz - 1])
+            - 1.0
+            / (dzi[-1])
+            * Dzz[-1]
+            / 2.0
+            * (
+                -1.0 / Hpi[-1]
+                + ms * g[-1] / (Navo * kb * Ti[-1])
+                + alpha / Ti[-1] * (Tco[-1] - Tco[-2]) / dzi[-1]
+            )
+            + ((vs[-1] < 0) * vs[-1]) / dzi[-1]
+        )
+        dfdy[j_indx[nz - 1], j_indx[(nz - 1) - 1]] -= (
+            1.0
+            / (dzi[nz - 2])
+            * (Kzz[nz - 2] / dzi[nz - 2])
+            * (ysum[(nz - 1) - 1] + ysum[nz - 1])
+            / (2.0 * ysum[(nz - 1) - 1])
+            + ((vz[-1] > 0) * vz[-1]) / dzi[-1]
+        )
+        dfdy[j_indx[nz - 1], j_indx[(nz - 1) - 1]] -= (
+            1.0
+            / (dzi[nz - 2])
+            * (Dzz[nz - 2] / dzi[nz - 2])
+            * (ysum[nz - 1] + ysum[nz - 2])
+            / (2.0 * ysum[(nz - 1) - 1])
+            - 1.0
+            / (dzi[-1])
+            * Dzz[-1]
+            / 2.0
+            * (
+                -1.0 / Hpi[-1]
+                + ms * g[-1] / (Navo * kb * Ti[-1])
+                + alpha / Ti[-1] * (Tco[-1] - Tco[-2]) / dzi[-1]
+            )
+            + ((vs[-1] > 0) * vs[-1]) / dzi[-1]
+        )
 
         return dfdy
-                
-    def lhs_jac_settling_vm(self, var, atm):      
+
+    def lhs_jac_settling_vm(self, var, atm):
         """
         directly constructing lhs = 1./(r*h)*sparse.identity(ni*nz) - dfdy
         jacobian matrix for dn/dt + dphi/dz = P - L (including molecular diffusion and gravitation settling for particles)
@@ -2235,8 +3627,9 @@ class ODESolver(object):
 
         # TEST condensation excluding non-gaseous species
         if self.cfg.non_gas_sp:
-            ysum = np.sum(y[:,atm.gas_indx], axis=1)
-        else: ysum = np.sum(y, axis=1)
+            ysum = np.sum(y[:, atm.gas_indx], axis=1)
+        else:
+            ysum = np.sum(y, axis=1)
         # TEST condensation excluding non-gaseous species
         dzi = atm.dzi.copy()
         Kzz = atm.Kzz.copy()
@@ -2245,7 +3638,7 @@ class ODESolver(object):
         vs = atm.vs.copy()
         alpha = atm.alpha.copy()
         Tco = atm.Tco.copy()
-        mu, ms = atm.mu.copy(),  atm.ms.copy()
+        mu, ms = atm.mu.copy(), atm.ms.copy()
         g = atm.g
         vm = atm.vm
 
@@ -2253,84 +3646,158 @@ class ODESolver(object):
         Hpi = atm.Hpi.copy()
 
         # c0 = 1./(r*h) where r = 1. + 1./2.**0.5
-        r = 1. + 1./2.**0.5
-        c0 = 1./(r*var.dt)
+        r = 1.0 + 1.0 / 2.0**0.5
+        c0 = 1.0 / (r * var.dt)
         dfdy = neg_achemjac(y, atm.M, var.k)
-        np.fill_diagonal(dfdy, c0 + np.diag(dfdy)) 
+        np.fill_diagonal(dfdy, c0 + np.diag(dfdy))
         j_indx = []
-        
-        for j in range(nz):
-            j_indx.append( np.arange(j*ni,j*ni+ni) )
 
-        for j in range(1,nz-1):
+        for j in range(nz):
+            j_indx.append(np.arange(j * ni, j * ni + ni))
+
+        for j in range(1, nz - 1):
             # excluding the buttom and the top cell
             # at j level consists of ni species
-            dz_ave = 0.5*(dzi[j-1] + dzi[j])
-            dfdy[j_indx[j], j_indx[j]] -=  -1./dz_ave*( Kzz[j]/dzi[j]*(ysum[j+1]+ysum[j])/2. + Kzz[j-1]/dzi[j-1]*(ysum[j-1]+ysum[j])/2. ) /ysum[j] -( (vz[j]>0)*vz[j] - (vz[j-1]<0)*vz[j-1] )/dz_ave
-            dfdy[j_indx[j], j_indx[j+1]] -= 1./dz_ave*( Kzz[j]/dzi[j]*(ysum[j+1]+ysum[j])/(2.*ysum[j+1]) ) -( (vz[j]<0)*vz[j] )/dz_ave
-            dfdy[j_indx[j], j_indx[j-1]] -= 1./dz_ave*( Kzz[j-1]/dzi[j-1]*(ysum[j-1]+ysum[j])/(2.*ysum[j-1]) ) +( (vz[j-1]>0)*vz[j-1] )/dz_ave
+            dz_ave = 0.5 * (dzi[j - 1] + dzi[j])
+            dfdy[j_indx[j], j_indx[j]] -= (
+                -1.0
+                / dz_ave
+                * (
+                    Kzz[j] / dzi[j] * (ysum[j + 1] + ysum[j]) / 2.0
+                    + Kzz[j - 1] / dzi[j - 1] * (ysum[j - 1] + ysum[j]) / 2.0
+                )
+                / ysum[j]
+                - ((vz[j] > 0) * vz[j] - (vz[j - 1] < 0) * vz[j - 1]) / dz_ave
+            )
+            dfdy[j_indx[j], j_indx[j + 1]] -= (
+                1.0 / dz_ave * (Kzz[j] / dzi[j] * (ysum[j + 1] + ysum[j]) / (2.0 * ysum[j + 1]))
+                - ((vz[j] < 0) * vz[j]) / dz_ave
+            )
+            dfdy[j_indx[j], j_indx[j - 1]] -= (
+                1.0
+                / dz_ave
+                * (Kzz[j - 1] / dzi[j - 1] * (ysum[j - 1] + ysum[j]) / (2.0 * ysum[j - 1]))
+                + ((vz[j - 1] > 0) * vz[j - 1]) / dz_ave
+            )
 
             # [j_indx[j], j_indx[j]] has size ni*ni
-            dfdy[j_indx[j], j_indx[j]] -=  -1./dz_ave*( Dzz[j]/dzi[j]*(ysum[j+1]+ysum[j])/2. + Dzz[j-1]/dzi[j-1]*(ysum[j-1]+ysum[j])/2. ) /ysum[j]\
-            -( (vs[j]>0)*vs[j] - (vs[j-1]<0)*vs[j-1] )/dz_ave  -( (vm[j]>0)*vm[j] - (vm[j-1]<0)*vm[j-1] )/dz_ave
-            dfdy[j_indx[j], j_indx[j+1]] -= 1./dz_ave*( Dzz[j]/dzi[j]*(ysum[j+1]+ysum[j])/(2.*ysum[j+1]) ) \
-            -( (vs[j]<0)*vs[j] )/dz_ave -( (vm[j]<0)*vm[j] )/dz_ave
-            dfdy[j_indx[j], j_indx[j-1]] -= 1./dz_ave*( Dzz[j-1]/dzi[j-1]*(ysum[j-1]+ysum[j])/(2.*ysum[j-1]) ) \
-            +( (vs[j-1]>0)*vs[j-1] )/dz_ave +( (vm[j-1]>0)*vm[j-1] )/dz_ave
-    
-        dfdy[j_indx[0], j_indx[0]] -= -1./(dzi[0])*(Kzz[0]/dzi[0]) * (ysum[1]+ysum[0])/(2.*ysum[0]) -( (vz[0]>0)*vz[0] )/dzi[0]
-        dfdy[j_indx[0], j_indx[0]] -= -1./(dzi[0])*(Dzz[0]/dzi[0]) * (ysum[1]+ysum[0])/(2.*ysum[0]) \
-        -( (vs[0]>0)*vs[0] )/dzi[0]
+            dfdy[j_indx[j], j_indx[j]] -= (
+                -1.0
+                / dz_ave
+                * (
+                    Dzz[j] / dzi[j] * (ysum[j + 1] + ysum[j]) / 2.0
+                    + Dzz[j - 1] / dzi[j - 1] * (ysum[j - 1] + ysum[j]) / 2.0
+                )
+                / ysum[j]
+                - ((vs[j] > 0) * vs[j] - (vs[j - 1] < 0) * vs[j - 1]) / dz_ave
+                - ((vm[j] > 0) * vm[j] - (vm[j - 1] < 0) * vm[j - 1]) / dz_ave
+            )
+            dfdy[j_indx[j], j_indx[j + 1]] -= (
+                1.0 / dz_ave * (Dzz[j] / dzi[j] * (ysum[j + 1] + ysum[j]) / (2.0 * ysum[j + 1]))
+                - ((vs[j] < 0) * vs[j]) / dz_ave
+                - ((vm[j] < 0) * vm[j]) / dz_ave
+            )
+            dfdy[j_indx[j], j_indx[j - 1]] -= (
+                1.0
+                / dz_ave
+                * (Dzz[j - 1] / dzi[j - 1] * (ysum[j - 1] + ysum[j]) / (2.0 * ysum[j - 1]))
+                + ((vs[j - 1] > 0) * vs[j - 1]) / dz_ave
+                + ((vm[j - 1] > 0) * vm[j - 1]) / dz_ave
+            )
+
+        dfdy[j_indx[0], j_indx[0]] -= (
+            -1.0 / (dzi[0]) * (Kzz[0] / dzi[0]) * (ysum[1] + ysum[0]) / (2.0 * ysum[0])
+            - ((vz[0] > 0) * vz[0]) / dzi[0]
+        )
+        dfdy[j_indx[0], j_indx[0]] -= (
+            -1.0 / (dzi[0]) * (Dzz[0] / dzi[0]) * (ysum[1] + ysum[0]) / (2.0 * ysum[0])
+            - ((vs[0] > 0) * vs[0]) / dzi[0]
+        )
         # deposition velocity
-        if self.cfg.use_botflux == True: dfdy[j_indx[0], j_indx[0]] -= -1.*atm.bot_vdep /dzi[0]
+        if self.cfg.use_botflux == True:
+            dfdy[j_indx[0], j_indx[0]] -= -1.0 * atm.bot_vdep / dzi[0]
 
         # diffusion-limited escape
-        if self.cfg.diff_esc: # not empty list
+        if self.cfg.diff_esc:  # not empty list
             diff_lim = np.zeros(ni)
             for sp in self.cfg.diff_esc:
-                if y[-1,species.index(sp)] > 0:
-                    diff_lim[species.index(sp)] += atm.top_flux[species.index(sp)] /y[-1,species.index(sp)]
-            dfdy[j_indx[-1], j_indx[-1]] -= diff_lim # negative
+                if y[-1, species.index(sp)] > 0:
+                    diff_lim[species.index(sp)] += (
+                        atm.top_flux[species.index(sp)] / y[-1, species.index(sp)]
+                    )
+            dfdy[j_indx[-1], j_indx[-1]] -= diff_lim  # negative
 
-        dfdy[j_indx[0], j_indx[1]] -= 1./(dzi[0])*(Kzz[0]/dzi[0]) * (ysum[1]+ysum[0])/(2.*ysum[1]) -( (vz[0]<0)*vz[0] )/dzi[0]
-        dfdy[j_indx[0], j_indx[1]] -= 1./(dzi[0])*(Dzz[0]/dzi[0]) * (ysum[1]+ysum[0])/(2.*ysum[1]) \
-         -( (vs[0]<0)*vs[0] )/dzi[0]
+        dfdy[j_indx[0], j_indx[1]] -= (
+            1.0 / (dzi[0]) * (Kzz[0] / dzi[0]) * (ysum[1] + ysum[0]) / (2.0 * ysum[1])
+            - ((vz[0] < 0) * vz[0]) / dzi[0]
+        )
+        dfdy[j_indx[0], j_indx[1]] -= (
+            1.0 / (dzi[0]) * (Dzz[0] / dzi[0]) * (ysum[1] + ysum[0]) / (2.0 * ysum[1])
+            - ((vs[0] < 0) * vs[0]) / dzi[0]
+        )
 
-        dfdy[j_indx[nz-1], j_indx[nz-1]] -= -1./(dzi[nz-2])*(Kzz[nz-2]/dzi[nz-2]) *(ysum[(nz-1)-1]+ysum[nz-1])/(2.*ysum[nz-1]) +( (vz[-1]<0)*vz[-1] )/dzi[-1]
-        dfdy[j_indx[nz-1], j_indx[nz-1]] -= -1./(dzi[nz-2])*(Dzz[nz-2]/dzi[nz-2]) *(ysum[nz-1]+ysum[nz-2])/(2.*ysum[nz-1]) \
-        +( (vs[-1]<0)*vs[-1] )/dzi[-1]  +( (vm[-1]<0)*vm[-1] )/dzi[-1]
-        dfdy[j_indx[nz-1], j_indx[(nz-1)-1]] -= 1./(dzi[nz-2])*(Kzz[nz-2]/dzi[nz-2])* (ysum[(nz-1)-1]+ysum[nz-1])/(2.*ysum[(nz-1)-1]) +( (vz[-1]>0)*vz[-1] )/dzi[-1]
-        dfdy[j_indx[nz-1], j_indx[(nz-1)-1]] -= 1./(dzi[nz-2])*(Dzz[nz-2]/dzi[nz-2]) *(ysum[nz-1]+ysum[nz-2])/(2.*ysum[(nz-1)-1]) \
-        +( (vs[-1]>0)*vs[-1] )/dzi[-1]  +( (vm[-1]>0)*vm[-1] )/dzi[-1]
+        dfdy[j_indx[nz - 1], j_indx[nz - 1]] -= (
+            -1.0
+            / (dzi[nz - 2])
+            * (Kzz[nz - 2] / dzi[nz - 2])
+            * (ysum[(nz - 1) - 1] + ysum[nz - 1])
+            / (2.0 * ysum[nz - 1])
+            + ((vz[-1] < 0) * vz[-1]) / dzi[-1]
+        )
+        dfdy[j_indx[nz - 1], j_indx[nz - 1]] -= (
+            -1.0
+            / (dzi[nz - 2])
+            * (Dzz[nz - 2] / dzi[nz - 2])
+            * (ysum[nz - 1] + ysum[nz - 2])
+            / (2.0 * ysum[nz - 1])
+            + ((vs[-1] < 0) * vs[-1]) / dzi[-1]
+            + ((vm[-1] < 0) * vm[-1]) / dzi[-1]
+        )
+        dfdy[j_indx[nz - 1], j_indx[(nz - 1) - 1]] -= (
+            1.0
+            / (dzi[nz - 2])
+            * (Kzz[nz - 2] / dzi[nz - 2])
+            * (ysum[(nz - 1) - 1] + ysum[nz - 1])
+            / (2.0 * ysum[(nz - 1) - 1])
+            + ((vz[-1] > 0) * vz[-1]) / dzi[-1]
+        )
+        dfdy[j_indx[nz - 1], j_indx[(nz - 1) - 1]] -= (
+            1.0
+            / (dzi[nz - 2])
+            * (Dzz[nz - 2] / dzi[nz - 2])
+            * (ysum[nz - 1] + ysum[nz - 2])
+            / (2.0 * ysum[(nz - 1) - 1])
+            + ((vs[-1] > 0) * vs[-1]) / dzi[-1]
+            + ((vm[-1] > 0) * vm[-1]) / dzi[-1]
+        )
 
         return dfdy
 
-
-
     def clip(self, var, para, atm, pos_cut=0, nega_cut=-1):
-        '''
+        """
         function to clip samll and negative values
         and to calculate the particle loss
-        '''
+        """
         y, ymix = var.y, var.ymix.copy()
 
-        para.small_y += np.abs(np.sum(y[np.logical_and(y<pos_cut, y>=0)]))
-        para.nega_y += np.abs(np.sum(y[np.logical_and(y>nega_cut, y<=0)]))
-        y[np.logical_and(y<pos_cut, y>=nega_cut)] = 0.
+        para.small_y += np.abs(np.sum(y[np.logical_and(y < pos_cut, y >= 0)]))
+        para.nega_y += np.abs(np.sum(y[np.logical_and(y > nega_cut, y <= 0)]))
+        y[np.logical_and(y < pos_cut, y >= nega_cut)] = 0.0
 
         # Also setting y=0 when ymix<mtol
-        y[np.logical_and(ymix<self.mtol, y<0)] = 0.
+        y[np.logical_and(ymix < self.mtol, y < 0)] = 0.0
 
         var = self.loss(var)
 
         # store y and ymix
         # TEST condensation excluding non-gaseous species
         if self.cfg.non_gas_sp:
-            var.y, var.ymix = y, var.y/np.vstack(np.sum(var.y[:,atm.gas_indx],axis=1))
-        else: var.y, var.ymix = y, y/np.vstack(np.sum(y,axis=1))
+            var.y, var.ymix = y, var.y / np.vstack(np.sum(var.y[:, atm.gas_indx], axis=1))
+        else:
+            var.y, var.ymix = y, y / np.vstack(np.sum(y, axis=1))
         # TEST condensation excluding non-gaseous species
 
-        return var , para
+        return var, para
 
     def loss(self, data_var):
 
@@ -2343,32 +3810,50 @@ class ODESolver(object):
         for atom in atom_list:
             # data_var.atom_sum[atom] = np.sum([compo[compo_row.index(species[i])][atom] * data_var.y[:,i] for i in range(ni)])
             # TEST V scaling
-            if atom not in getattr(self.cfg, 'loss_ex', []): # shami added 2024
-                data_var.atom_sum[atom] = np.sum([compo[compo_row.index(species[i])][atom] * data_var.y[:,i] for i in range(ni)]) # *data_var.v_ratio
-                data_var.atom_loss[atom] = (data_var.atom_sum[atom] - data_var.atom_ini[atom])/data_var.atom_ini[atom]
+            if atom not in getattr(self.cfg, 'loss_ex', []):  # shami added 2024
+                data_var.atom_sum[atom] = np.sum(
+                    [
+                        compo[compo_row.index(species[i])][atom] * data_var.y[:, i]
+                        for i in range(ni)
+                    ]
+                )  # *data_var.v_ratio
+                data_var.atom_loss[atom] = (
+                    data_var.atom_sum[atom] - data_var.atom_ini[atom]
+                ) / data_var.atom_ini[atom]
 
         return data_var
 
     def step_ok(self, var, para, loss_eps=1e-1, rtol=0.6):
-        if np.all(var.y>=0) and np.amax( np.abs( np.fromiter(var.atom_loss.values(),float) - np.fromiter(var.atom_loss_prev.values(),float) ) )<loss_eps and para.delta<=rtol:
+        if (
+            np.all(var.y >= 0)
+            and np.amax(
+                np.abs(
+                    np.fromiter(var.atom_loss.values(), float)
+                    - np.fromiter(var.atom_loss_prev.values(), float)
+                )
+            )
+            < loss_eps
+            and para.delta <= rtol
+        ):
             return True
         else:
             return False
 
     def step_reject(self, var, para, loss_eps=1e-1, rtol=0.6):
 
-        if para.delta > rtol: # truncation error larger than the tolerence value
+        if para.delta > rtol:  # truncation error larger than the tolerence value
             para.delta_count += 1
 
         elif np.any(var.y < 0):
             para.nega_count += 1
             if self.cfg.use_print_prog == True:
-                self.print_nega(var,para) # print the info for the negative solutions (where y < 0)
+                self.print_nega(
+                    var, para
+                )  # print the info for the negative solutions (where y < 0)
             # print input: y, t, count, dt
 
-
-        else: # meaning np.amax( np.abs( np.abs(y_loss) - np.abs(loss_prev) ) )<loss_eps
-            para.loss_count +=1
+        else:  # meaning np.amax( np.abs( np.abs(y_loss) - np.abs(loss_prev) ) )<loss_eps
+            para.loss_count += 1
             if self.cfg.use_print_prog == True:
                 self.print_lossBig(para)
 
@@ -2377,17 +3862,19 @@ class ODESolver(object):
 
         if var.dt < self.cfg.dt_min:
             var.dt = self.cfg.dt_min
-            var.y[var.y<0] = 0. # clipping of negative values
+            var.y[var.y < 0] = 0.0  # clipping of negative values
 
-            log.warning('Keep producing negative values! Clipping negative solutions and moving on!')
+            log.warning(
+                'Keep producing negative values! Clipping negative solutions and moving on!'
+            )
             return True
 
         return False
 
     def reset_y(self, var, dt_reduc=0.5):
-        '''
+        """
         reset y and reduce dt by dt_reduc
-        '''
+        """
 
         # reset and store y and dt
         var.y = var.y_prev
@@ -2398,11 +3885,16 @@ class ODESolver(object):
 
     def print_nega(self, data_var, data_para):
 
-        nega_i = np.where(data_var.y<0)
-        log.warning('Negative y at time ' + str("{:.2e}".format(data_var.t)) + ' and step: ' + str(data_para.count) )
-        log.warning('Negative values:' + str(data_var.y[data_var.y<0]) )
-        log.warning('from levels: ' + str(nega_i[0]) )
-        log.warning('species: ' + str([species[s] for s in nega_i[1]]) )
+        nega_i = np.where(data_var.y < 0)
+        log.warning(
+            'Negative y at time '
+            + str('{:.2e}'.format(data_var.t))
+            + ' and step: '
+            + str(data_para.count)
+        )
+        log.warning('Negative values:' + str(data_var.y[data_var.y < 0]))
+        log.warning('from levels: ' + str(nega_i[0]))
+        log.warning('species: ' + str([species[s] for s in nega_i[1]]))
         log.warning('dt= ' + str(data_var.dt))
         log.warning('...reset dt to dt*0.2...')
         log.warning(spacer)
@@ -2414,57 +3906,65 @@ class ODESolver(object):
         log.warning(spacer)
 
     def thomas_vec(a, b, c, d):
-        '''
+        """
         Thomas vectorized solver, a b c d refer to http://en.wikipedia.org/wiki/Tridiagonal_matrix_algorithm
         d is a matrix
         not used in this current version
-        '''
+        """
         # number of equations
         nf = len(a)
         aa, bb, cc, dd = map(np.copy, (a, b, c, d))
         # d needs to reshape
-        dd = dd.reshape(nf,-1)
-        #C' and D'
-        cp = [cc[0]/bb[0]]; dp = [dd[0]/bb[0]]
+        dd = dd.reshape(nf, -1)
+        # C' and D'
+        cp = [cc[0] / bb[0]]
+        dp = [dd[0] / bb[0]]
         x = np.zeros((nf, np.shape(dd)[1]))
 
-        for i in range(1, nf-1):
-            cp.append( cc[i]/(bb[i] - aa[i]*cp[i-1]) )
-            dp.append( (dd[i] - aa[i]*dp[i-1])/(bb[i] - aa[i]*cp[i-1]) )
+        for i in range(1, nf - 1):
+            cp.append(cc[i] / (bb[i] - aa[i] * cp[i - 1]))
+            dp.append((dd[i] - aa[i] * dp[i - 1]) / (bb[i] - aa[i] * cp[i - 1]))
 
-        dp.append( (dd[(nf-1)] - aa[(nf-1)]*dp[(nf-1)-1])/(bb[(nf-1)] - aa[(nf-1)]*cp[(nf-1)-1]) ) # nf-1 is the last element
-        x[nf-1] = dp[nf-1]/1
-        for i in range(nf-2, -1, -1):
-            x[i] = dp[i] - cp[i]*x[i+1]
+        dp.append(
+            (dd[(nf - 1)] - aa[(nf - 1)] * dp[(nf - 1) - 1])
+            / (bb[(nf - 1)] - aa[(nf - 1)] * cp[(nf - 1) - 1])
+        )  # nf-1 is the last element
+        x[nf - 1] = dp[nf - 1] / 1
+        for i in range(nf - 2, -1, -1):
+            x[i] = dp[i] - cp[i] * x[i + 1]
 
         return x
 
     def compute_tau(self, var, atm):
-        ''' compute the optical depth '''
+        """compute the optical depth"""
 
         nz = self.cfg.nz
 
         # reset to zero
         var.tau.fill(0)
         # absorption species
-        absp_sp = set.union(var.photo_sp,var.ion_sp)
+        absp_sp = set.union(var.photo_sp, var.ion_sp)
 
-        for j in range(nz-1,-1,-1):
+        for j in range(nz - 1, -1, -1):
             for sp in absp_sp:
                 # summing over all T-dependentphoto species
                 if sp in self.cfg.T_cross_sp:
-                    var.tau[j] += var.y[j,species.index(sp)] * atm.dz[j] * var.cross_T[sp][j]  # 1-D shape of nbins from the j level
-                else: # summing over all T-independent photo species
-                    var.tau[j] += var.y[j,species.index(sp)] * atm.dz[j] * var.cross[sp] # only the j-th laye
+                    var.tau[j] += (
+                        var.y[j, species.index(sp)] * atm.dz[j] * var.cross_T[sp][j]
+                    )  # 1-D shape of nbins from the j level
+                else:  # summing over all T-independent photo species
+                    var.tau[j] += (
+                        var.y[j, species.index(sp)] * atm.dz[j] * var.cross[sp]
+                    )  # only the j-th laye
 
-            for sp in self.cfg.scat_sp: # scat_sp are not necessary photo_sp, e.g. He
-                var.tau[j] += var.y[j,species.index(sp)] * atm.dz[j] * var.cross_scat[sp]
+            for sp in self.cfg.scat_sp:  # scat_sp are not necessary photo_sp, e.g. He
+                var.tau[j] += var.y[j, species.index(sp)] * atm.dz[j] * var.cross_scat[sp]
             # adding the layer above at the end of species loop
-            var.tau[j] += var.tau[j+1]
+            var.tau[j] += var.tau[j + 1]
 
     # Lines like chi = zeta_m**2*tran**2 - zeta_p**2 doing large np 2D array multiplication
     # can be sped up with cython
-    def compute_flux(self, var, atm): # Vectorise this loop!
+    def compute_flux(self, var, atm):  # Vectorise this loop!
         # change it to stagerred grids
         # top: stellar flux
         # bottom BC: zero upcoming flux
@@ -2475,72 +3975,81 @@ class ODESolver(object):
 
         nz = self.cfg.nz
 
-        mu_ang = -1.*np.cos(self.cfg.sl_angle)
+        mu_ang = -1.0 * np.cos(self.cfg.sl_angle)
         edd = self.cfg.edd
         tau = var.tau
 
         # delta_tau (length nz) is used in the transmission function
-        delta_tau = tau - np.roll(tau,-1,axis=0) # np.roll(tau,-1,axis=0) are the upper layers
+        delta_tau = tau - np.roll(
+            tau, -1, axis=0
+        )  # np.roll(tau,-1,axis=0) are the upper layers
         delta_tau = delta_tau[:-1]
-
 
         # single-scattering albedo
         nbins = len(var.bins)
         tot_abs, tot_scat = np.zeros((nz, nbins)), np.zeros((nz, nbins))
         for sp in var.photo_sp:
-            tot_abs += np.vstack(var.ymix[:,species.index(sp)])*var.cross[sp] # nz * nbins
+            tot_abs += np.vstack(var.ymix[:, species.index(sp)]) * var.cross[sp]  # nz * nbins
         for sp in self.cfg.scat_sp:
-            tot_scat += np.vstack(var.ymix[:,species.index(sp)])*var.cross_scat[sp]
+            tot_scat += np.vstack(var.ymix[:, species.index(sp)]) * var.cross_scat[sp]
 
         total = tot_abs + tot_scat
 
-        w0 = tot_scat  / (tot_abs + tot_scat) # 2D: nz * nbins
+        w0 = tot_scat / (tot_abs + tot_scat)  # 2D: nz * nbins
         # tot_abs + tot_scat can be zero when certain gas (e.g. H2) does not exist
 
         # Replace nan with zero and inf with very large numbers
         w0 = np.nan_to_num(w0)
 
         # to avoit w0=1
-        w0 = np.minimum(w0,1.-1.E-8)
+        w0 = np.minimum(w0, 1.0 - 1.0e-8)
 
         # sflux: the direct beam; dflux: diffusive flux
-        ''' Beer's law for the intensity'''
-        var.sflux = var.sflux_top *  np.exp(-1.*tau/np.cos(self.cfg.sl_angle) )
+        """ Beer's law for the intensity"""
+        var.sflux = var.sflux_top * np.exp(-1.0 * tau / np.cos(self.cfg.sl_angle))
         # converting the intensity to flux for the raditive transfer calculation
-        dir_flux = var.sflux * np.cos(self.cfg.sl_angle) # need to convert to diffuse flux in the RT definition so it can covert back to total intensity with eps
+        dir_flux = (
+            var.sflux * np.cos(self.cfg.sl_angle)
+        )  # need to convert to diffuse flux in the RT definition so it can covert back to total intensity with eps
 
         # scattering
         # the transmission function (length nz)
-        if ag0 == 0: # to save memory
-            tran = np.exp( -1./edd *(1.- w0)**0.5 * delta_tau ) # 2D: nz * nbins
-            zeta_p = 0.5*( 1. + (1.-w0)**0.5 )
-            zeta_m = 0.5*( 1. - (1.-w0)**0.5 )
-            ll = -1.*w0/( 1./mu_ang**2 -1./edd**2 *(1.-w0) )
-            g_p = 0.5*( ll*(1./edd+1./mu_ang) )
-            g_m = 0.5*( ll*(1./edd-1./mu_ang) )
+        if ag0 == 0:  # to save memory
+            tran = np.exp(-1.0 / edd * (1.0 - w0) ** 0.5 * delta_tau)  # 2D: nz * nbins
+            zeta_p = 0.5 * (1.0 + (1.0 - w0) ** 0.5)
+            zeta_m = 0.5 * (1.0 - (1.0 - w0) ** 0.5)
+            ll = -1.0 * w0 / (1.0 / mu_ang**2 - 1.0 / edd**2 * (1.0 - w0))
+            g_p = 0.5 * (ll * (1.0 / edd + 1.0 / mu_ang))
+            g_m = 0.5 * (ll * (1.0 / edd - 1.0 / mu_ang))
 
         else:
-            tran = np.exp( -1./edd *( (1.- w0*ag0)*(1.- w0) )**0.5 * delta_tau )
-            zeta_p = 0.5*( 1. + ((1.-w0)/(1-w0*ag0))**0.5 )
-            zeta_m = 0.5*( 1. - ((1.-w0)/(1-w0*ag0))**0.5 )
-            ll = ( (1.-w0)*(1-w0*ag0) - 1.)/( 1./mu_ang**2 -1./edd**2 *(1.-w0)*(1-w0*ag0) )
-            g_p = 0.5*( ll*(1./edd+1/(mu_ang*(1.-w0*ag0))) + w0*ag0*mu_ang/(1.-w0*ag0)  )
-            g_m = 0.5*( ll*(1./edd-1/(mu_ang*(1.-w0*ag0))) - w0*ag0*mu_ang/(1.-w0*ag0)  )
-
+            tran = np.exp(-1.0 / edd * ((1.0 - w0 * ag0) * (1.0 - w0)) ** 0.5 * delta_tau)
+            zeta_p = 0.5 * (1.0 + ((1.0 - w0) / (1 - w0 * ag0)) ** 0.5)
+            zeta_m = 0.5 * (1.0 - ((1.0 - w0) / (1 - w0 * ag0)) ** 0.5)
+            ll = ((1.0 - w0) * (1 - w0 * ag0) - 1.0) / (
+                1.0 / mu_ang**2 - 1.0 / edd**2 * (1.0 - w0) * (1 - w0 * ag0)
+            )
+            g_p = 0.5 * (
+                ll * (1.0 / edd + 1 / (mu_ang * (1.0 - w0 * ag0)))
+                + w0 * ag0 * mu_ang / (1.0 - w0 * ag0)
+            )
+            g_m = 0.5 * (
+                ll * (1.0 / edd - 1 / (mu_ang * (1.0 - w0 * ag0)))
+                - w0 * ag0 * mu_ang / (1.0 - w0 * ag0)
+            )
 
         # to avoit zero denominator
-        ll = np.minimum(ll, 1.e10)
-        ll = np.maximum(ll, -1.e10)
-
-
-        # 2D: nz * nbins
-        chi = zeta_m**2*tran**2 - zeta_p**2
-        xi = zeta_p*zeta_m*(1.-tran**2)
-        phi = (zeta_m**2-zeta_p**2)*tran
+        ll = np.minimum(ll, 1.0e10)
+        ll = np.maximum(ll, -1.0e10)
 
         # 2D: nz * nbins
-        i_u = phi*g_p*dir_flux[:-1] - (xi*g_m+chi*g_p)*dir_flux[1:]
-        i_d = phi*g_m*dir_flux[1:] - (chi*g_m+xi*g_p)*dir_flux[:-1]
+        chi = zeta_m**2 * tran**2 - zeta_p**2
+        xi = zeta_p * zeta_m * (1.0 - tran**2)
+        phi = (zeta_m**2 - zeta_p**2) * tran
+
+        # 2D: nz * nbins
+        i_u = phi * g_p * dir_flux[:-1] - (xi * g_m + chi * g_p) * dir_flux[1:]
+        i_d = phi * g_m * dir_flux[1:] - (chi * g_m + xi * g_p) * dir_flux[:-1]
         # sflux[1:] are all the layers above and sflux[:-1] are all the layers abelow
 
         var.zeta_m = zeta_m
@@ -2548,95 +4057,199 @@ class ODESolver(object):
         var.tran = tran
 
         # For testing computating speed
-        #starting recording time
-        #start_time = timeit.default_timer()
+        # starting recording time
+        # start_time = timeit.default_timer()
 
         # propagating downward layer by layer and then upward
         # var.dflux_d and var.dflux_p are defined at the interfaces (staggerred)
         # the rest is defined in the center of the layer
-        for j in range(nz-1,-1,-1): # dflux_d goes from the second top interface (nz+1 interfaces)
-            var.dflux_d[j] = 1./chi[j]*(phi[j]*var.dflux_d[j+1] - xi[j]*var.dflux_u[j] + i_d[j]/mu_ang )
-        for j in range(1,nz+1):
-            var.dflux_u[j] = 1./chi[j-1]*(phi[j-1]*var.dflux_u[j-1] - xi[j-1]*var.dflux_d[j] + i_u[j-1]/mu_ang )
-
+        for j in range(
+            nz - 1, -1, -1
+        ):  # dflux_d goes from the second top interface (nz+1 interfaces)
+            var.dflux_d[j] = (
+                1.0
+                / chi[j]
+                * (phi[j] * var.dflux_d[j + 1] - xi[j] * var.dflux_u[j] + i_d[j] / mu_ang)
+            )
+        for j in range(1, nz + 1):
+            var.dflux_u[j] = (
+                1.0
+                / chi[j - 1]
+                * (
+                    phi[j - 1] * var.dflux_u[j - 1]
+                    - xi[j - 1] * var.dflux_d[j]
+                    + i_u[j - 1] / mu_ang
+                )
+            )
 
         # the average flux from the direct beam
         # !!! WITHOUT multiplied by the cos zenith angle (flux per unit area perpendicular to the direction of propagationat) !!!
-        ave_dir_flux = 0.5*( var.sflux[:-1] + var.sflux[1:])
+        ave_dir_flux = 0.5 * (var.sflux[:-1] + var.sflux[1:])
         # devided by the Eddington coefficient to recover the total intensity (integrated over all directions)
-        tot_flux = ave_dir_flux + 0.5*(var.dflux_u[:-1] + var.dflux_u[1:] + var.dflux_d[1:] + var.dflux_d[:-1])/edd
+        tot_flux = (
+            ave_dir_flux
+            + 0.5
+            * (var.dflux_u[:-1] + var.dflux_u[1:] + var.dflux_d[1:] + var.dflux_d[:-1])
+            / edd
+        )
 
         # store the previous actinic flux into prev_aflux
         var.prev_aflux = np.copy(var.aflux)
         # converting to the actinic flux and storing the current flux
-        var.aflux = tot_flux / (hc/var.bins)
+        var.aflux = tot_flux / (hc / var.bins)
         # the change of the actinic flux
-        var.aflux_change = np.nanmax( np.abs(var.aflux-var.prev_aflux)[var.aflux>self.cfg.flux_atol]/var.aflux[var.aflux>self.cfg.flux_atol] )
+        var.aflux_change = np.nanmax(
+            np.abs(var.aflux - var.prev_aflux)[var.aflux > self.cfg.flux_atol]
+            / var.aflux[var.aflux > self.cfg.flux_atol]
+        )
 
-    def compute_J(self, var, atm): # the vectorized version
-        '''
+    def compute_J(self, var, atm):  # the vectorized version
+        """
         computes photodissociation/photoionization rates; including T-dependent cross sections
-        '''
+        """
         flux = var.aflux
         nz = self.cfg.nz
 
-        diss_cross = var.cross_J # use the key (sp, branch index) e.g. ("H2O", 1); 1D array
-        diss_cross_T = var.cross_J_T # 2D array with the shape of nz * bins
+        diss_cross = var.cross_J  # use the key (sp, branch index) e.g. ("H2O", 1); 1D array
+        diss_cross_T = var.cross_J_T  # 2D array with the shape of nz * bins
 
         bins = var.bins
         n_branch = var.n_branch
 
         # reset to zeros every time
-        var.J_sp = dict([( (sp,bn) , np.zeros(nz)) for sp in var.photo_sp for bn in range(n_branch[sp]+1) ])
+        var.J_sp = dict(
+            [((sp, bn), np.zeros(nz)) for sp in var.photo_sp for bn in range(n_branch[sp] + 1)]
+        )
 
         for sp in var.photo_sp:
             # shape: flux (nz,nbin) cross (nbin)
 
-            for nbr in range(1, n_branch[sp]+1): # axis=1 is to sum over all wavelength
+            for nbr in range(1, n_branch[sp] + 1):  # axis=1 is to sum over all wavelength
                 if sp in self.cfg.T_cross_sp:
-                    var.J_sp[(sp, nbr)] = np.sum( flux[:,:var.sflux_din12_indx] * diss_cross_T[(sp,nbr)][:,:var.sflux_din12_indx] * var.dbin1, axis=1)
-                    var.J_sp[(sp, nbr)] -= 0.5* (flux[:,0] * diss_cross_T[(sp,nbr)][:,0] + flux[:,var.sflux_din12_indx-1] * diss_cross_T[(sp,nbr)][:,var.sflux_din12_indx-1]) * var.dbin1
-                    var.J_sp[(sp, nbr)] += np.sum( flux[:,var.sflux_din12_indx:] * diss_cross_T[(sp,nbr)][:,var.sflux_din12_indx:] * var.dbin2, axis=1)
-                    var.J_sp[(sp, nbr)] -= 0.5* (flux[:,var.sflux_din12_indx] * diss_cross_T[(sp,nbr)][:,var.sflux_din12_indx] + flux[:,-1] * diss_cross_T[(sp,nbr)][:,-1]) * var.dbin2
+                    var.J_sp[(sp, nbr)] = np.sum(
+                        flux[:, : var.sflux_din12_indx]
+                        * diss_cross_T[(sp, nbr)][:, : var.sflux_din12_indx]
+                        * var.dbin1,
+                        axis=1,
+                    )
+                    var.J_sp[(sp, nbr)] -= (
+                        0.5
+                        * (
+                            flux[:, 0] * diss_cross_T[(sp, nbr)][:, 0]
+                            + flux[:, var.sflux_din12_indx - 1]
+                            * diss_cross_T[(sp, nbr)][:, var.sflux_din12_indx - 1]
+                        )
+                        * var.dbin1
+                    )
+                    var.J_sp[(sp, nbr)] += np.sum(
+                        flux[:, var.sflux_din12_indx :]
+                        * diss_cross_T[(sp, nbr)][:, var.sflux_din12_indx :]
+                        * var.dbin2,
+                        axis=1,
+                    )
+                    var.J_sp[(sp, nbr)] -= (
+                        0.5
+                        * (
+                            flux[:, var.sflux_din12_indx]
+                            * diss_cross_T[(sp, nbr)][:, var.sflux_din12_indx]
+                            + flux[:, -1] * diss_cross_T[(sp, nbr)][:, -1]
+                        )
+                        * var.dbin2
+                    )
 
                 else:
-                    var.J_sp[(sp, nbr)] = np.sum( flux[:,:var.sflux_din12_indx] * diss_cross[(sp,nbr)][:var.sflux_din12_indx] * var.dbin1, axis=1)
-                    var.J_sp[(sp, nbr)] -= 0.5* (flux[:,0] * diss_cross[(sp,nbr)][0] + flux[:,var.sflux_din12_indx-1] * diss_cross[(sp,nbr)][var.sflux_din12_indx-1]) * var.dbin1
-                    var.J_sp[(sp, nbr)] += np.sum( flux[:,var.sflux_din12_indx:] * diss_cross[(sp,nbr)][var.sflux_din12_indx:] * var.dbin2, axis=1)
-                    var.J_sp[(sp, nbr)] -= 0.5* (flux[:,var.sflux_din12_indx] * diss_cross[(sp,nbr)][var.sflux_din12_indx] + flux[:,-1] * diss_cross[(sp,nbr)][-1]) * var.dbin2
+                    var.J_sp[(sp, nbr)] = np.sum(
+                        flux[:, : var.sflux_din12_indx]
+                        * diss_cross[(sp, nbr)][: var.sflux_din12_indx]
+                        * var.dbin1,
+                        axis=1,
+                    )
+                    var.J_sp[(sp, nbr)] -= (
+                        0.5
+                        * (
+                            flux[:, 0] * diss_cross[(sp, nbr)][0]
+                            + flux[:, var.sflux_din12_indx - 1]
+                            * diss_cross[(sp, nbr)][var.sflux_din12_indx - 1]
+                        )
+                        * var.dbin1
+                    )
+                    var.J_sp[(sp, nbr)] += np.sum(
+                        flux[:, var.sflux_din12_indx :]
+                        * diss_cross[(sp, nbr)][var.sflux_din12_indx :]
+                        * var.dbin2,
+                        axis=1,
+                    )
+                    var.J_sp[(sp, nbr)] -= (
+                        0.5
+                        * (
+                            flux[:, var.sflux_din12_indx]
+                            * diss_cross[(sp, nbr)][var.sflux_din12_indx]
+                            + flux[:, -1] * diss_cross[(sp, nbr)][-1]
+                        )
+                        * var.dbin2
+                    )
 
                 # summing over all branches
                 var.J_sp[(sp, 0)] += var.J_sp[(sp, nbr)]
                 # incoperating J into rate coefficients
                 if var.pho_rate_index[(sp, nbr)] not in self.cfg.remove_list:
-                    var.k[ var.pho_rate_index[(sp, nbr)]  ] = var.J_sp[(sp, nbr)] * self.cfg.f_diurnal # f_diurnal = 0.5 for Earth; = 1 for tidally-loced planets
-
+                    var.k[var.pho_rate_index[(sp, nbr)]] = (
+                        var.J_sp[(sp, nbr)] * self.cfg.f_diurnal
+                    )  # f_diurnal = 0.5 for Earth; = 1 for tidally-loced planets
 
     def compute_Jion(self, var, atm):
-        '''
+        """
         compute the photoionization rate
         haven't considered any temperature dependence yet
-        '''
+        """
         nz = self.cfg.nz
         flux = var.aflux
-        ion_cross = var.cross_Jion # use the key (sp, br) e.g. ("H2O", 1)
+        ion_cross = var.cross_Jion  # use the key (sp, br) e.g. ("H2O", 1)
 
         bins = var.bins
         n_branch = var.ion_branch
 
         # reset to zeros every time
-        var.Jion_sp = dict([( (sp,bn) , np.zeros(nz)) for sp in var.ion_sp for bn in range(n_branch[sp]+1) ])
+        var.Jion_sp = dict(
+            [((sp, bn), np.zeros(nz)) for sp in var.ion_sp for bn in range(n_branch[sp] + 1)]
+        )
 
         for sp in var.ion_sp:
             # shape: flux (nz,nbin) cross (nbin)
 
             # convert to actinic flux *1/(hc/ld)
-            for nbr in range(1, n_branch[sp]+1):
+            for nbr in range(1, n_branch[sp] + 1):
                 # axis=1 is to sum over all wavelength
-                var.Jion_sp[(sp, nbr)] = np.sum( flux[:,:var.sflux_din12_indx] * ion_cross[(sp,nbr)][:var.sflux_din12_indx] * var.dbin1, axis=1)
-                var.Jion_sp[(sp, nbr)] -= 0.5* (flux[:,0] * ion_cross[(sp,nbr)][0]  + flux[:,var.sflux_din12_indx-1] * ion_cross[(sp,nbr)][var.sflux_din12_indx-1]) * var.dbin1
-                var.Jion_sp[(sp, nbr)] += np.sum( flux[:,var.sflux_din12_indx:] * ion_cross[(sp,nbr)][var.sflux_din12_indx:] * var.dbin2, axis=1)
-                var.Jion_sp[(sp, nbr)] -= 0.5* (flux[:,var.sflux_din12_indx] * ion_cross[(sp,nbr)][var.sflux_din12_indx]  + flux[:,-1] * ion_cross[(sp,nbr)][-1]) * var.dbin2
+                var.Jion_sp[(sp, nbr)] = np.sum(
+                    flux[:, : var.sflux_din12_indx]
+                    * ion_cross[(sp, nbr)][: var.sflux_din12_indx]
+                    * var.dbin1,
+                    axis=1,
+                )
+                var.Jion_sp[(sp, nbr)] -= (
+                    0.5
+                    * (
+                        flux[:, 0] * ion_cross[(sp, nbr)][0]
+                        + flux[:, var.sflux_din12_indx - 1]
+                        * ion_cross[(sp, nbr)][var.sflux_din12_indx - 1]
+                    )
+                    * var.dbin1
+                )
+                var.Jion_sp[(sp, nbr)] += np.sum(
+                    flux[:, var.sflux_din12_indx :]
+                    * ion_cross[(sp, nbr)][var.sflux_din12_indx :]
+                    * var.dbin2,
+                    axis=1,
+                )
+                var.Jion_sp[(sp, nbr)] -= (
+                    0.5
+                    * (
+                        flux[:, var.sflux_din12_indx]
+                        * ion_cross[(sp, nbr)][var.sflux_din12_indx]
+                        + flux[:, -1] * ion_cross[(sp, nbr)][-1]
+                    )
+                    * var.dbin2
+                )
 
                 # 0 is the total dissociation rate
                 # summing all branches
@@ -2644,18 +4257,20 @@ class ODESolver(object):
                 var.Jion_sp[(sp, 0)] += var.Jion_sp[(sp, nbr)]
                 # incoperating J into rate coefficients
                 if var.ion_rate_index[(sp, nbr)] not in self.cfg.remove_list:
-                    var.k[ var.ion_rate_index[(sp, nbr)]  ] = var.Jion_sp[(sp, nbr)] * self.cfg.f_diurnal # f_diurnal = 0.5 for Earth; = 1 for tidally-loced planets
+                    var.k[var.ion_rate_index[(sp, nbr)]] = (
+                        var.Jion_sp[(sp, nbr)] * self.cfg.f_diurnal
+                    )  # f_diurnal = 0.5 for Earth; = 1 for tidally-loced planets
                 # end of the loop: for sp in var.photo_sp:
 
 
 class Ros2(ODESolver):
-    '''
+    """
     class inheritance from ODEsolver for 2nd order Rosenbrock solver
-    '''
-    def __init__(self, vulcan_cfg:Config):
-        #ODESolver.__init__(self)
-        super().__init__(vulcan_cfg)
+    """
 
+    def __init__(self, vulcan_cfg: Config):
+        # ODESolver.__init__(self)
+        super().__init__(vulcan_cfg)
 
     def store_bandM(self, a, nb, nn):
         """
@@ -2667,20 +4282,20 @@ class Ros2(ODESolver):
         """
 
         # band width (treat block-banded as banded matrix)
-        bw = 2*nb-1
-        ab = np.zeros((2*bw+1,nb*nn))
+        bw = 2 * nb - 1
+        ab = np.zeros((2 * bw + 1, nb * nn))
 
         # first 2 columns
-        for i in range(0,2*nb):
-            ab[-(2*nb+i):,i] = a[0:2*nb+i,i]
+        for i in range(0, 2 * nb):
+            ab[-(2 * nb + i) :, i] = a[0 : 2 * nb + i, i]
 
         # middle
-        for i in range(2*nb, nn*nb-2*nb):
-            ab[:,i] = a[(i-2*nb+1):(i-2*nb+1)+(2*bw+1),i]
+        for i in range(2 * nb, nn * nb - 2 * nb):
+            ab[:, i] = a[(i - 2 * nb + 1) : (i - 2 * nb + 1) + (2 * bw + 1), i]
 
         # last 2 columns
-        for ne,i in enumerate(range(nn*nb-2*nb,nn*nb)):
-            ab[:(2*bw+1 -ne),i] = a[-(2*bw+1 -ne):,i]
+        for ne, i in enumerate(range(nn * nb - 2 * nb, nn * nb)):
+            ab[: (2 * bw + 1 - ne), i] = a[-(2 * bw + 1 - ne) :, i]
 
         return (ab, bw)
 
@@ -2694,7 +4309,7 @@ class Ros2(ODESolver):
         y, ymix, h, k = var.y, var.ymix, var.dt, var.k
         M, dzi, Kzz = atm.M, atm.dzi, atm.Kzz
 
-        if self.cfg.use_vm_mol == False:    
+        if self.cfg.use_vm_mol == False:
             if self.cfg.use_moldiff == True and self.cfg.use_settling == False:
                 diffdf = self.diffdf
                 jac_tot = self.lhs_jac_tot
@@ -2704,7 +4319,7 @@ class Ros2(ODESolver):
             else:
                 diffdf = self.diffdf_no_mol
                 jac_tot = self.lhs_jac_no_mol
-        else: # vulcan_cfg.use_vm_mol == True:
+        else:  # vulcan_cfg.use_vm_mol == True:
             if self.cfg.use_moldiff == True and self.cfg.use_settling == False:
                 diffdf = self.diffdf_vm
                 jac_tot = self.lhs_jac_tot_vm
@@ -2715,35 +4330,41 @@ class Ros2(ODESolver):
                 diffdf = self.diffdf_no_mol
                 jac_tot = self.lhs_jac_no_mol
 
-        r = 1. + 1./2.**0.5
+        r = 1.0 + 1.0 / 2.0**0.5
 
-        df = chemdf(y,M,k).flatten() + diffdf(y, atm).flatten()
+        df = chemdf(y, M, k).flatten() + diffdf(y, atm).flatten()
         lhs = jac_tot(var, atm)
 
         # Fixed species including only below the cold trap # TEST 2022
         if self.cfg.use_condense == True and para.fix_species_start == True:
             for sp in self.cfg.fix_species:
-                if self.cfg.fix_species_from_coldtrap_lev == False: # if Ptop is not specified, fix the whole column # TEST2022
+                if (
+                    self.cfg.fix_species_from_coldtrap_lev == False
+                ):  # if Ptop is not specified, fix the whole column # TEST2022
                     pass
                 else:
                     pfix_indx = atm.conden_min_lev[sp]
-                    atm.fix_sp_indx[sp] = np.arange(species.index(sp), species.index(sp) + ni*(pfix_indx), ni)
+                    atm.fix_sp_indx[sp] = np.arange(
+                        species.index(sp), species.index(sp) + ni * (pfix_indx), ni
+                    )
 
                 df[atm.fix_sp_indx[sp]] = 0
-                lhs[atm.fix_sp_indx[sp],:] = 0
-                lhs[atm.fix_sp_indx[sp],atm.fix_sp_indx[sp]] = 1./(r*h)  # cuz the jacobian func is directly outputing 1./(r*h)*sparse.identity(ni*nz) - dfdy
+                lhs[atm.fix_sp_indx[sp], :] = 0
+                lhs[atm.fix_sp_indx[sp], atm.fix_sp_indx[sp]] = (
+                    1.0 / (r * h)
+                )  # cuz the jacobian func is directly outputing 1./(r*h)*sparse.identity(ni*nz) - dfdy
 
         if self.cfg.use_ion == True:
             df[atm.fix_e_indx] = 0
-            lhs[atm.fix_e_indx,:] = 0
-            lhs[atm.fix_e_indx,atm.fix_e_indx] = 1./(r*h)
+            lhs[atm.fix_e_indx, :] = 0
+            lhs[atm.fix_e_indx, atm.fix_e_indx] = 1.0 / (r * h)
 
-        lhs_b, bw = self.store_bandM(lhs,ni,nz)
-        k1_flat = scipy.linalg.solve_banded((bw,bw),lhs_b,df)
+        lhs_b, bw = self.store_bandM(lhs, ni, nz)
+        k1_flat = scipy.linalg.solve_banded((bw, bw), lhs_b, df)
         k1 = k1_flat.reshape(y.shape)
 
-        yk2 = y + k1/r
-        df = chemdf(yk2,M,k).flatten() + diffdf(yk2, atm).flatten()
+        yk2 = y + k1 / r
+        df = chemdf(yk2, M, k).flatten() + diffdf(yk2, atm).flatten()
 
         # TEST condensation
         # Fixed species
@@ -2753,66 +4374,84 @@ class Ros2(ODESolver):
         if self.cfg.use_ion == True:
             df[atm.fix_e_indx] = 0
 
-        rhs = df - 2./(r*h)*k1_flat
-        k2 = scipy.linalg.solve_banded((bw,bw),lhs_b,rhs)
+        rhs = df - 2.0 / (r * h) * k1_flat
+        k2 = scipy.linalg.solve_banded((bw, bw), lhs_b, rhs)
         k2 = k2.reshape(y.shape)
 
-        sol = y + 3./(2.*r)*k1 + 1/(2.*r)*k2
-        
-        ### for Hycean ###
-        if getattr(self.cfg, 'use_fix_H2He', False) and 'H2' not in self.cfg.use_fix_sp_bot and var.t > 1e6:
-            self.cfg.use_fix_sp_bot['H2'] = var.ymix[0,species.index('H2')]
-            self.cfg.use_fix_sp_bot['He'] = var.ymix[0,species.index('He')]
-            print ("After 1e6 sec, H2 and He are fixed at " + str((var.ymix[0,species.index('H2')], var.ymix[0,species.index('He')])))  
-            
-            self.fix_sp_bot_index = [species.index(sp) for sp in self.cfg.use_fix_sp_bot.keys()]
-            self.fix_sp_bot_mix = np.array([self.cfg.use_fix_sp_bot[sp] for sp in self.cfg.use_fix_sp_bot.keys()])
-        ### for Hycean ###
-        
-        # setting particles on the surace = 0
-        if self.cfg.use_fix_sp_bot: # if use_fix_sp_bot = {} (empty), it returns false
-            sol[0,self.fix_sp_bot_index] = self.fix_sp_bot_mix*atm.n_0[0]
+        sol = y + 3.0 / (2.0 * r) * k1 + 1 / (2.0 * r) * k2
 
-        delta = np.abs(sol-yk2)
+        ### for Hycean ###
+        if (
+            getattr(self.cfg, 'use_fix_H2He', False)
+            and 'H2' not in self.cfg.use_fix_sp_bot
+            and var.t > 1e6
+        ):
+            self.cfg.use_fix_sp_bot['H2'] = var.ymix[0, species.index('H2')]
+            self.cfg.use_fix_sp_bot['He'] = var.ymix[0, species.index('He')]
+            print(
+                'After 1e6 sec, H2 and He are fixed at '
+                + str((var.ymix[0, species.index('H2')], var.ymix[0, species.index('He')]))
+            )
+
+            self.fix_sp_bot_index = [species.index(sp) for sp in self.cfg.use_fix_sp_bot.keys()]
+            self.fix_sp_bot_mix = np.array(
+                [self.cfg.use_fix_sp_bot[sp] for sp in self.cfg.use_fix_sp_bot.keys()]
+            )
+        ### for Hycean ###
+
+        # setting particles on the surace = 0
+        if self.cfg.use_fix_sp_bot:  # if use_fix_sp_bot = {} (empty), it returns false
+            sol[0, self.fix_sp_bot_index] = self.fix_sp_bot_mix * atm.n_0[0]
+
+        delta = np.abs(sol - yk2)
         delta[ymix < self.mtol] = 0
         delta[sol < self.atol] = 0
 
         # neglecting the errors at the surface
-        if self.cfg.use_botflux == True or self.cfg.use_fix_sp_bot: delta[0] = 0
+        if self.cfg.use_botflux == True or self.cfg.use_fix_sp_bot:
+            delta[0] = 0
 
         # TEST condensation 2022
         if self.cfg.use_condense == True:
-            delta[:,self.non_gas_sp_index] = 0
-            delta[:,self.condense_sp_index] = 0
+            delta[:, self.non_gas_sp_index] = 0
+            delta[:, self.condense_sp_index] = 0
 
             if para.fix_species_start == True:
-
                 for sp in self.cfg.fix_species:
-                    if self.cfg.fix_species_from_coldtrap_lev == False: # if Ptop is not specified, fix the whole column # TEST2022
-                        sol[:,species.index(sp)] = var.fix_y[sp].copy()
+                    if (
+                        self.cfg.fix_species_from_coldtrap_lev == False
+                    ):  # if Ptop is not specified, fix the whole column # TEST2022
+                        sol[:, species.index(sp)] = var.fix_y[sp].copy()
                     else:
-                        #pfix_indx = min( range(len(atm.pco)), key=lambda i: abs(atm.pco[i]- self.cfg.fix_species_Ptop[0] ))
+                        # pfix_indx = min( range(len(atm.pco)), key=lambda i: abs(atm.pco[i]- self.cfg.fix_species_Ptop[0] ))
                         pfix_indx = atm.conden_min_lev[sp]
-                        sol[:pfix_indx,species.index(sp)] = var.fix_y[sp].copy()[:pfix_indx]
+                        sol[:pfix_indx, species.index(sp)] = var.fix_y[sp].copy()[:pfix_indx]
 
-                    delta[:,species.index(sp)] = 0
+                    delta[:, species.index(sp)] = 0
 
-        if self.cfg.use_print_delta == True and para.count % self.cfg.print_prog_num==0:
-            max_indx = np.nanargmax(delta/sol, axis=1)
-            max_lev_indx = np.nanargmax(delta/sol)
-            log.info('Largest delta (truncation error) from nz = ' + str(int(max_lev_indx/ni) ) )
-            log.info( np.array(species)[max_indx] )
-            log.info('Largest delta (truncation error) from ' + species[max_indx%ni] + " at nz = "   + str(int(max_indx/ni) ) )
+        if self.cfg.use_print_delta == True and para.count % self.cfg.print_prog_num == 0:
+            max_indx = np.nanargmax(delta / sol, axis=1)
+            max_lev_indx = np.nanargmax(delta / sol)
+            log.info(
+                'Largest delta (truncation error) from nz = ' + str(int(max_lev_indx / ni))
+            )
+            log.info(np.array(species)[max_indx])
+            log.info(
+                'Largest delta (truncation error) from '
+                + species[max_indx % ni]
+                + ' at nz = '
+                + str(int(max_indx / ni))
+            )
 
-        delta = np.amax( delta[sol>0]/sol[sol>0] )
+        delta = np.amax(delta[sol > 0] / sol[sol > 0])
 
         var.y = sol
 
         # # TEST condensation excluding non-gaseous species
         if self.cfg.non_gas_sp:
-            var.ymix = var.y/np.vstack(np.sum(var.y[:,atm.gas_indx],axis=1))
+            var.ymix = var.y / np.vstack(np.sum(var.y[:, atm.gas_indx], axis=1))
         else:
-            var.ymix = var.y/np.vstack(np.sum(var.y,axis=1))
+            var.ymix = var.y / np.vstack(np.sum(var.y, axis=1))
         # TEST condensation excluding non-gaseous species
 
         para.delta = delta
@@ -2820,11 +4459,12 @@ class Ros2(ODESolver):
         # use charge balance to obtain the number density of electrons (such that [ions] = [e])
         if self.cfg.use_ion == True:
             # clear e
-            var.y[:,species.index('e')] = 0
+            var.y[:, species.index('e')] = 0
             # set e such that the net chare is zero
             for sp in var.charge_list:
-                var.y[:,species.index('e')] -= compo[compo_row.index(sp)]['e'] * var.y[:,species.index(sp)]
-
+                var.y[:, species.index('e')] -= (
+                    compo[compo_row.index(sp)]['e'] * var.y[:, species.index(sp)]
+                )
 
         return var, para
 
@@ -2849,41 +4489,41 @@ class Ros2(ODESolver):
             diffdf = self.diffdf_no_mol
             jac_tot = self.lhs_jac_no_mol_fix_all_bot
 
-        r = 1. + 1./2.**0.5
+        r = 1.0 + 1.0 / 2.0**0.5
 
-        df = chemdf(y,M,k).flatten() + diffdf(y, atm).flatten()
+        df = chemdf(y, M, k).flatten() + diffdf(y, atm).flatten()
         lhs = jac_tot(var, atm)
 
-        lhs_b, bw = self.store_bandM(lhs,ni,nz)
-        k1_flat = scipy.linalg.solve_banded((bw,bw),lhs_b,df)
+        lhs_b, bw = self.store_bandM(lhs, ni, nz)
+        k1_flat = scipy.linalg.solve_banded((bw, bw), lhs_b, df)
 
         k1 = k1_flat.reshape(y.shape)
 
-        yk2 = y + k1/r
-        df = chemdf(yk2,M,k).flatten() + diffdf(yk2, atm).flatten()
+        yk2 = y + k1 / r
+        df = chemdf(yk2, M, k).flatten() + diffdf(yk2, atm).flatten()
 
-        rhs = df - 2./(r*h)*k1_flat
-        k2 = scipy.linalg.solve_banded((bw,bw),lhs_b,rhs)
+        rhs = df - 2.0 / (r * h) * k1_flat
+        k2 = scipy.linalg.solve_banded((bw, bw), lhs_b, rhs)
         k2 = k2.reshape(y.shape)
 
-        sol = y + 3./(2.*r)*k1 + 1/(2.*r)*k2
+        sol = y + 3.0 / (2.0 * r) * k1 + 1 / (2.0 * r) * k2
 
         # fixed the bottom layer to yini (in chemical EQ)
-        sol[0] = bottom*atm.n_0[0]
+        sol[0] = bottom * atm.n_0[0]
 
-        delta = np.abs(sol-yk2)
+        delta = np.abs(sol - yk2)
         delta[ymix < self.mtol] = 0
         delta[sol < self.atol] = 0
 
-        delta = np.amax( delta[sol>0]/sol[sol>0] )
+        delta = np.amax(delta[sol > 0] / sol[sol > 0])
 
         var.y = sol
 
         # # TEST condensation excluding non-gaseous species
         if self.cfg.non_gas_sp:
-            var.ymix = var.y/np.vstack(np.sum(var.y[:,atm.gas_indx],axis=1))
+            var.ymix = var.y / np.vstack(np.sum(var.y[:, atm.gas_indx], axis=1))
         else:
-            var.ymix = var.y/np.vstack(np.sum(var.y,axis=1))
+            var.ymix = var.y / np.vstack(np.sum(var.y, axis=1))
         # TEST condensation excluding non-gaseous species
 
         para.delta = delta
@@ -2891,13 +4531,14 @@ class Ros2(ODESolver):
         # use charge balance to obtain the number density of electrons (such that [ions] = [e])
         if self.cfg.use_ion:
             # clear e
-            var.y[:,species.index('e')] = 0
+            var.y[:, species.index('e')] = 0
             # set e such that the net chare is zero
             for sp in var.charge_list:
-                var.y[:,species.index('e')] -= compo[compo_row.index(sp)]['e'] * var.y[:,species.index(sp)]
+                var.y[:, species.index('e')] -= (
+                    compo[compo_row.index(sp)]['e'] * var.y[:, species.index(sp)]
+                )
 
         return var, para
-
 
     def naming_solver(self, para):
         if self.cfg.use_moldiff:
@@ -2906,26 +4547,24 @@ class Ros2(ODESolver):
             log.info('No molecular diffusion.')
         para.solver_str = 'solver'
 
-
     def one_step(self, var, atm, para):
 
         while True:
+            var, para = getattr(self, para.solver_str)(var, atm, para)
 
-           var, para =  getattr(self, para.solver_str)(var, atm, para)
+            # clipping small negative values and also calculating atomic loss (atom_loss)
+            var, para = self.clip(
+                var,
+                para,
+                atm,
+                pos_cut=self.cfg.pos_cut,
+                nega_cut=self.cfg.nega_cut,
+            )
 
-           # clipping small negative values and also calculating atomic loss (atom_loss)
-           var , para = self.clip(var, para, atm,
-                                  pos_cut=self.cfg.pos_cut,
-                                  nega_cut=self.cfg.nega_cut,)
-
-           if self.step_ok(var, para,
-                           loss_eps=self.cfg.loss_eps,
-                           rtol=self.cfg.rtol):
-               break
-           elif self.step_reject(var, para,
-                           loss_eps=self.cfg.loss_eps,
-                           rtol=self.cfg.rtol):
-               break
+            if self.step_ok(var, para, loss_eps=self.cfg.loss_eps, rtol=self.cfg.rtol):
+                break
+            elif self.step_reject(var, para, loss_eps=self.cfg.loss_eps, rtol=self.cfg.rtol):
+                break
 
         return var, para
 
@@ -2937,8 +4576,9 @@ class Ros2(ODESolver):
         delta = para.delta
         rtol = self.cfg.rtol
 
-        if delta==0: delta = 0.01*rtol
-        h_factor = 0.9*(rtol/delta)**0.5 # 0.9 is simply a safety factor
+        if delta == 0:
+            delta = 0.01 * rtol
+        h_factor = 0.9 * (rtol / delta) ** 0.5  # 0.9 is simply a safety factor
         h_factor = np.maximum(h_factor, dt_var_min)
         h_factor = np.minimum(h_factor, dt_var_max)
 
@@ -2953,12 +4593,11 @@ class Ros2(ODESolver):
 
 
 class Output(object):
+    def __init__(self, vulcan_cfg: Config):
 
-    def __init__(self, vulcan_cfg:Config):
-
-        self.cfg   = vulcan_cfg
-        output_dir = self.cfg.output_dir + "/"
-        out_name   = self.cfg.out_name
+        self.cfg = vulcan_cfg
+        output_dir = self.cfg.output_dir + '/'
+        out_name = self.cfg.out_name
 
         if self.cfg.clean_output:
             safe_rm(self.cfg.output_dir)
@@ -2969,20 +4608,33 @@ class Output(object):
         if not os.path.exists(self.cfg.plot_dir):
             os.makedirs(self.cfg.plot_dir)
 
-        outfile = output_dir+out_name
+        outfile = output_dir + out_name
         if os.path.isfile(outfile):
-            log.warning("Output file already exists. Removing.")
+            log.warning('Output file already exists. Removing.')
             safe_rm(outfile)
 
     def print_prog(self, var, para):
         indx_max = np.nanargmax(para.where_varies_most)
-        log.info('Elapsed time: ' +"{:.2e}".format(var.t) + ' || Step number: ' + str(para.count) + '/' + str(self.cfg.count_max) )
-        log.info('longdy = ' + "{:.2e}".format(var.longdy) + '      || longdy/dt = ' + "{:.2e}".format(var.longdydt) + '  || dt = '+ "{:.2e}".format(var.dt) )
-        log.info('from nz = ' + str(int(indx_max/ni)) + ' and ' + species[indx_max%ni])
+        log.info(
+            'Elapsed time: '
+            + '{:.2e}'.format(var.t)
+            + ' || Step number: '
+            + str(para.count)
+            + '/'
+            + str(self.cfg.count_max)
+        )
+        log.info(
+            'longdy = '
+            + '{:.2e}'.format(var.longdy)
+            + '      || longdy/dt = '
+            + '{:.2e}'.format(var.longdydt)
+            + '  || dt = '
+            + '{:.2e}'.format(var.dt)
+        )
+        log.info('from nz = ' + str(int(indx_max / ni)) + ' and ' + species[indx_max % ni])
         log.info(spacer)
 
-
-    def print_end_msg(self, var, para ):
+    def print_end_msg(self, var, para):
         log.info('Total atom loss:')
         for atom in self.cfg.atom_list:
             log.info(atom + ': ' + str(var.atom_loss[atom]) + ' ')
@@ -3010,12 +4662,13 @@ class Output(object):
         if self.cfg.use_plot_evo:
             self.plot_evo(var, atm)
         if self.cfg.use_plot_end:
-            self.plot_update(var, atm, para, 
-                             fpath=os.path.join(self.cfg.plot_dir, f"mix.{PLT_FMT}") )
+            self.plot_update(
+                var, atm, para, fpath=os.path.join(self.cfg.plot_dir, f'mix.{PLT_FMT}')
+            )
         plt.close('all')
 
         # making the save dict
-        var_save = {'species':species, 'nr':nr}
+        var_save = {'species': species, 'nr': nr}
 
         for key in var.var_save:
             var_save[key] = getattr(var, key)
@@ -3029,34 +4682,56 @@ class Output(object):
 
         if self.cfg.output_humanread == True:
             # human-readable form, less efficient
-            with open(output_file+".var", 'w') as outfile:
+            with open(output_file + '.var', 'w') as outfile:
                 for var in var_save.keys():
-                    outfile.write(f"# {var} \n")
-                    outfile.write(str(var_save[var]) + "\n")
+                    outfile.write(f'# {var} \n')
+                    outfile.write(str(var_save[var]) + '\n')
 
-            with open(output_file+".atm", 'w') as outfile:
+            with open(output_file + '.atm', 'w') as outfile:
                 for var in vars(atm).keys():
-                    outfile.write(f"# {var} \n")
-                    outfile.write(str(vars(atm)[var]) + "\n")
+                    outfile.write(f'# {var} \n')
+                    outfile.write(str(vars(atm)[var]) + '\n')
 
-            with open(output_file+".par", 'w') as outfile:
+            with open(output_file + '.par', 'w') as outfile:
                 for var in vars(para).keys():
-                    outfile.write(f"# {var} \n")
-                    outfile.write(str(vars(para)[var]) + "\n")
+                    outfile.write(f'# {var} \n')
+                    outfile.write(str(vars(para)[var]) + '\n')
         else:
             # pickled form, less safe
             from pickle import dump
+
             with open(output_file, 'wb') as outfile:
-                dump( {'variable': var_save, 'atm': vars(atm), 'parameter': vars(para) }, outfile, protocol=4)
+                dump(
+                    {'variable': var_save, 'atm': vars(atm), 'parameter': vars(para)},
+                    outfile,
+                    protocol=4,
+                )
 
     def plot_update(self, var, atm, para, fpath=None):
 
-        log.debug("Plotting mixing ratios")
+        log.debug('Plotting mixing ratios')
 
-        colors = ['b','r','c','m','y','k','orange','pink', 'grey',\
-        'darkred','darkblue','salmon','chocolate','mediumspringgreen','steelblue','plum','hotpink']
+        colors = [
+            'b',
+            'r',
+            'c',
+            'm',
+            'y',
+            'k',
+            'orange',
+            'pink',
+            'grey',
+            'darkred',
+            'darkblue',
+            'salmon',
+            'chocolate',
+            'mediumspringgreen',
+            'steelblue',
+            'plum',
+            'hotpink',
+        ]
 
-        fig, ax = plt.subplots(1,1, figsize=(8,6))
+        fig, ax = plt.subplots(1, 1, figsize=(8, 6))
         color_index = 0
         for sp in self.cfg.plot_spec:
             if sp in tex_labels:
@@ -3064,7 +4739,7 @@ class Output(object):
             else:
                 sp_lab = sp
 
-            if color_index == len(colors): # when running out of colors
+            if color_index == len(colors):  # when running out of colors
                 colors.append(tuple(np.random.rand(3)))
 
             if sp in gas_cols.keys():
@@ -3074,50 +4749,65 @@ class Output(object):
                 color_index += 1
 
             if self.cfg.plot_height == False:
-                line, = ax.plot(var.ymix[:,species.index(sp)], atm.pco/1.e6, color = color, label=sp_lab)
+                (line,) = ax.plot(
+                    var.ymix[:, species.index(sp)], atm.pco / 1.0e6, color=color, label=sp_lab
+                )
                 if self.cfg.use_condense == True and sp in self.cfg.condense_sp:
-                    ax.plot(atm.sat_mix[sp], atm.pco/1.e6, color = color, label=sp_lab + ' sat', ls='--')
+                    ax.plot(
+                        atm.sat_mix[sp],
+                        atm.pco / 1.0e6,
+                        color=color,
+                        label=sp_lab + ' sat',
+                        ls='--',
+                    )
 
                 ax.set_yscale('log')
                 ax.invert_yaxis()
-                ax.set_ylabel("Pressure [bar]")
-                ax.set_ylim((self.cfg.P_b/1.E6,self.cfg.P_t/1.E6))
+                ax.set_ylabel('Pressure [bar]')
+                ax.set_ylim((self.cfg.P_b / 1.0e6, self.cfg.P_t / 1.0e6))
 
-            else: # plotting with height
-                line, = ax.plot(var.ymix[:,species.index(sp)], atm.zmco/1.e5, color = color, label=sp_lab)
+            else:  # plotting with height
+                (line,) = ax.plot(
+                    var.ymix[:, species.index(sp)], atm.zmco / 1.0e5, color=color, label=sp_lab
+                )
                 if self.cfg.use_condense == True and sp in self.cfg.condense_sp:
-                    ax.plot(atm.sat_mix[sp], atm.zco[1:]/1.e5, color = color, label=sp_lab + ' sat', ls='--')
+                    ax.plot(
+                        atm.sat_mix[sp],
+                        atm.zco[1:] / 1.0e5,
+                        color=color,
+                        label=sp_lab + ' sat',
+                        ls='--',
+                    )
 
-                ax.set_ylim((atm.zco[0]/1e5,atm.zco[-1]/1e5))
-                ax.set_ylabel("Height [km]")
+                ax.set_ylim((atm.zco[0] / 1e5, atm.zco[-1] / 1e5))
+                ax.set_ylabel('Height [km]')
 
-        title =  "i = %5d steps     t = %.2e seconds"%(para.count, var.t)
-        title += "\n dy/dt = %.2e"%(var.longdydt)
+        title = 'i = %5d steps     t = %.2e seconds' % (para.count, var.t)
+        title += '\n dy/dt = %.2e' % (var.longdydt)
         ax.set_title(title)
         ax.set_xscale('log')
-        ax.set_xlabel("Volume mixing ratio")
+        ax.set_xlabel('Volume mixing ratio')
         ax.set_xlim(1e-16, 1.2)
-        ax.legend(fontsize=10, labelspacing=0.2,
-                    loc='upper left', bbox_to_anchor=(1.0, 1.0))
+        ax.legend(fontsize=10, labelspacing=0.2, loc='upper left', bbox_to_anchor=(1.0, 1.0))
 
         # temperature profile
         axt = ax.twiny()
-        axt.set_xlabel("Temperature [K]")
+        axt.set_xlabel('Temperature [K]')
         if self.cfg.plot_height:
-            axt_yarr = atm.zmco/1.e5
+            axt_yarr = atm.zmco / 1.0e5
         else:
-            axt_yarr = atm.pco/1.e6
+            axt_yarr = atm.pco / 1.0e6
         axt.plot(atm.Tco, axt_yarr, color='k', lw=0.5, ls='dotted')
-        
+
         if fpath is None:
-            save_fpath = os.path.join(self.cfg.plot_dir, f"_recent.{PLT_FMT}")
-            copy_fpath = os.path.join(self.cfg.plot_dir, f"{para.pic_count:05d}.{PLT_FMT}")
+            save_fpath = os.path.join(self.cfg.plot_dir, f'_recent.{PLT_FMT}')
+            copy_fpath = os.path.join(self.cfg.plot_dir, f'{para.pic_count:05d}.{PLT_FMT}')
         else:
             save_fpath = fpath
             copy_fpath = None
 
-        log.debug(f"Plotting to {save_fpath}")
-        fig.savefig( save_fpath, dpi=self.cfg.plot_dpi, bbox_inches='tight')
+        log.debug(f'Plotting to {save_fpath}')
+        fig.savefig(save_fpath, dpi=self.cfg.plot_dpi, bbox_inches='tight')
 
         if copy_fpath:
             shutil.copyfile(save_fpath, copy_fpath)
@@ -3131,30 +4821,34 @@ class Output(object):
 
         # fig.add_subplot(121) fig.add_subplot(122)
 
-        line1, = plt.plot(np.sum(var.dflux_u,axis=1), atm.pico/1.e6, label='up flux')
-        line2, = plt.plot(np.sum(var.dflux_d,axis=1), atm.pico/1.e6, label='down flux', ls='--', lw=1.2)
-        line3, = plt.plot(np.sum(var.sflux,axis=1), atm.pico/1.e6, label='stellar flux', ls=':', lw=1.5)
+        (line1,) = plt.plot(np.sum(var.dflux_u, axis=1), atm.pico / 1.0e6, label='up flux')
+        (line2,) = plt.plot(
+            np.sum(var.dflux_d, axis=1), atm.pico / 1.0e6, label='down flux', ls='--', lw=1.2
+        )
+        (line3,) = plt.plot(
+            np.sum(var.sflux, axis=1), atm.pico / 1.0e6, label='stellar flux', ls=':', lw=1.5
+        )
 
-        images.append((line1,line2))
+        images.append((line1, line2))
 
-        plt.title(str(para.count)+' steps and ' + str("{:.2e}".format(var.t)) + ' s' )
+        plt.title(str(para.count) + ' steps and ' + str('{:.2e}'.format(var.t)) + ' s')
         plt.gca().set_xscale('log')
         plt.gca().set_yscale('log')
         plt.gca().invert_yaxis()
-        plt.xlim(xmin=1.E-8)
-        plt.ylim((atm.pico[0]/1.e6,atm.pico[-1]/1.e6))
-        plt.legend(frameon=0, prop={'size':14}, loc=3)
-        plt.xlabel("Diffusive flux")
-        plt.ylabel("Pressure (bar)")
+        plt.xlim(xmin=1.0e-8)
+        plt.ylim((atm.pico[0] / 1.0e6, atm.pico[-1] / 1.0e6))
+        plt.legend(frameon=0, prop={'size': 14}, loc=3)
+        plt.xlabel('Diffusive flux')
+        plt.ylabel('Pressure (bar)')
         plt.show(block=0)
         plt.pause(0.1)
         if self.cfg.use_flux_movie:
-            plt.savefig( 'plot/movie/flux-'+str(para.count)+'.jpg', dpi=self.cfg.plot_dpi)
+            plt.savefig('plot/movie/flux-' + str(para.count) + '.jpg', dpi=self.cfg.plot_dpi)
 
         plt.close('all')
 
     def plot_evo(self, var, atm, plot_j=-1, plot_ymin=1e-16, dn=1):
-        '''
+        """
         Plot the evolution of mixing ratios over time.
 
         Arguments
@@ -3164,73 +4858,77 @@ class Output(object):
         - plot_j: index of the atmospheric layer to plot (default: -1)
         - plot_ymin: minimum y-axis value for the plot (default: 1e-16)
         - dn: data point interval for plotting (default: 1, meaning plot all points)
-        '''
+        """
 
         plot_spec = self.cfg.plot_spec
         plot_dir = self.cfg.plot_dir
-        fig,ax = plt.subplots(1,1, figsize=(8,6))
+        fig, ax = plt.subplots(1, 1, figsize=(8, 6))
 
-        ymix_time = np.array(var.y_time/atm.n_0[:,np.newaxis])
+        ymix_time = np.array(var.y_time / atm.n_0[:, np.newaxis])
 
-        for i,sp in enumerate(self.cfg.plot_spec):
-            col = gas_cols.get(sp, plt.cm.rainbow(float(i)/len(plot_spec)))
+        for i, sp in enumerate(self.cfg.plot_spec):
+            col = gas_cols.get(sp, plt.cm.rainbow(float(i) / len(plot_spec)))
             lbl = tex_labels.get(sp, sp)
-            ax.plot(var.t_time[::dn], ymix_time[::dn,plot_j,species.index(sp)],
-                     c = col, label=lbl)
+            ax.plot(
+                var.t_time[::dn], ymix_time[::dn, plot_j, species.index(sp)], c=col, label=lbl
+            )
 
         ax.set_xscale('log')
         ax.set_yscale('log')
         ax.set_xlabel('Time [s]')
         ax.set_ylabel('Volume mixing ratios')
-        ax.set_ylim((plot_ymin,1.2))
-        ax.legend(fontsize=10, labelspacing=0.2,
-                    loc='upper left', bbox_to_anchor=(1.0, 1.0))
+        ax.set_ylim((plot_ymin, 1.2))
+        ax.legend(fontsize=10, labelspacing=0.2, loc='upper left', bbox_to_anchor=(1.0, 1.0))
         fig.savefig(plot_dir + f'evo.{PLT_FMT}', dpi=self.cfg.plot_dpi)
         plt.close('all')
 
     def plot_evo_inter(self, var, atm, plot_j=-1, plot_ymin=1e-16, dn=1):
-        '''
+        """
         plot the evolution when the code is interrupted
-        '''
+        """
         var.t_time = np.array(var.t_time)
-        ymix_time = np.array(var.y_time/atm.n_0[:,np.newaxis])
+        ymix_time = np.array(var.y_time / atm.n_0[:, np.newaxis])
 
         plot_spec = self.cfg.plot_spec
         plot_dir = self.cfg.plot_dir
         plt.figure('evolution')
 
-        for i,sp in enumerate(self.cfg.plot_spec):
-            plt.plot(var.t_time[::dn], ymix_time[::dn,plot_j,species.index(sp)],c = plt.cm.rainbow(float(i)/len(plot_spec)),label=sp)
+        for i, sp in enumerate(self.cfg.plot_spec):
+            plt.plot(
+                var.t_time[::dn],
+                ymix_time[::dn, plot_j, species.index(sp)],
+                c=plt.cm.rainbow(float(i) / len(plot_spec)),
+                label=sp,
+            )
 
         plt.gca().set_xscale('log')
         plt.gca().set_yscale('log')
         plt.xlabel('time')
         plt.ylabel('mixing ratios')
-        plt.ylim((plot_ymin,1.))
-        plt.legend(frameon=0, prop={'size':14}, loc='best')
+        plt.ylim((plot_ymin, 1.0))
+        plt.legend(frameon=0, prop={'size': 14}, loc='best')
         plt.savefig(plot_dir + f'evo.{PLT_FMT}', dpi=self.cfg.plot_dpi)
 
     def plot_TP(self, atm):
         plot_dir = self.cfg.plot_dir
-        #plt.figure('TPK')
+        # plt.figure('TPK')
         fig, ax1 = plt.subplots()
-        ax2 = ax1.twiny() # ax1 and ax2 share y-axis
+        ax2 = ax1.twiny()  # ax1 and ax2 share y-axis
 
         if self.cfg.plot_height == False:
-            ax1.semilogy( atm.Tco, atm.pco/1.e6, c='black')
-            ax2.loglog( atm.Kzz, atm.pico[1:-1]/1.e6, c='k', ls='--')
+            ax1.semilogy(atm.Tco, atm.pco / 1.0e6, c='black')
+            ax2.loglog(atm.Kzz, atm.pico[1:-1] / 1.0e6, c='k', ls='--')
             plt.gca().invert_yaxis()
-            plt.ylim((self.cfg.P_b/1.E6,self.cfg.P_t/1.E6))
-            ax1.set_ylabel("Pressure (bar)")
+            plt.ylim((self.cfg.P_b / 1.0e6, self.cfg.P_t / 1.0e6))
+            ax1.set_ylabel('Pressure (bar)')
 
-        else: # plotting with height
-            ax1.plot(atm.Tco, atm.zmco/1.e5, c='black')
-            ax2.semilogx( atm.Kzz, atm.zmco[1:]/1.e5, c='k', ls='--')
-            ax1.set_ylabel("Height (km)")
+        else:  # plotting with height
+            ax1.plot(atm.Tco, atm.zmco / 1.0e5, c='black')
+            ax2.semilogx(atm.Kzz, atm.zmco[1:] / 1.0e5, c='k', ls='--')
+            ax1.set_ylabel('Height (km)')
 
-        #plt.xlabel("Temperature (K)")
-        ax1.set_xlabel("Temperature (K)")
+        # plt.xlabel("Temperature (K)")
+        ax1.set_xlabel('Temperature (K)')
         ax2.set_xlabel(r'K$_{zz}$ (cm$^2$s$^{-1}$)')
 
         fig.savefig(plot_dir + f'TPK_initial.{PLT_FMT}', dpi=self.cfg.plot_dpi)
-
