@@ -28,6 +28,49 @@ from config import Config
 from phy_const import kb, Navo, hc, ag0 # hc is used to convert to the actinic flux
 
 
+def safe_rm(fpath: str) -> bool:
+    """
+    Safely remove a file or folder
+
+    Parameters
+    ----------
+    fpath : str
+        Path to the file or folder to be removed
+
+    Returns
+    -------
+    removed : bool
+        True if the file or folder was removed, False otherwise
+    """
+
+    if fpath == '':
+        log.warning('Could not remove file at empty path')
+        return
+
+    fpath = os.path.abspath(fpath)
+    if os.path.exists(fpath):
+        if os.path.isfile(fpath):
+            os.remove(fpath)
+            return True
+
+        elif os.path.isdir(fpath):
+            subfolders = [f.path.split('/')[-1] for f in os.scandir(fpath) if f.is_dir()]
+            if '.git' in subfolders:
+                log.warning(f"Not emptying '{fpath}' as it contains a Git repository")    
+
+            elif os.path.samefile(fpath, os.getcwd()):
+                log.warning(f"Not emptying '{fpath}' as it is the current working directory")  
+
+            else:
+                shutil.rmtree(fpath)
+                return True
+
+        else:
+            log.warning("Cannot remove unhandled path '%s'" % fpath)
+
+    return False
+
+
 class ReadRate(object):
 
     """
@@ -2595,7 +2638,7 @@ class Output(object):
         out_name   = self.cfg.out_name
 
         if self.cfg.clean_output:
-            shutil.rmtree(self.cfg.output_dir, ignore_errors=True)
+            safe_rm(self.cfg.output_dir)
 
         if not os.path.exists(output_dir):
             os.makedirs(output_dir)
@@ -2606,7 +2649,7 @@ class Output(object):
         outfile = output_dir+out_name
         if os.path.isfile(outfile):
             log.warning("Output file already exists. Removing.")
-            os.remove(outfile)
+            safe_rm(outfile)
 
     def print_prog(self, var, para):
         indx_max = np.nanargmax(para.where_varies_most)
