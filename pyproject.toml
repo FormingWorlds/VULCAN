@@ -70,3 +70,61 @@ py-modules = [
 homepage = "https://github.com/FormingWorlds/VULCAN/"
 issues = "https://github.com/FormingWorlds/VULCAN/issues"
 changelog = "https://github.com/FormingWorlds/VULCAN/releases"
+
+
+[tool.ruff]
+line-length = 96
+target-version = "py312"
+extend-exclude = ["*ipynb"]
+
+[tool.ruff.lint]
+select = [
+	"F",  # Pyflakes
+	"E",  # pycodestyle (error)
+	"W",  # pycodestyle (warning)
+    "I",    # isort
+]
+ignore = [
+    "E501", # Line too long
+    "E741", # Ambiguous variable name
+]
+
+[tool.ruff.lint.isort]
+known-first-party=["vulcan"]
+known-third-party=["zalmoxis"]
+required-imports = ["from __future__ import annotations"]
+
+[tool.ruff.format]
+quote-style = "single"
+indent-style = "space"
+
+[tool.bumpversion]
+# https://callowayproject.github.io/bump-my-version/howtos/calver/
+current_version = "25.11.19"
+parse = """(?x)                      # Verbose mode
+    (?P<release>                     # The release part
+        (?:[1-9][0-9])\\.            # YY.
+        (?:1[0-2]|0[1-9])\\.         # MM.
+        (?:3[0-1]|[1-2][0-9]|0[1-9]) # DD
+    )
+    (?:\\.(?P<patch>\\d+))?         # .patch, optional
+"""
+serialize = ["{release}.{patch}", "{release}"]
+
+[tool.bumpversion.parts.release]
+calver_format = "{YY}.{0M}.{0D}"
+
+[[tool.bumpversion.files]]
+filename = "src/vulcan/__init__.py"
+search = "__version__ = '{current_version}'"
+replace = "__version__ = '{new_version}'"
+
+[[tool.bumpversion.files]]
+filename = "pyproject.toml"
+search = "version = \"{current_version}\""
+replace = "version = \"{new_version}\""
+
+[[tool.bumpversion.files]]
+filename = "CITATION.cff"
+search = "version: {current_version}"
+replace = "version: {new_version}"
