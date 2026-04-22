@@ -2,6 +2,7 @@ import numpy as np
 import scipy
 from scipy import interpolate
 import scipy.optimize as sop
+import os
 import subprocess
 import pickle
 from shutil import copyfile
@@ -33,8 +34,8 @@ class InitialAbun(object):
     def __init__(self, vulcan_cfg:Config):
         self.cfg = vulcan_cfg
         self.ini_m = [0.9,0.1,0.,0.,0] # initial guess
-
         self.atom_list = vulcan_cfg.atom_list
+        self.cfg.ini_mix = self.cfg.ini_mix.lower() # normalise string to lowercase
 
     def abun_lowT(self, x):
         """
@@ -68,19 +69,25 @@ class InitialAbun(object):
 
 
     def ini_mol(self):
-        if self.cfg.ini_mix == 'const_lowT':
+        if self.cfg.ini_mix == 'const_lowt':
             return np.array(sop.fsolve(self.abun_lowT, self.ini_m))
 
     def ini_fc(self, data_var, data_atm):
+
+        # check that fastchem is compiled in the correct place
+        if not os.path.isfile(os.path.join(FASTCHEM_DIR, 'fastchem')):
+            raise RuntimeError('FastChem cannot be found. Try compiling it by running `make` inside {FASTCHEM_DIR}')
+
+
         # reading-in the default elemental abundances from Lodders 2009
         # depending on including ion or not (whether there is e- in the fastchem elemental abundance dat)
-        solar_ele = FASTCHEM_DIR+'input/solar_element_abundances.dat'
+        solar_ele = os.path.join(FASTCHEM_DIR, 'input', 'solar_element_abundances.dat')
         if self.cfg.use_ion == True:
-            copyfile(FASTCHEM_DIR+'input/parameters_ion.dat',
-                     FASTCHEM_DIR+'input/parameters.dat')
+            copyfile(os.path.join(FASTCHEM_DIR, 'input', 'parameters_ion.dat'),
+                     os.path.join(FASTCHEM_DIR, 'input', 'parameters.dat'))
         else:
-            copyfile(FASTCHEM_DIR+'input/parameters_wo_ion.dat',
-                     FASTCHEM_DIR+'input/parameters.dat')
+            copyfile(os.path.join(FASTCHEM_DIR, 'input', 'parameters_wo_ion.dat'),
+                     os.path.join(FASTCHEM_DIR, 'input', 'parameters.dat'))
 
         with open(solar_ele ,'r') as f:
             new_str = ""
@@ -125,7 +132,9 @@ class InitialAbun(object):
                 f.write(new_str)
 
         # write a T-P text file for fast_chem
-        with open(FASTCHEM_DIR+'input/vulcan_TP/vulcan_TP.dat' ,'w') as f:
+        vulcan_TP_dir = os.path.join(FASTCHEM_DIR, 'input', 'vulcan_TP')
+        os.makedirs(vulcan_TP_dir, exist_ok=True)
+        with open(os.path.join(vulcan_TP_dir, 'vulcan_TP.dat'), 'w') as f:
             ost = '#p (bar)    T (K)\n'
             for n, p in enumerate(data_atm.pco): # p in bar in fast_chem
                 ost +=  '{:.3e}'.format(p/1.e6) + '\t' + '{:.1f}'.format(data_atm.Tco[n])  + '\n'
@@ -133,7 +142,9 @@ class InitialAbun(object):
             f.write(ost)
 
         try:
-            subprocess.check_call(["./fastchem input/config.input"], shell=True, cwd=FASTCHEM_DIR) # check_call instead of call can catch the error
+            subprocess.check_call([ os.path.join(FASTCHEM_DIR, 'fastchem') + " " + os.path.join(FASTCHEM_DIR, 'input', 'config.input')], 
+                                    shell=True, cwd=FASTCHEM_DIR) 
+            # check_call instead of call can catch the error
         except:
             raise RuntimeError('FastChem cannot run properly. Try compiling it by running `make` inside {FASTCHEM_DIR}')
 
@@ -147,11 +158,17 @@ class InitialAbun(object):
         gas_tot = data_atm.M
         charge_list = [] # list of charged species excluding echarge_list
 
-        if self.cfg.ini_mix == 'EQ':
+        if self.cfg.ini_mix == 'eq':
 
             self.ini_fc(data_var, data_atm)
-            fc = np.genfromtxt(FASTCHEM_DIR+'output/vulcan_EQ.dat', names=True, dtype=None, skip_header=0)
+            fc = np.genfromtxt(os.path.join(FASTCHEM_DIR, 'output', 'vulcan_EQ.dat'), 
+                               names=True, dtype=None, skip_header=0)
             for sp in species:
+                # Atomic P hack (genfromtxt gets the Pressure as index otherwise)
+                if sp == 'P':
+                    y_ini[:,species.index(sp)] = fc['P_1']*gas_tot # this also changes data_var.y because the address of y array has passed to y_ini
+                    #print(sp,y_ini[:,species.index(sp)]/gas_tot)
+                    continue
                 if sp in fc.dtype.names:
                     y_ini[:,species.index(sp)] = fc[sp]*gas_tot # this also changes data_var.y because the address of y array has passed to y_ini
 
@@ -206,7 +223,7 @@ class InitialAbun(object):
         else:
             for i in range(nz):
 
-                if self.cfg.ini_mix == 'const_lowT':
+                if self.cfg.ini_mix == 'const_lowt':
                     y_ini[i,:] = ini
                     y_ini[i,species.index('H2')] = ini_mol[0]*gas_tot[i]; y_ini[i,species.index('H2O')] = ini_mol[1]*gas_tot[i]; y_ini[i,species.index('CH4')] = ini_mol[2]*gas_tot[i]
                     y_ini[i,species.index('NH3')] = ini_mol[4]*gas_tot[i]
@@ -673,7 +690,6 @@ class Atm(object):
         for i in range(len(species)):
             # input should be float or in the form of nz-long 1D array
             atm.Dzz[:,i] = Dzz_gen(Tco_i, n0_i, self.mol_mass(species[i]))
-
             # constructing the molecular weight for every species
             # this is required even without molecular weight
             atm.ms[i] = compo[compo_row.index(species[i])][-1]

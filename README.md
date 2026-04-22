@@ -2,10 +2,6 @@
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)\
 Photochemical kinetics for exoplanetary atmospheres, a fast and easy-to-use python code.
 
-## Credits
-* Shang-Min (Shami) Tsai
-* Harrison Nicholls
-
 This distribution of VULCAN contains a number of performance and usability improvements.
 
 The theory papers of VULCAN can be found here: [Tsai et al. 2021](https://arxiv.org/abs/2108.01790) (with photochemistry) and [Tsai et al. 2017](https://arxiv.org/abs/1607.00409) (without photochemistry).
@@ -18,7 +14,7 @@ This is currently a release candidate version. Any questions or feedbacks is wel
 
 Let's dive in and see chemical kinetics in action!
 
-First, go to the `fastchem_vulcan/` folder to compile [FastChem](https://github.com/exoclime/FastChem) by running
+First, go to the `fastchem_vulcan/` folder to compile FastChem by running
 ```
 make
 ```
@@ -66,15 +62,15 @@ The object in this `config.py` file can be edited at runtime and passed around a
 Typically ```config.py``` is the only file you need to edit for each specific run. If you want to look inside or modify the code, `store.py` is where almost all classes and variables are declared.
 
 ## Configuration File
-<strong>All the settings and parameters, e.g. the atmospheric parameters, the elemental abundance etc, are prescribed in ```vulcan_cfg.py```</strong>. Typically this is the only file you need to edit for each specific run. A useful cheatsheet describing what every parameter does can be found in ```vulcan_cfg_readme.txt```. The configuration files used for the model validation in [Tsai et al. 2021](https://arxiv.org/abs/2108.01790) are also provided in the cfg_examples folder.
+<strong>All the settings and parameters, e.g. the atmospheric parameters, the elemental abundance etc, are prescribed in ```config.py```</strong>. Typically this is the only file you need to edit for each specific run. A useful cheatsheet describing what every parameter does can be found in ```cfg_examples/vulcan_cfg_Earth.py```. The configuration files used for the model validation in [Tsai et al. 2021](https://arxiv.org/abs/2108.01790) are also provided in the cfg_examples folder.
 
 ## Input Files
 The key input files of VULCAN include the chemical network, atmospheric T-P profile, and stellar flux. ```NCHO_photo_network.txt``` is the deafult reaction network including nitrogen, carbon, hydrogen, and oxygen species. It is validated from ~ 500 to 3000 K with about 60 gaseous species and 700 reactions.
 The rate coefficients A, B, C are written in A, B, C as in the Arrhenius formula k = A T^B exp(-C/T).
-The input temperature-pressure(-Kzz) profile is required when Kzz_prof is set to 'file' in vulcan_cfg.py and is placed in the `/atm` folder by default. The first line in the T-P file is commented for units, and the second line must specifies the column names: **Pressure	Temp** or **Pressure	Temp  	Kzz** (Kzz is optional). So the file consists of two columns without K<sub>zz</sub> and three columns with K<sub>zz</sub>.
-See the included T-P files of HD 189733b and HD 209458b in `/atm` for example.
-The stellar UV flux is stored in /atm/stellar_flux, with the first column being weavelength in nm and the second column	being flux in ergs/cm**2/s/nm.
-The thermodynamics data and cross sections are stored in /thermo/NASA9 and /thermo/photo_cross, respectively. Change at your own risk!
+The input temperature-pressure(-Kzz) profile is required when Kzz_prof is set to 'file' in `config.py` and is placed in the `atm/` folder by default. The first line in the T-P file is commented for units, and the second line must specifies the column names: **Pressure	Temp** or **Pressure	Temp  	Kzz** (Kzz is optional). So the file consists of two columns without K<sub>zz</sub> and three columns with K<sub>zz</sub>.
+See the included T-P files of HD 189733b and HD 209458b in `atm/` for example.
+The stellar UV flux is stored in `atm/stellar_flux`, with the first column being weavelength in nm and the second column	being flux in ergs/cm**2/s/nm.
+The thermodynamics data and cross sections are stored in `thermo/NASA9/` and `thermo/photo_cross/`, respectively. Change at your own risk!
 If constant fluxes for certain species are used, the files are also placed in /atm, in the format of species, flux (cm-2 s-1), and deposite velocity (cm s-1).
 
 ## Editing or Using a different chemical network
@@ -98,7 +94,7 @@ The reaction number, i.e. **id**, is irrelevent as it will be automatically gene
 After changing the network, you can examine all the readable information, like the list of reactions and species in ```chem_funs.py```, being updated while running python vulcan.py (without -n argument).
 
 ## Boundary Conditions
-If both use_topflux and use_botflux in vulcan_cfg.py are set to False, it will use the default boundary condition -- zero flux boundary i.e. nothing coming in or out. When use_topflux = True, it reads the file prescribed in top_BC_flux_file as the incoming/outgoing flux at the top boundary. Similarly, when use_botflux = True, the file prescribed in bot_BC_flux_file is read in for the surface pressure and sinks at the bottom boundary. In addition, you can also use the dictionary use_fix_sp_bot to set fixed mole fraction at the surface. e.g. use_fix_sp_bot = {'CO2': 0.01} sets the surface CO<sub>2</sub> mixing ratio to 0.01.
+If both use_topflux and use_botflux in `config.py` are set to False, it will use the default boundary condition -- zero flux boundary i.e. nothing coming in or out. When use_topflux = True, it reads the file prescribed in top_BC_flux_file as the incoming/outgoing flux at the top boundary. Similarly, when use_botflux = True, the file prescribed in bot_BC_flux_file is read in for the surface pressure and sinks at the bottom boundary. In addition, you can also use the dictionary use_fix_sp_bot to set fixed mole fraction at the surface. e.g. use_fix_sp_bot = {'CO2': 0.01} sets the surface CO<sub>2</sub> mixing ratio to 0.01.
 
 ## Coupling to a self-consistent climate model
 VULCAN can be self-consistently coupled to a atmosphere climate model (AGNI) which solves for the atmospheric temperature profile given the composition calculated by VULCAN. AGNI uses correlated-k radiative transfer and mixing-length convection in order to determine realistic TP- and Kzz-profiles. More information on AGNI can be found [here](https://www.h-nicholls.space/AGNI/).

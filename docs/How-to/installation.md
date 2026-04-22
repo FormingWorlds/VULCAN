@@ -21,7 +21,16 @@ For the coupling to the julia-based 1D radiative-convective model AGNI, julia ne
 curl -fsSL https://install.julialang.org | sh
 ```
 
-### 1. Clone the repository
+!!! warning "Pin Julia to version 1.11"
+    Julia 1.12+ is **not yet supported** due to OpenSSL library incompatibilities with Python. After installing Julia, pin it to version 1.11:
+
+    ```console
+    juliaup add 1.11
+    juliaup default 1.11
+    ```
+
+
+### 1. Clone the VULCAN repository
 
 ```bash
 git clone https://github.com/FormingWorlds/VULCAN.git
@@ -77,7 +86,12 @@ linking done.
 everything is done and fine. enjoy your day!
 ```
 
-### 4. Verify installation
+### 4. (Optional for RCE modelling) Install AGNI
+
+- Install AGNI following the instructions on the [AGNI website](https://www.h-nicholls.space/AGNI).
+- Create a symbolic link from your AGNI install folder to your VULCAN folder. Test this by running `file AGNI/agni.jl` inside your local `VULCAN/` folder.
+
+### 5. Verify installation
 
 Test that everything is working by running the demo:
 

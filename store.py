@@ -117,6 +117,8 @@ class AtmData(object):
         self.mu = np.empty(nz) # mean molecular weight
         self.ms = np.empty(ni) # molecular weight for every species
         self.Dzz = np.zeros((nz-1,ni)) # molecular diffusion (nz,ni)
+        self.Dzz_cen = np.zeros((nz,ni)) # molecular diffusion (nz,ni)
+        self.vm = np.zeros((nz,ni)) # molecular diffusion (nz,ni)
         self.vs = np.zeros((nz-1,ni)) # the settling velocity
         self.alpha = np.zeros(ni) # thermal diffusion factor = -0.25 for every species except for H and H2 (defined in mol_diff() in build_atm.py)
         self.gs = vulcan_cfg.gs # the gravitational acceleration at the surface or at 1 bar
@@ -129,7 +131,6 @@ class AtmData(object):
 
         self.sat_p = {}
         self.sat_mix = {}
-
         # excluding non-gaseous species while computing ymix from y
         self.gas_indx = [_ for _ in range(ni) if spec_list[_] not in vulcan_cfg.non_gas_sp]
 

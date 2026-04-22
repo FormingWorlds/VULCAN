@@ -25,7 +25,69 @@ from chem_funs import neg_symjac as neg_achemjac
 from chem_funs import symjac as achemjac
 from chem_funs import spec_list as species
 from config import Config
-from phy_const import kb, Navo, hc, ag0 # hc is used to convert to the actinic flux
+from phy_const import kb, Navo, hc, ag0, spacer # hc is used to convert to the actinic flux
+
+PLT_FMT = 'png' # the format for saving plots, e.g. png, pdf
+
+gas_cols = {
+        "H2O": "#027FB1",
+        "CO2": "#D24901",
+        "H2" : "#008C01",
+        "CH4": "#C720DD",
+        "CO" : "#D1AC02",
+        "N2" : "#870036",
+        "S2" : "#FF8FA1",
+        "SO2": "#00008B",
+        "H2S": "#2eff71",
+        "NH3": "#675200",
+    }
+
+tex_labels = {'H':'H','H2':'H$_2$','O':'O','OH':'OH','H2O':'H$_2$O','CH':'CH','C':'C','CH2':'CH$_2$','CH3':'CH$_3$','CH4':'CH$_4$','HCO':'HCO','H2CO':'H$_2$CO', 'C4H2':'C$_4$H$_2$',\
+                'C2':'C$_2$','C2H2':'C$_2$H$_2$','C2H3':'C$_2$H$_3$','C2H':'C$_2$H','CO':'CO','CO2':'CO$_2$','He':'He','O2':'O$_2$','CH3OH':'CH$_3$OH','C2H4':'C$_2$H$_4$','C2H5':'C$_2$H$_5$','C2H6':'C$_2$H$_6$','CH3O': 'CH$_3$O'\
+                ,'CH2OH':'CH$_2$OH', 'NH3':'NH$_3$', "H2S":'H$_2$S'}
+
+
+def safe_rm(fpath: str) -> bool:
+    """
+    Safely remove a file or folder
+
+    Parameters
+    ----------
+    fpath : str
+        Path to the file or folder to be removed
+
+    Returns
+    -------
+    removed : bool
+        True if the file or folder was removed, False otherwise
+    """
+
+    if fpath == '':
+        log.warning('Could not remove file at empty path')
+        return
+
+    fpath = os.path.abspath(fpath)
+    if os.path.exists(fpath):
+        if os.path.isfile(fpath):
+            os.remove(fpath)
+            return True
+
+        elif os.path.isdir(fpath):
+            subfolders = [f.path.split('/')[-1] for f in os.scandir(fpath) if f.is_dir()]
+            if '.git' in subfolders:
+                log.warning(f"Not emptying '{fpath}' as it contains a Git repository")    
+
+            elif os.path.samefile(fpath, os.getcwd()):
+                log.warning(f"Not emptying '{fpath}' as it is the current working directory")  
+
+            else:
+                shutil.rmtree(fpath)
+                return True
+
+        else:
+            log.warning("Cannot remove unhandled path '%s'" % fpath)
+
+    return False
 
 
 class ReadRate(object):
@@ -122,6 +184,7 @@ class ReadRate(object):
                     var.ion_indx = i
 
                 elif line.startswith("# reverse stops"):
+                    var.special_re = False
                     var.stop_rev_indx = i
 
                 # skip common lines and blank lines
@@ -651,6 +714,11 @@ class Integration(object):
         self.non_gas_sp = self.cfg.non_gas_sp
         self.use_settling = self.cfg.use_settling
 
+        # warn about in-development features
+        if self.cfg.use_vm_mol:
+            log.warning("New upwind scheme for molecular diffusion has been enabled in VULCAN (in development)")
+            raise RuntimeError("You must disable the upwind scheme by setting `use_vm_mol=False`")
+
         # import AGNI?
         if self.cfg.agni_call_frq > 0:
             from agni import run_agni
@@ -667,7 +735,6 @@ class Integration(object):
 
     def __call__(self, var, atm, para, make_atm, atmos=None):
 
-        use_print_prog, use_live_plot = self.cfg.use_print_prog, self.cfg.use_live_plot
         nz = self.cfg.nz
 
         while not self.stop(var, para, atm): # Looping until the stop condition is satisfied
@@ -691,7 +758,27 @@ class Integration(object):
 
             # integrating one step
             var, para = self.odesolver.one_step(var, atm, para)
+            self.loss_criteria = 0.0005
 
+            # # TEST 2025: using atom_loss to reduce rtol
+            if self.cfg.use_adapt_rtol and para.count%10 == 0:
+                if max([np.abs(loss) for loss in var.atom_loss.values()]) >= self.loss_criteria: 
+                    self.loss_criteria *= 2.
+                    self.cfg.rtol *= 0.75
+                    self.cfg.rtol = max(self.cfg.rtol, self.cfg.rtol_min)
+                    if self.cfg.rtol != self.cfg.rtol_min:
+                        log.debug('rtol reduced to ' + str(self.cfg.rtol))
+                        log.debug (spacer)
+
+            if self.cfg.use_adapt_rtol and para.count%1000 == 0 and para.count>0:
+                if max([np.abs(loss) for loss in var.atom_loss.values()]) < 2e-4: #
+                    self.cfg.rtol *= 1.25
+                    self.cfg.rtol = min(self.cfg.rtol, self.cfg.rtol_max)
+                    if self.cfg.rtol != self.cfg.rtol_max:
+                        log.debug ('rtol increased to ' + str(self.cfg.rtol))
+                        log.debug (spacer)
+            #
+            # # TEST 2025
 
             # Condensation (needs to be after solver.one_step)
             if self.cfg.use_condense and var.t >= self.cfg.start_conden_time and para.fix_species_start == False:
@@ -721,10 +808,12 @@ class Integration(object):
                                 else:
                                     sat_rho = atm.n_0 * atm.sat_mix[sp]
                                     conden_status = var.y[:,species.index(sp)] >= sat_rho
-
+                                    atm.conden_status = conden_status 
+                                    
                                     if list(var.y[conden_status,species.index(sp)]): # if it condenses
                                         min_sat = np.amin(atm.sat_mix[sp][conden_status]) # the mininum value of the saturation p within the saturation region
-                                        conden_min_lev = np.where(atm.sat_mix[sp] == min_sat)[0][0]
+                                        atm.min_sat = min_sat
+                                        conden_min_lev = np.where(atm.sat_mix[sp] == min_sat)[0].item()
                                         atm.conden_min_lev[sp] = conden_min_lev
                                         log.debug(sp + " is now fixed from " + "{:.2f}".format(atm.pco[atm.conden_min_lev[sp]]/1e6) + " bar." )
                                     else:
@@ -770,14 +859,16 @@ class Integration(object):
                 atmos = self.run_agni(atmos, self.cfg, atm, var)
 
             # print info to user
-            if use_print_prog and para.count % self.cfg.print_prog_num==0:
+            if self.cfg.use_print_prog and (para.count % self.cfg.print_prog_num==0):
                 self.output.print_prog(var,para)
 
-            if self.cfg.use_live_flux  and self.cfg.use_photo  and para.count % self.cfg.live_plot_frq ==0:
+            # make plots
+            if self.cfg.use_live_flux and self.cfg.use_photo and (para.count % self.cfg.live_plot_frq ==0):
                 self.output.plot_flux_update(var, atm, para)
 
-            if use_live_plot and para.count % self.cfg.live_plot_frq ==0:
+            if self.cfg.use_live_plot and (para.count % self.cfg.live_plot_frq == 0):
                 self.output.plot_update(var, atm, para)
+
         return atmos
 
 
@@ -1535,6 +1626,114 @@ class ODESolver(object):
             ### the const flux has no contribution to the jacobian ###
             diff[-1] += atm.top_flux /dzi[-1]
         if self.cfg.use_botflux == True:
+            ### the deposition term needs to be included in the jacobian!!!   
+            diff[0] += (atm.bot_flux - y[0]*atm.bot_vdep) /dzi[0]
+        
+        return diff
+            
+    
+    def diffdf_settling_vm(self, y, atm): 
+        """
+        added vm for molecular diffusion
+        function of eddy diffusion including molecular diffusion and the settling velocity for particles, with zero-flux boundary conditions and non-uniform grids (dzi)
+        in the form of Aj*y_j + Bj+1*y_j+1 + Cj-1*y_j-1
+        """
+        
+        nz = self.cfg.nz
+        y = y.copy()
+        
+        if self.cfg.non_gas_sp:
+            ysum = np.sum(y[:,atm.gas_indx], axis=1)
+        else: ysum = np.sum(y, axis=1)
+        
+        dzi = atm.dzi.copy()
+        Kzz = atm.Kzz.copy()
+        vz = atm.vz.copy()
+        Dzz = atm.Dzz.copy()
+        vs = atm.vs.copy()
+        alpha = atm.alpha.copy()
+        Tco = atm.Tco.copy()
+        ms = atm.ms.copy()
+        Hp = atm.Hp.copy()
+        g = atm.g
+        Ti = atm.Ti
+        Hpi = atm.Hpi
+        
+        vm = atm.vm
+        # shape: nz x ni
+        # vm defined in build.py
+        # vm = - Dzz_cen * ( ms[np.newaxis,:]*g[:,np.newaxis]/(Navo*kb*Tco[:,np.newaxis]) - 1./Hp[:,np.newaxis] +  alpha/Tco[:,np.newaxis]*(delta_T[:,np.newaxis])/dz[:,np.newaxis]  )
+
+            
+        A, B, C = np.zeros(nz), np.zeros(nz), np.zeros(nz)
+        Ai, Bi, Ci = [ np.zeros((nz,ni)) for i in range(3)]
+        
+        A[0] = -1./(dzi[0])*(Kzz[0]/dzi[0]) *(ysum[1]+ysum[0])/2. /ysum[0]     
+        B[0] = 1./(dzi[0])*(Kzz[0]/dzi[0]) *(ysum[1]+ysum[0])/2. /ysum[1] 
+        C[0] = 0 
+        A[nz-1] = -1./(dzi[nz-2])*(Kzz[nz-2]/dzi[nz-2]) *(ysum[nz-1]+ysum[nz-2])/2. /ysum[nz-1] 
+        B[nz-1] = 0 
+        C[nz-1] = 1./(dzi[nz-2])*(Kzz[nz-2]/dzi[nz-2]) *(ysum[nz-1]+ysum[nz-2])/2. /ysum[nz-2] 
+        
+        # vertical adection (with closed B.C.) 
+        A[0] += -( (vz[0]>0)*vz[0] )/dzi[0]
+        B[0] += -( (vz[0]<0)*vz[0] )/dzi[0]
+        A[-1] += ( (vz[-1]<0)*vz[-1] )/dzi[-1]
+        C[-1] += ( (vz[-1]>0)*vz[-1] )/dzi[-1]
+        # vertical adection
+        
+        # shape of ni-long 1D array
+        # Including the settling velocity of the particles and the advective component of molecular diffusion
+        Ai[0] = -1./(dzi[0])*(Dzz[0]/dzi[0]) *(ysum[1]+ysum[0])/2. /ysum[0] \
+        -( (vs[0]>0)*vs[0] )/dzi[0]  
+        Bi[0] = 1./(dzi[0])*(Dzz[0]/dzi[0]) *(ysum[1]+ysum[0])/2. /ysum[1] \
+        -( (vs[0]<0)*vs[0] )/dzi[0]
+        #Ci[0] = 0 
+        Ai[nz-1] = -1./(dzi[-1])*(Dzz[nz-2]/dzi[-1]) *(ysum[nz-1]+ysum[nz-2])/2. /ysum[nz-1] \
+        +( (vm[-1]<0)*vm[-1] )/dzi[-1]  +( (vs[-1]<0)*vs[-1] )/dzi[-1]
+        #Bi[nz-1] = 0
+        Ci[nz-1] = 1./(dzi[-1])*(Dzz[nz-2]/dzi[-1]) *(ysum[nz-1]+ysum[nz-2])/2. /ysum[nz-2] \
+        +( (vm[-1]>0)*vm[-1] )/dzi[-1]  +( (vs[-1]>0)*vs[-1] )/dzi[-1]
+        
+        for j in range(1,nz-1):
+            dz_ave = 0.5*(dzi[j-1] + dzi[j])
+            A[j] = -1./dz_ave * ( Kzz[j]/dzi[j]*(ysum[j+1]+ysum[j])/2. + Kzz[j-1]/dzi[j-1]*(ysum[j]+ysum[j-1])/2. ) /ysum[j]  
+            B[j] = 1./dz_ave * Kzz[j]/dzi[j] *(ysum[j+1]+ysum[j])/2. /ysum[j+1]
+            C[j] = 1./dz_ave * Kzz[j-1]/dzi[j-1] *(ysum[j]+ysum[j-1])/2. /ysum[j-1]
+            
+            # vertical adection
+            A[j] += -( (vz[j]>0)*vz[j] - (vz[j-1]<0)*vz[j-1] )/dz_ave
+            B[j] += -( (vz[j]<0)*vz[j] )/dz_ave
+            C[j] += ( (vz[j-1]>0)*vz[j-1] )/dz_ave
+            # vertical adection
+            
+            # Ai in the shape of nz*ni and Ai[j] in the shape of ni 
+            # Including the settling velocity of the particles
+            
+            # diffusion component
+            Ai[j] = -1./dz_ave * ( Dzz[j]/dzi[j]*(ysum[j+1]+ysum[j])/2. + Dzz[j-1]/dzi[j-1]*(ysum[j]+ysum[j-1])/2. ) /ysum[j] 
+            Bi[j] = 1./dz_ave * Dzz[j]/dzi[j] *(ysum[j+1]+ysum[j])/2. /ysum[j+1]  
+            Ci[j] = 1./dz_ave * Dzz[j-1]/dzi[j-1] *(ysum[j]+ysum[j-1])/2. /ysum[j-1]  
+            # diffusion component
+            
+            # advective component using upwind (inc. from Dzz and from vs)
+            Ai[j] += -( (vm[j]>0)*vm[j] - (vm[j-1]<0)*vm[j-1] )/dz_ave  -( (vs[j]>0)*vs[j] - (vs[j-1]<0)*vs[j-1] )/dz_ave
+            Bi[j] += -( (vm[j]<0)*vm[j] )/dz_ave  -( (vs[j]<0)*vs[j] )/dz_ave
+            Ci[j] += +( (vm[j-1]>0)*vm[j-1] )/dz_ave  +( (vs[j-1]>0)*vs[j-1] )/dz_ave 
+            # advective component using upwind
+            
+        tmp0 = (A[0] + Ai[0])*y[0] + (B[0] + Bi[0])*y[1] # shape of ni-long 1D array  
+        tmp1 = np.ndarray.flatten( (np.vstack(A[1:nz-1])*y[1:(nz-1)] + np.vstack(B[1:nz-1])*y[1+1:(nz-1)+1] + np.vstack(C[1:nz-1])*y[1-1:(nz-1)-1]) ) 
+        tmp1 += np.ndarray.flatten( Ai[1:nz-1]*y[1:(nz-1)] + Bi[1:nz-1]*y[1+1:(nz-1)+1] + Ci[1:nz-1]*y[1-1:(nz-1)-1] ) # shape of (nz-2,ni)
+        tmp2 = (A[nz-1] + Ai[nz-1])*y[nz-1] + (C[nz-1] + Ci[nz-1])*y[nz-2]
+        diff = np.append(np.append(tmp0, tmp1), tmp2)
+        diff = diff.reshape(nz,ni)
+
+        if self.cfg.use_topflux == True:
+            # Don't forget dz!!! -d phi/ dz
+            ### the const flux has no contribution to the jacobian ### 
+            diff[-1] += atm.top_flux /dzi[-1]
+        if self.cfg.use_botflux == True:
             ### the deposition term needs to be included in the jacobian!!!
             diff[0] += (atm.bot_flux - y[0]*atm.bot_vdep) /dzi[0]
 
@@ -1548,9 +1747,8 @@ class ODESolver(object):
         """
 
         nz = self.cfg.nz
-
-
         y = var.y.copy()
+        
         # TEST condensation excluding non-gaseous species
         if self.cfg.non_gas_sp:
             ysum = np.sum(y[:,atm.gas_indx], axis=1)
@@ -1676,6 +1874,79 @@ class ODESolver(object):
         +1./(dzi[0])* Dzz[0]/2.*(-1./Hpi[0]+ms*g[0]/(Navo*kb*Ti[0])+alpha/Ti[0]*(Tco[1]-Tco[0])/dzi[0] )
         # deposition velocity
         if self.cfg.use_botflux == True: dfdy[j_indx[0], j_indx[0]] -= -1.*atm.bot_vdep /dzi[0]
+        
+        dfdy[j_indx[0], j_indx[1]] -= 1./(dzi[0])*(Kzz[0]/dzi[0]) * (ysum[1]+ysum[0])/(2.*ysum[1]) -( (vz[0]<0)*vz[0] )/dzi[0]
+        dfdy[j_indx[0], j_indx[1]] -= 1./(dzi[0])*(Dzz[0]/dzi[0]) * (ysum[1]+ysum[0])/(2.*ysum[1]) \
+        +1./(dzi[0])* Dzz[0]/2.*(-1./Hpi[0]+ms*g[0]/(Navo*kb*Ti[0])+alpha/Ti[0]*(Tco[1]-Tco[0])/dzi[0] )
+
+        dfdy[j_indx[nz-1], j_indx[nz-1]] -= -1./(dzi[nz-2])*(Kzz[nz-2]/dzi[nz-2]) *(ysum[(nz-1)-1]+ysum[nz-1])/(2.*ysum[nz-1]) +( (vz[-1]<0)*vz[-1] )/dzi[-1]  
+        dfdy[j_indx[nz-1], j_indx[nz-1]] -= -1./(dzi[nz-2])*(Dzz[nz-2]/dzi[nz-2]) *(ysum[nz-1]+ysum[nz-2])/(2.*ysum[nz-1]) \
+        - 1./(dzi[-1])* Dzz[-1]/2.*(-1./Hpi[-1]+ms*g[-1]/(Navo*kb*Ti[-1])+alpha/Ti[-1]*(Tco[-1]-Tco[-2])/dzi[-1] )
+        dfdy[j_indx[nz-1], j_indx[(nz-1)-1]] -= 1./(dzi[nz-2])*(Kzz[nz-2]/dzi[nz-2])* (ysum[(nz-1)-1]+ysum[nz-1])/(2.*ysum[(nz-1)-1]) +( (vz[-1]>0)*vz[-1] )/dzi[-1]  
+        dfdy[j_indx[nz-1], j_indx[(nz-1)-1]] -= 1./(dzi[nz-2])*(Dzz[nz-2]/dzi[nz-2]) *(ysum[nz-1]+ysum[nz-2])/(2.*ysum[(nz-1)-1]) \
+                -1./(dzi[-1])* Dzz[-1]/2.*(-1./Hpi[-1]+ms*g[-1]/(Navo*kb*Ti[-1])+alpha/Ti[-1]*(Tco[-1]-Tco[-2])/dzi[-1] )
+
+        return dfdy    
+
+    def lhs_jac_tot_vm(self, var, atm):      
+        """
+        directly constructing lhs = 1./(r*h)*sparse.identity(ni*nz) - dfdy
+        jacobian matrix for dn/dt + dphi/dz = P - L (including molecular diffusion)
+        zero-flux BC:  1st derivitive of y is zero
+        inc. vm from molecular diffusion
+        """
+        y = var.y.copy()
+        nz = self.cfg.nz
+
+        # TEST condensation excluding non-gaseous species
+        if self.cfg.use_condense == True:
+            ysum = np.sum(y[:,atm.gas_indx], axis=1)
+            #ysum = np.sum(y, axis=1)
+        else: ysum = np.sum(y, axis=1)
+        # TEST condensation excluding non-gaseous species
+        dzi = atm.dzi.copy()
+        Kzz = atm.Kzz.copy()
+        Dzz = atm.Dzz.copy()
+        vz = atm.vz.copy()
+        alpha = atm.alpha.copy()
+        Tco = atm.Tco.copy()
+        mu, ms = atm.mu.copy(),  atm.ms.copy()
+        g = atm.g
+        vm = atm.vm
+        
+        Ti = atm.Ti.copy()
+        Hpi = atm.Hpi.copy()
+
+        # c0 = 1./(r*h) where r = 1. + 1./2.**0.5
+        r = 1. + 1./2.**0.5
+        c0 = 1./(r*var.dt)
+        dfdy = neg_achemjac(y, atm.M, var.k)
+        np.fill_diagonal(dfdy, c0 + np.diag(dfdy)) 
+        j_indx = []
+        
+        for j in range(nz):
+            j_indx.append( np.arange(j*ni,j*ni+ni) )
+
+        for j in range(1,nz-1):
+            # excluding the buttom and the top cell
+            # at j level consists of ni species
+            dz_ave = 0.5*(dzi[j-1] + dzi[j])
+            dfdy[j_indx[j], j_indx[j]] -=  -1./dz_ave*( Kzz[j]/dzi[j]*(ysum[j+1]+ysum[j])/2. + Kzz[j-1]/dzi[j-1]*(ysum[j-1]+ysum[j])/2. ) /ysum[j] -( (vz[j]>0)*vz[j] - (vz[j-1]<0)*vz[j-1] )/dz_ave
+            dfdy[j_indx[j], j_indx[j+1]] -= 1./dz_ave*( Kzz[j]/dzi[j]*(ysum[j+1]+ysum[j])/(2.*ysum[j+1]) ) -( (vz[j]<0)*vz[j] )/dz_ave
+            dfdy[j_indx[j], j_indx[j-1]] -= 1./dz_ave*( Kzz[j-1]/dzi[j-1]*(ysum[j-1]+ysum[j])/(2.*ysum[j-1]) ) +( (vz[j-1]>0)*vz[j-1] )/dz_ave
+
+            # [j_indx[j], j_indx[j]] has size ni*ni
+            dfdy[j_indx[j], j_indx[j]] -=  -1./dz_ave*( Dzz[j]/dzi[j]*(ysum[j+1]+ysum[j])/2. + Dzz[j-1]/dzi[j-1]*(ysum[j-1]+ysum[j])/2. ) /ysum[j]\
+            -( (vm[j]>0)*vm[j] - (vm[j-1]<0)*vm[j-1] )/dz_ave
+            dfdy[j_indx[j], j_indx[j+1]] -= 1./dz_ave*( Dzz[j]/dzi[j]*(ysum[j+1]+ysum[j])/(2.*ysum[j+1]) ) \
+            -( (vm[j]<0)*vm[j] )/dz_ave
+            dfdy[j_indx[j], j_indx[j-1]] -= 1./dz_ave*( Dzz[j-1]/dzi[j-1]*(ysum[j-1]+ysum[j])/(2.*ysum[j-1]) ) \
+            +( (vm[j-1]>0)*vm[j-1] )/dz_ave
+    
+        dfdy[j_indx[0], j_indx[0]] -= -1./(dzi[0])*(Kzz[0]/dzi[0]) * (ysum[1]+ysum[0])/(2.*ysum[0]) -( (vz[0]>0)*vz[0] )/dzi[0]
+        dfdy[j_indx[0], j_indx[0]] -= -1./(dzi[0])*(Dzz[0]/dzi[0]) * (ysum[1]+ysum[0])/(2.*ysum[0]) -( (vm[0]>0)*vm[0] )/dzi[0]
+        # deposition velocity
+        if self.cfg.use_botflux == True: dfdy[j_indx[0], j_indx[0]] -= -1.*atm.bot_vdep /dzi[0]
         # diffusion-limited escape
         if self.cfg.diff_esc: # not empty list
             diff_lim = np.zeros(ni)
@@ -1685,15 +1956,14 @@ class ODESolver(object):
             dfdy[j_indx[-1], j_indx[-1]] -= diff_lim # negative
 
         dfdy[j_indx[0], j_indx[1]] -= 1./(dzi[0])*(Kzz[0]/dzi[0]) * (ysum[1]+ysum[0])/(2.*ysum[1]) -( (vz[0]<0)*vz[0] )/dzi[0]
-        dfdy[j_indx[0], j_indx[1]] -= 1./(dzi[0])*(Dzz[0]/dzi[0]) * (ysum[1]+ysum[0])/(2.*ysum[1]) \
-        +1./(dzi[0])* Dzz[0]/2.*(-1./Hpi[0]+ms*g[0]/(Navo*kb*Ti[0])+alpha/Ti[0]*(Tco[1]-Tco[0])/dzi[0] )
+        dfdy[j_indx[0], j_indx[1]] -= 1./(dzi[0])*(Dzz[0]/dzi[0]) * (ysum[1]+ysum[0])/(2.*ysum[1]) -( (vm[0]<0)*vm[0] )/dzi[0]
 
         dfdy[j_indx[nz-1], j_indx[nz-1]] -= -1./(dzi[nz-2])*(Kzz[nz-2]/dzi[nz-2]) *(ysum[(nz-1)-1]+ysum[nz-1])/(2.*ysum[nz-1]) +( (vz[-1]<0)*vz[-1] )/dzi[-1]
         dfdy[j_indx[nz-1], j_indx[nz-1]] -= -1./(dzi[nz-2])*(Dzz[nz-2]/dzi[nz-2]) *(ysum[nz-1]+ysum[nz-2])/(2.*ysum[nz-1]) \
-        - 1./(dzi[-1])* Dzz[-1]/2.*(-1./Hpi[-1]+ms*g[-1]/(Navo*kb*Ti[-1])+alpha/Ti[-1]*(Tco[-1]-Tco[-2])/dzi[-1] )
+        +( (vm[-1]<0)*vm[-1] )/dzi[-1]
         dfdy[j_indx[nz-1], j_indx[(nz-1)-1]] -= 1./(dzi[nz-2])*(Kzz[nz-2]/dzi[nz-2])* (ysum[(nz-1)-1]+ysum[nz-1])/(2.*ysum[(nz-1)-1]) +( (vz[-1]>0)*vz[-1] )/dzi[-1]
         dfdy[j_indx[nz-1], j_indx[(nz-1)-1]] -= 1./(dzi[nz-2])*(Dzz[nz-2]/dzi[nz-2]) *(ysum[nz-1]+ysum[nz-2])/(2.*ysum[(nz-1)-1]) \
-                -1./(dzi[-1])* Dzz[-1]/2.*(-1./Hpi[-1]+ms*g[-1]/(Navo*kb*Ti[-1])+alpha/Ti[-1]*(Tco[-1]-Tco[-2])/dzi[-1] )
+        +( (vm[-1]>0)*vm[-1] )/dzi[-1]
 
         return dfdy
 
@@ -1939,6 +2209,80 @@ class ODESolver(object):
         +1./(dzi[0])* Dzz[0]/2.*(-1./Hpi[0]+ms*g[0]/(Navo*kb*Ti[0])+alpha/Ti[0]*(Tco[1]-Tco[0])/dzi[0] )  -( (vs[0]>0)*vs[0] )/dzi[0]
         # deposition velocity
         if self.cfg.use_botflux == True: dfdy[j_indx[0], j_indx[0]] -= -1.*atm.bot_vdep /dzi[0]
+        
+        dfdy[j_indx[0], j_indx[1]] -= 1./(dzi[0])*(Kzz[0]/dzi[0]) * (ysum[1]+ysum[0])/(2.*ysum[1]) -( (vz[0]<0)*vz[0] )/dzi[0] 
+        dfdy[j_indx[0], j_indx[1]] -= 1./(dzi[0])*(Dzz[0]/dzi[0]) * (ysum[1]+ysum[0])/(2.*ysum[1]) \
+        +1./(dzi[0])* Dzz[0]/2.*(-1./Hpi[0]+ms*g[0]/(Navo*kb*Ti[0])+alpha/Ti[0]*(Tco[1]-Tco[0])/dzi[0] ) -( (vs[0]<0)*vs[0] )/dzi[0]
+
+        dfdy[j_indx[nz-1], j_indx[nz-1]] -= -1./(dzi[nz-2])*(Kzz[nz-2]/dzi[nz-2]) *(ysum[(nz-1)-1]+ysum[nz-1])/(2.*ysum[nz-1]) +( (vz[-1]<0)*vz[-1] )/dzi[-1]  
+        dfdy[j_indx[nz-1], j_indx[nz-1]] -= -1./(dzi[nz-2])*(Dzz[nz-2]/dzi[nz-2]) *(ysum[nz-1]+ysum[nz-2])/(2.*ysum[nz-1]) \
+        - 1./(dzi[-1])* Dzz[-1]/2.*(-1./Hpi[-1]+ms*g[-1]/(Navo*kb*Ti[-1])+alpha/Ti[-1]*(Tco[-1]-Tco[-2])/dzi[-1] ) +( (vs[-1]<0)*vs[-1] )/dzi[-1]
+        dfdy[j_indx[nz-1], j_indx[(nz-1)-1]] -= 1./(dzi[nz-2])*(Kzz[nz-2]/dzi[nz-2])* (ysum[(nz-1)-1]+ysum[nz-1])/(2.*ysum[(nz-1)-1]) +( (vz[-1]>0)*vz[-1] )/dzi[-1]   
+        dfdy[j_indx[nz-1], j_indx[(nz-1)-1]] -= 1./(dzi[nz-2])*(Dzz[nz-2]/dzi[nz-2]) *(ysum[nz-1]+ysum[nz-2])/(2.*ysum[(nz-1)-1]) \
+                -1./(dzi[-1])* Dzz[-1]/2.*(-1./Hpi[-1]+ms*g[-1]/(Navo*kb*Ti[-1])+alpha/Ti[-1]*(Tco[-1]-Tco[-2])/dzi[-1] ) +( (vs[-1]>0)*vs[-1] )/dzi[-1]
+
+        return dfdy
+                
+    def lhs_jac_settling_vm(self, var, atm):      
+        """
+        directly constructing lhs = 1./(r*h)*sparse.identity(ni*nz) - dfdy
+        jacobian matrix for dn/dt + dphi/dz = P - L (including molecular diffusion and gravitation settling for particles)
+        zero-flux BC:  1st derivitive of y is zero
+        inc. vs from molecular diffusion
+        """
+        y = var.y.copy()
+        nz = self.cfg.nz
+
+        # TEST condensation excluding non-gaseous species
+        if self.cfg.non_gas_sp:
+            ysum = np.sum(y[:,atm.gas_indx], axis=1)
+        else: ysum = np.sum(y, axis=1)
+        # TEST condensation excluding non-gaseous species
+        dzi = atm.dzi.copy()
+        Kzz = atm.Kzz.copy()
+        Dzz = atm.Dzz.copy()
+        vz = atm.vz.copy()
+        vs = atm.vs.copy()
+        alpha = atm.alpha.copy()
+        Tco = atm.Tco.copy()
+        mu, ms = atm.mu.copy(),  atm.ms.copy()
+        g = atm.g
+        vm = atm.vm
+
+        Ti = atm.Ti.copy()
+        Hpi = atm.Hpi.copy()
+
+        # c0 = 1./(r*h) where r = 1. + 1./2.**0.5
+        r = 1. + 1./2.**0.5
+        c0 = 1./(r*var.dt)
+        dfdy = neg_achemjac(y, atm.M, var.k)
+        np.fill_diagonal(dfdy, c0 + np.diag(dfdy)) 
+        j_indx = []
+        
+        for j in range(nz):
+            j_indx.append( np.arange(j*ni,j*ni+ni) )
+
+        for j in range(1,nz-1):
+            # excluding the buttom and the top cell
+            # at j level consists of ni species
+            dz_ave = 0.5*(dzi[j-1] + dzi[j])
+            dfdy[j_indx[j], j_indx[j]] -=  -1./dz_ave*( Kzz[j]/dzi[j]*(ysum[j+1]+ysum[j])/2. + Kzz[j-1]/dzi[j-1]*(ysum[j-1]+ysum[j])/2. ) /ysum[j] -( (vz[j]>0)*vz[j] - (vz[j-1]<0)*vz[j-1] )/dz_ave
+            dfdy[j_indx[j], j_indx[j+1]] -= 1./dz_ave*( Kzz[j]/dzi[j]*(ysum[j+1]+ysum[j])/(2.*ysum[j+1]) ) -( (vz[j]<0)*vz[j] )/dz_ave
+            dfdy[j_indx[j], j_indx[j-1]] -= 1./dz_ave*( Kzz[j-1]/dzi[j-1]*(ysum[j-1]+ysum[j])/(2.*ysum[j-1]) ) +( (vz[j-1]>0)*vz[j-1] )/dz_ave
+
+            # [j_indx[j], j_indx[j]] has size ni*ni
+            dfdy[j_indx[j], j_indx[j]] -=  -1./dz_ave*( Dzz[j]/dzi[j]*(ysum[j+1]+ysum[j])/2. + Dzz[j-1]/dzi[j-1]*(ysum[j-1]+ysum[j])/2. ) /ysum[j]\
+            -( (vs[j]>0)*vs[j] - (vs[j-1]<0)*vs[j-1] )/dz_ave  -( (vm[j]>0)*vm[j] - (vm[j-1]<0)*vm[j-1] )/dz_ave
+            dfdy[j_indx[j], j_indx[j+1]] -= 1./dz_ave*( Dzz[j]/dzi[j]*(ysum[j+1]+ysum[j])/(2.*ysum[j+1]) ) \
+            -( (vs[j]<0)*vs[j] )/dz_ave -( (vm[j]<0)*vm[j] )/dz_ave
+            dfdy[j_indx[j], j_indx[j-1]] -= 1./dz_ave*( Dzz[j-1]/dzi[j-1]*(ysum[j-1]+ysum[j])/(2.*ysum[j-1]) ) \
+            +( (vs[j-1]>0)*vs[j-1] )/dz_ave +( (vm[j-1]>0)*vm[j-1] )/dz_ave
+    
+        dfdy[j_indx[0], j_indx[0]] -= -1./(dzi[0])*(Kzz[0]/dzi[0]) * (ysum[1]+ysum[0])/(2.*ysum[0]) -( (vz[0]>0)*vz[0] )/dzi[0]
+        dfdy[j_indx[0], j_indx[0]] -= -1./(dzi[0])*(Dzz[0]/dzi[0]) * (ysum[1]+ysum[0])/(2.*ysum[0]) \
+        -( (vs[0]>0)*vs[0] )/dzi[0]
+        # deposition velocity
+        if self.cfg.use_botflux == True: dfdy[j_indx[0], j_indx[0]] -= -1.*atm.bot_vdep /dzi[0]
 
         # diffusion-limited escape
         if self.cfg.diff_esc: # not empty list
@@ -1950,14 +2294,14 @@ class ODESolver(object):
 
         dfdy[j_indx[0], j_indx[1]] -= 1./(dzi[0])*(Kzz[0]/dzi[0]) * (ysum[1]+ysum[0])/(2.*ysum[1]) -( (vz[0]<0)*vz[0] )/dzi[0]
         dfdy[j_indx[0], j_indx[1]] -= 1./(dzi[0])*(Dzz[0]/dzi[0]) * (ysum[1]+ysum[0])/(2.*ysum[1]) \
-        +1./(dzi[0])* Dzz[0]/2.*(-1./Hpi[0]+ms*g[0]/(Navo*kb*Ti[0])+alpha/Ti[0]*(Tco[1]-Tco[0])/dzi[0] ) -( (vs[0]<0)*vs[0] )/dzi[0]
+         -( (vs[0]<0)*vs[0] )/dzi[0]
 
         dfdy[j_indx[nz-1], j_indx[nz-1]] -= -1./(dzi[nz-2])*(Kzz[nz-2]/dzi[nz-2]) *(ysum[(nz-1)-1]+ysum[nz-1])/(2.*ysum[nz-1]) +( (vz[-1]<0)*vz[-1] )/dzi[-1]
         dfdy[j_indx[nz-1], j_indx[nz-1]] -= -1./(dzi[nz-2])*(Dzz[nz-2]/dzi[nz-2]) *(ysum[nz-1]+ysum[nz-2])/(2.*ysum[nz-1]) \
-        - 1./(dzi[-1])* Dzz[-1]/2.*(-1./Hpi[-1]+ms*g[-1]/(Navo*kb*Ti[-1])+alpha/Ti[-1]*(Tco[-1]-Tco[-2])/dzi[-1] ) +( (vs[-1]<0)*vs[-1] )/dzi[-1]
+        +( (vs[-1]<0)*vs[-1] )/dzi[-1]  +( (vm[-1]<0)*vm[-1] )/dzi[-1]
         dfdy[j_indx[nz-1], j_indx[(nz-1)-1]] -= 1./(dzi[nz-2])*(Kzz[nz-2]/dzi[nz-2])* (ysum[(nz-1)-1]+ysum[nz-1])/(2.*ysum[(nz-1)-1]) +( (vz[-1]>0)*vz[-1] )/dzi[-1]
         dfdy[j_indx[nz-1], j_indx[(nz-1)-1]] -= 1./(dzi[nz-2])*(Dzz[nz-2]/dzi[nz-2]) *(ysum[nz-1]+ysum[nz-2])/(2.*ysum[(nz-1)-1]) \
-                -1./(dzi[-1])* Dzz[-1]/2.*(-1./Hpi[-1]+ms*g[-1]/(Navo*kb*Ti[-1])+alpha/Ti[-1]*(Tco[-1]-Tco[-2])/dzi[-1] ) +( (vs[-1]>0)*vs[-1] )/dzi[-1]
+        +( (vs[-1]>0)*vs[-1] )/dzi[-1]  +( (vm[-1]>0)*vm[-1] )/dzi[-1]
 
         return dfdy
 
@@ -1997,10 +2341,11 @@ class ODESolver(object):
         atom_sum = data_var.atom_sum
 
         for atom in atom_list:
-            #data_var.atom_sum[atom] = np.sum([compo[compo_row.index(species[i])][atom] * data_var.y[:,i] for i in range(ni)])
+            # data_var.atom_sum[atom] = np.sum([compo[compo_row.index(species[i])][atom] * data_var.y[:,i] for i in range(ni)])
             # TEST V scaling
-            data_var.atom_sum[atom] = np.sum([compo[compo_row.index(species[i])][atom] * data_var.y[:,i] for i in range(ni)]) # *data_var.v_ratio
-            data_var.atom_loss[atom] = (data_var.atom_sum[atom] - data_var.atom_ini[atom])/data_var.atom_ini[atom]
+            if atom not in getattr(self.cfg, 'loss_ex', []): # shami added 2024
+                data_var.atom_sum[atom] = np.sum([compo[compo_row.index(species[i])][atom] * data_var.y[:,i] for i in range(ni)]) # *data_var.v_ratio
+                data_var.atom_loss[atom] = (data_var.atom_sum[atom] - data_var.atom_ini[atom])/data_var.atom_ini[atom]
 
         return data_var
 
@@ -2060,13 +2405,13 @@ class ODESolver(object):
         log.warning('species: ' + str([species[s] for s in nega_i[1]]) )
         log.warning('dt= ' + str(data_var.dt))
         log.warning('...reset dt to dt*0.2...')
-        log.warning('------------------------------------------------------------------')
+        log.warning(spacer)
 
     def print_lossBig(self, para):
 
         log.warning('Element conservation is violated too large')
         log.warning('at step: ' + str(para.count))
-        log.warning('------------------------------------------------------------------')
+        log.warning(spacer)
 
     def thomas_vec(a, b, c, d):
         '''
@@ -2349,15 +2694,26 @@ class Ros2(ODESolver):
         y, ymix, h, k = var.y, var.ymix, var.dt, var.k
         M, dzi, Kzz = atm.M, atm.dzi, atm.Kzz
 
-        if self.cfg.use_moldiff == True and self.cfg.use_settling == False:
-            diffdf = self.diffdf
-            jac_tot = self.lhs_jac_tot
-        elif self.cfg.use_moldiff == True and self.cfg.use_settling == True:
-            diffdf = self.diffdf_settling
-            jac_tot = self.lhs_jac_settling
-        else:
-            diffdf = self.diffdf_no_mol
-            jac_tot = self.lhs_jac_no_mol
+        if self.cfg.use_vm_mol == False:    
+            if self.cfg.use_moldiff == True and self.cfg.use_settling == False:
+                diffdf = self.diffdf
+                jac_tot = self.lhs_jac_tot
+            elif self.cfg.use_moldiff == True and self.cfg.use_settling == True:
+                diffdf = self.diffdf_settling
+                jac_tot = self.lhs_jac_settling
+            else:
+                diffdf = self.diffdf_no_mol
+                jac_tot = self.lhs_jac_no_mol
+        else: # vulcan_cfg.use_vm_mol == True:
+            if self.cfg.use_moldiff == True and self.cfg.use_settling == False:
+                diffdf = self.diffdf_vm
+                jac_tot = self.lhs_jac_tot_vm
+            elif self.cfg.use_moldiff == True and self.cfg.use_settling == True:
+                diffdf = self.diffdf_settling_vm
+                jac_tot = self.lhs_jac_settling_vm
+            else:
+                diffdf = self.diffdf_no_mol
+                jac_tot = self.lhs_jac_no_mol
 
         r = 1. + 1./2.**0.5
 
@@ -2402,7 +2758,17 @@ class Ros2(ODESolver):
         k2 = k2.reshape(y.shape)
 
         sol = y + 3./(2.*r)*k1 + 1/(2.*r)*k2
-
+        
+        ### for Hycean ###
+        if getattr(self.cfg, 'use_fix_H2He', False) and 'H2' not in self.cfg.use_fix_sp_bot and var.t > 1e6:
+            self.cfg.use_fix_sp_bot['H2'] = var.ymix[0,species.index('H2')]
+            self.cfg.use_fix_sp_bot['He'] = var.ymix[0,species.index('He')]
+            print ("After 1e6 sec, H2 and He are fixed at " + str((var.ymix[0,species.index('H2')], var.ymix[0,species.index('He')])))  
+            
+            self.fix_sp_bot_index = [species.index(sp) for sp in self.cfg.use_fix_sp_bot.keys()]
+            self.fix_sp_bot_mix = np.array([self.cfg.use_fix_sp_bot[sp] for sp in self.cfg.use_fix_sp_bot.keys()])
+        ### for Hycean ###
+        
         # setting particles on the surace = 0
         if self.cfg.use_fix_sp_bot: # if use_fix_sp_bot = {} (empty), it returns false
             sol[0,self.fix_sp_bot_index] = self.fix_sp_bot_mix*atm.n_0[0]
@@ -2595,7 +2961,7 @@ class Output(object):
         out_name   = self.cfg.out_name
 
         if self.cfg.clean_output:
-            shutil.rmtree(self.cfg.output_dir, ignore_errors=True)
+            safe_rm(self.cfg.output_dir)
 
         if not os.path.exists(output_dir):
             os.makedirs(output_dir)
@@ -2606,14 +2972,14 @@ class Output(object):
         outfile = output_dir+out_name
         if os.path.isfile(outfile):
             log.warning("Output file already exists. Removing.")
-            os.remove(outfile)
+            safe_rm(outfile)
 
     def print_prog(self, var, para):
         indx_max = np.nanargmax(para.where_varies_most)
         log.info('Elapsed time: ' +"{:.2e}".format(var.t) + ' || Step number: ' + str(para.count) + '/' + str(self.cfg.count_max) )
         log.info('longdy = ' + "{:.2e}".format(var.longdy) + '      || longdy/dt = ' + "{:.2e}".format(var.longdydt) + '  || dt = '+ "{:.2e}".format(var.dt) )
         log.info('from nz = ' + str(int(indx_max/ni)) + ' and ' + species[indx_max%ni])
-        log.info('------------------------------------------------------------------------' )
+        log.info(spacer)
 
 
     def print_end_msg(self, var, para ):
@@ -2641,11 +3007,12 @@ class Output(object):
             setattr(var, key, as_nparray)
 
         # plotting
-        if self.cfg.use_plot_evo == True:
+        if self.cfg.use_plot_evo:
             self.plot_evo(var, atm)
-        if self.cfg.use_plot_end == True:
-            self.plot_end(var, atm, para)
-        else: plt.close()
+        if self.cfg.use_plot_end:
+            self.plot_update(var, atm, para, 
+                             fpath=os.path.join(self.cfg.plot_dir, f"mix.{PLT_FMT}") )
+        plt.close('all')
 
         # making the save dict
         var_save = {'species':species, 'nr':nr}
@@ -2682,29 +3049,12 @@ class Output(object):
             with open(output_file, 'wb') as outfile:
                 dump( {'variable': var_save, 'atm': vars(atm), 'parameter': vars(para) }, outfile, protocol=4)
 
-    def plot_update(self, var, atm, para):
+    def plot_update(self, var, atm, para, fpath=None):
 
         log.debug("Plotting mixing ratios")
 
         colors = ['b','r','c','m','y','k','orange','pink', 'grey',\
         'darkred','darkblue','salmon','chocolate','mediumspringgreen','steelblue','plum','hotpink']
-
-        tex_labels = {'H':'H','H2':'H$_2$','O':'O','OH':'OH','H2O':'H$_2$O','CH':'CH','C':'C','CH2':'CH$_2$','CH3':'CH$_3$','CH4':'CH$_4$','HCO':'HCO','H2CO':'H$_2$CO', 'C4H2':'C$_4$H$_2$',\
-        'C2':'C$_2$','C2H2':'C$_2$H$_2$','C2H3':'C$_2$H$_3$','C2H':'C$_2$H','CO':'CO','CO2':'CO$_2$','He':'He','O2':'O$_2$','CH3OH':'CH$_3$OH','C2H4':'C$_2$H$_4$','C2H5':'C$_2$H$_5$','C2H6':'C$_2$H$_6$','CH3O': 'CH$_3$O'\
-        ,'CH2OH':'CH$_2$OH', 'NH3':'NH$_3$', "H2S":'H$_2$S'}
-
-        gas_cols = {
-                "H2O": "#027FB1",
-                "CO2": "#D24901",
-                "H2" : "#008C01",
-                "CH4": "#C720DD",
-                "CO" : "#D1AC02",
-                "N2" : "#870036",
-                "S2" : "#FF8FA1",
-                "SO2": "#00008B",
-                "H2S": "#2eff71",
-                "NH3": "#675200",
-            }
 
         fig, ax = plt.subplots(1,1, figsize=(8,6))
         color_index = 0
@@ -2713,8 +3063,10 @@ class Output(object):
                 sp_lab = tex_labels[sp]
             else:
                 sp_lab = sp
+
             if color_index == len(colors): # when running out of colors
                 colors.append(tuple(np.random.rand(3)))
+
             if sp in gas_cols.keys():
                 color = gas_cols[sp]
             else:
@@ -2744,7 +3096,7 @@ class Output(object):
         ax.set_title(title)
         ax.set_xscale('log')
         ax.set_xlabel("Volume mixing ratio")
-        ax.set_xlim(1.E-16, 1.2)
+        ax.set_xlim(1e-16, 1.2)
         ax.legend(fontsize=10, labelspacing=0.2,
                     loc='upper left', bbox_to_anchor=(1.0, 1.0))
 
@@ -2756,13 +3108,19 @@ class Output(object):
         else:
             axt_yarr = atm.pco/1.e6
         axt.plot(atm.Tco, axt_yarr, color='k', lw=0.5, ls='dotted')
+        
+        if fpath is None:
+            save_fpath = os.path.join(self.cfg.plot_dir, f"_recent.{PLT_FMT}")
+            copy_fpath = os.path.join(self.cfg.plot_dir, f"{para.pic_count:05d}.{PLT_FMT}")
+        else:
+            save_fpath = fpath
+            copy_fpath = None
 
-        last_fpath = self.cfg.plot_dir+"_recent.png"
-        copy_fpath = self.cfg.plot_dir+str(para.pic_count)+'.png'
+        log.debug(f"Plotting to {save_fpath}")
+        fig.savefig( save_fpath, dpi=self.cfg.plot_dpi, bbox_inches='tight')
 
-        log.debug(f"Plotting to {last_fpath}")
-        fig.savefig( last_fpath, dpi=self.cfg.plot_dpi, bbox_inches='tight')
-        shutil.copyfile(last_fpath, copy_fpath)
+        if copy_fpath:
+            shutil.copyfile(save_fpath, copy_fpath)
 
         para.pic_count += 1
 
@@ -2793,56 +3151,44 @@ class Output(object):
         if self.cfg.use_flux_movie:
             plt.savefig( 'plot/movie/flux-'+str(para.count)+'.jpg', dpi=self.cfg.plot_dpi)
 
-        plt.clf()
+        plt.close('all')
 
-    def plot_end(self, var, atm, para):
+    def plot_evo(self, var, atm, plot_j=-1, plot_ymin=1e-16, dn=1):
+        '''
+        Plot the evolution of mixing ratios over time.
 
-        plot_dir = self.cfg.plot_dir
-        colors = ['b','g','r','c','m','y','k','orange','pink', 'grey',\
-        'darkred','darkblue','salmon','chocolate','mediumspringgreen','steelblue','plum','hotpink']
-
-        plt.figure('live mixing ratios')
-        color_index = 0
-        for sp in self.cfg.plot_spec:
-            if self.cfg.plot_height == False:
-                line, = plt.plot(var.ymix[:,species.index(sp)], atm.pco/1.e6, color = colors[color_index], label=sp)
-                plt.gca().set_yscale('log')
-                plt.gca().invert_yaxis()
-                plt.ylabel("Pressure (bar)")
-                plt.ylim((self.cfg.P_b/1.E6,self.cfg.P_t/1.E6))
-            else: # plotting with height
-                line, = plt.plot(var.ymix[:,species.index(sp)], atm.zmco/1.e5, color = colors[color_index], label=sp)
-                plt.ylim((atm.zco[0]/1e5,atm.zco[0]/1e5))
-                plt.ylabel("Height (km)")
-            color_index +=1
-
-        plt.title(str(para.count)+' steps and ' + str("{:.2e}".format(var.t)) + ' s' )
-        plt.gca().set_xscale('log')
-        plt.xlim(1.E-20, 1.)
-        plt.legend(frameon=0, prop={'size':14}, loc=3)
-        plt.xlabel("Mixing Ratios")
-        plt.savefig(plot_dir + 'mix.png', dpi=self.cfg.plot_dpi)
-
-    def plot_evo(self, var, atm, plot_j=-1, dn=1):
+        Arguments
+        ------------
+        - var: variable object containing the time evolution data
+        - atm: atmosphere object containing the atmospheric properties
+        - plot_j: index of the atmospheric layer to plot (default: -1)
+        - plot_ymin: minimum y-axis value for the plot (default: 1e-16)
+        - dn: data point interval for plotting (default: 1, meaning plot all points)
+        '''
 
         plot_spec = self.cfg.plot_spec
         plot_dir = self.cfg.plot_dir
-        plt.figure('evolution')
+        fig,ax = plt.subplots(1,1, figsize=(8,6))
 
         ymix_time = np.array(var.y_time/atm.n_0[:,np.newaxis])
 
         for i,sp in enumerate(self.cfg.plot_spec):
-            plt.plot(var.t_time[::dn], ymix_time[::dn,plot_j,species.index(sp)],c = plt.cm.rainbow(float(i)/len(plot_spec)),label=sp)
+            col = gas_cols.get(sp, plt.cm.rainbow(float(i)/len(plot_spec)))
+            lbl = tex_labels.get(sp, sp)
+            ax.plot(var.t_time[::dn], ymix_time[::dn,plot_j,species.index(sp)],
+                     c = col, label=lbl)
 
-        plt.gca().set_xscale('log')
-        plt.gca().set_yscale('log')
-        plt.xlabel('time')
-        plt.ylabel('mixing ratios')
-        plt.ylim((1.E-30,1.))
-        plt.legend(frameon=0, prop={'size':14}, loc='best')
-        plt.savefig(plot_dir + 'evo.png', dpi=self.cfg.plot_dpi)
+        ax.set_xscale('log')
+        ax.set_yscale('log')
+        ax.set_xlabel('Time [s]')
+        ax.set_ylabel('Volume mixing ratios')
+        ax.set_ylim((plot_ymin,1.2))
+        ax.legend(fontsize=10, labelspacing=0.2,
+                    loc='upper left', bbox_to_anchor=(1.0, 1.0))
+        fig.savefig(plot_dir + f'evo.{PLT_FMT}', dpi=self.cfg.plot_dpi)
+        plt.close('all')
 
-    def plot_evo_inter(self, var, atm, plot_j=-1, dn=1):
+    def plot_evo_inter(self, var, atm, plot_j=-1, plot_ymin=1e-16, dn=1):
         '''
         plot the evolution when the code is interrupted
         '''
@@ -2860,9 +3206,9 @@ class Output(object):
         plt.gca().set_yscale('log')
         plt.xlabel('time')
         plt.ylabel('mixing ratios')
-        plt.ylim((1.E-30,1.))
+        plt.ylim((plot_ymin,1.))
         plt.legend(frameon=0, prop={'size':14}, loc='best')
-        plt.savefig(plot_dir + 'evo.png', dpi=self.cfg.plot_dpi)
+        plt.savefig(plot_dir + f'evo.{PLT_FMT}', dpi=self.cfg.plot_dpi)
 
     def plot_TP(self, atm):
         plot_dir = self.cfg.plot_dir
@@ -2886,5 +3232,5 @@ class Output(object):
         ax1.set_xlabel("Temperature (K)")
         ax2.set_xlabel(r'K$_{zz}$ (cm$^2$s$^{-1}$)')
 
-        fig.savefig(plot_dir + 'TPK_initial.png', dpi=self.cfg.plot_dpi)
+        fig.savefig(plot_dir + f'TPK_initial.{PLT_FMT}', dpi=self.cfg.plot_dpi)
 

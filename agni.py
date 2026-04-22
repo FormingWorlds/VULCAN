@@ -15,7 +15,7 @@ log = logging.getLogger("fwl."+__name__)
 import paths
 from config import Config
 from store import AtmData, Variables
-from phy_const import r_sun, au
+from phy_const import r_sun, au, spacer
 from chem_funs import spec_list as gas_list
 
 # constants
@@ -23,7 +23,14 @@ AGNI_LOGFILE_NAME = "agni_recent.log"
 
 def activate_julia(vulcan_cfg:Config):
 
-    log.info("Activating Julia environment")
+    # Check AGNI is in the right location
+    if not os.path.isdir(paths.AGNI_DIR):
+        raise FileNotFoundError(paths.AGNI_DIR)
+    if not os.path.isfile(os.path.join(paths.AGNI_DIR,"agni.jl")):
+        raise FileNotFoundError(os.path.join(paths.AGNI_DIR,"agni.jl"))
+
+    # Activate environment for Julia
+    log.info(f"Activating Julia environment {paths.AGNI_DIR}")
     jl.seval("using Pkg")
     jl.Pkg.activate(paths.AGNI_DIR)
 
@@ -95,7 +102,7 @@ def init_agni_atmos(vulcan_cfg:Config, atm:AtmData, var:Variables):
                         sflux_integ,
                         vulcan_cfg.f_diurnal,
                         0.0,
-                        vulcan_cfg.sl_angle*np.pi/180.0, # convert to degrees
+                        vulcan_cfg.sl_angle*180.0/np.pi, # convert radians to degrees
 
                         vulcan_cfg.Tsurf_guess,
                         vulcan_cfg.gs*0.01, # convert to SI, m/s^2
@@ -185,11 +192,13 @@ def _solve_energy(atmos, vulcan_cfg:Config,):
             linesearch, str(easy_start), dx_max, ls_increase
         ))
 
+        jl.AGNI.solver.ls_increase = float(ls_increase)
+
         # Try solving temperature profile
         agni_success = jl.AGNI.solver.solve_energy_b(atmos,
                             sol_type  = int(3),
                             method    = int(1),
-                            chem_type = int(0),
+                            chem      = False,
 
                             conduct=False, convect=True, sens_heat=True,
                             latent=False, rainout=True,
@@ -198,7 +207,7 @@ def _solve_energy(atmos, vulcan_cfg:Config,):
                             conv_atol=float(vulcan_cfg.agni_atol),
                             conv_rtol=float(vulcan_cfg.agni_rtol),
 
-                            ls_increase=float(ls_increase), ls_method=int(linesearch),
+                            ls_method=int(linesearch),
                             dx_max=float(dx_max), easy_start=easy_start,
                             perturb_all=perturb_all,
 
@@ -231,8 +240,7 @@ def _solve_once(atmos):
     jl.AGNI.setpt.stratosphere_b(atmos, 0.5)
 
     # calculate convective flux only, to get Kzz profile
-    jl.AGNI.energy.calc_fluxes_b(atmos, False, 
-                                    False, True, False, False, calc_cf=False)
+    jl.AGNI.energy.calc_fluxes_b(atmos, convective=True)
 
     # fill kzz values
     jl.AGNI.energy.fill_Kzz_b(atmos)
@@ -270,5 +278,5 @@ def run_agni(atmos, vulcan_cfg:Config, atm:AtmData, var:Variables):
     t_itp = PchipInterpolator(atmos.p, atmos.tmp)
     atm.Tco[:] = t_itp(atm.pco*0.1)[:] 
 
-    log.info('------------------------------------------------------------------------')
+    log.info(spacer)
     return atmos

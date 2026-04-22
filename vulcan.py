@@ -1,6 +1,17 @@
 #!/usr/bin/env python3
 
-__version__ = "25.07.15"
+__version__ = "26.02.20"
+
+# Set number of threads but don't overwrite existing value, if set
+import os
+
+# Default number of threads
+NUM_THREADS = 2
+
+# Get number of threads from OMP_NUM_THREADS variable, if set
+NUM_THREADS = max(1,int(os.environ.get("OMP_NUM_THREADS",NUM_THREADS)))
+for k in ("MKL_NUM_THREADS","NUMEXPR_NUM_THREADS","OMP_NUM_THREADS"):
+    os.environ[k] = str(NUM_THREADS)
 
 # Import system modules
 import time
@@ -131,7 +142,7 @@ def main(vulcan_cfg:Config):
     solver.naming_solver(data_para)
 
     # Running the integration loop
-    log.info("Starting VULCAN integration...")
+    log.info(f"Starting VULCAN integration with {os.environ['OMP_NUM_THREADS']} threads...")
     integ(data_var, data_atm, data_para, make_atm, atmos=atmos)
 
     # Save result to disk
@@ -147,7 +158,9 @@ if __name__ == "__main__":
     print("Starting VULCAN from command line")
 
     # Setup basic logging
-    logging.basicConfig(format='%(asctime)s - %(levelname)8s:  %(message)s',
+    logfmt = '[ %(levelname)-5s ]  %(message)s'
+    # logfmt = '[ %(levelname)-5s, %(asctime)s ]  %(message)s'
+    logging.basicConfig(format=logfmt,
                             datefmt='%H:%M:%S',
                             encoding='utf-8', level=logging.INFO)
 

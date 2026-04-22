@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 # https://packaging.python.org/en/latest/specifications/declaring-project-metadata/
 [project]
 name = "vulcan"
-version = "25.07.15"
+version = "26.02.20"
 description = "Photochemical kinetics for exoplanetary atmospheres, a fast and easy-to-use python code."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -47,10 +47,13 @@ docs = [
     "mkdocs",
     "mkdocs-material",
     "mkdocstrings[python]",
+    "pymdown-extensions",
+    "mkdocstrings",
+    "mkdocs-bibtex"
 ]
 
 [project.urls]
 homepage = "https://github.com/FormingWorlds/VULCAN/"
 issues = "https://github.com/FormingWorlds/VULCAN/issues"
-changelog = "https://github.com/exoclime/VULCAN//releases"
+changelog = "https://github.com/FormingWorlds/VULCAN/releases"
 
