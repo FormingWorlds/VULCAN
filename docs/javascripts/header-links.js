@@ -1,5 +1,3 @@
-console.log("header-links.js loaded");
-
 function wire() {
   const homepage = "https://proteus-framework.org/";
 
@@ -11,10 +9,10 @@ function wire() {
     title.dataset.spiderWired = "1";
     title.style.cursor = "pointer";
 
-    // always go to /SPIDER/ when hosted there, else "/" (mkdocs serve)
+    // always go to /VULCAN/ when hosted there, else "/" (mkdocs serve)
     const href = location.href;
-    const docsHome = href.includes("/SPIDER/")
-      ? href.split("/SPIDER/")[0] + "/SPIDER/"
+    const docsHome = href.includes("/VULCAN/")
+      ? href.split("/VULCAN/")[0] + "/VULCAN/"
       : location.origin + "/";
 
     title.addEventListener("click", (e) => {

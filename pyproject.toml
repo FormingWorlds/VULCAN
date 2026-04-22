@@ -43,6 +43,7 @@ dependencies = [
 
 [project.optional-dependencies]
 docs = [
+    "zensical",
     "markdown-include",
     "mkdocs",
     "mkdocs-material",
@@ -52,8 +53,20 @@ docs = [
     "mkdocs-bibtex"
 ]
 
+[tool.setuptools]
+py-modules = [
+    "agni",
+    "build_atm",
+    "config",
+    "make_chem_funs",
+    "op",
+    "paths",
+    "phy_const",
+    "store",
+    "vulcan"
+]
+
 [project.urls]
 homepage = "https://github.com/FormingWorlds/VULCAN/"
 issues = "https://github.com/FormingWorlds/VULCAN/issues"
 changelog = "https://github.com/FormingWorlds/VULCAN/releases"
-
