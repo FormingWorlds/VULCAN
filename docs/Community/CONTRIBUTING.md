@@ -7,10 +7,6 @@ Anyone who makes a Pull Request to the `main` branch should read this document *
 
 PROTEUS and its submodules are *free* software and also *open source* software. Roughly, this means that the users have the freedom to run, copy, distribute, study, change and improve the software. The term "free software" is a matter of liberty, not price or monetary value [[ref]](https://www.gnu.org/philosophy/free-sw.html).
 
-PROTEUS is made available under the [Apache 2.0 License](https://choosealicense.com/licenses/apache-2.0/) which permits [[ref]](https://choosealicense.com/licenses/apache-2.0/) commercial use, unlimited distribution, modification of the code elsewhere, and private use. However, there are caveats to these terms: contributors have no liability, the code has no warranty, and a trademark may not be applied [[ref]](https://opensource.com/article/18/2/apache-2-patent-license).
-
-The license only specifies how the material may be used by both developers and non-developers alike.  By default, as a work is created its copyright belongs to the person who created it [[ref]](https://assets.publishing.service.gov.uk/media/5a7eaf0ae5274a2e87db13f3/c-notice-201402.pdf). Although in some cases your employer/university may be the copyright holder of work you create [[ref]](https://www.fsf.org/licensing/contributor-faq). PROTEUS is not 'owned' by a single entity; the individual parts of the framework are owned by those who made them, and licensed for use and modification by others. More information can be found [here](https://opensource.guide) and [here](https://fossa.com/learn/open-source-licenses/).
-
 The principle purpose of PROTEUS is to generate data to make scientific conclusions and write papers. It is generally expected that the primary author of a paper is the person who contributed the most work to that project. We ask that:
 
 1. authorship is offered to the Contributors to PROTEUS based on the relevance of their work in a paper,
@@ -70,33 +66,19 @@ The version of PROTEUS itself is defined using calendar versioning in the format
 
 ### Large files, output, and input data
 
-Large files should **not** be committed to the repository. This means that model results, plots, and files you create during analysis should not be be staged and committed to a PROTEUS online branch. Including these (even accidentally) in the repository will make Git operations sluggish and make version control tricky, as Git is only meant for managing text (e.g. code) files.
+Large files should **not** be committed to the repository. This means that model results, plots, and files you create during analysis should not be be staged and committed to an online branch. Including these (even accidentally) in the repository will make Git operations sluggish and make version control tricky, as Git is only meant for managing text (e.g. code) files.
 
 You can make files/folders invisible to Git by prepending `nogit_` to their names. For example, anything in a folder called `nogit_analysis/` will be ignored by Git. Large files could then be safely placed in this folder. Model outputs are generated in the `output/` folder, which is also ignored by Git.
 
-PROTEUS relies on input data files that can be potentially large. These are stored outside the Git repository in [Zenodo](https://zenodo.org/communities/proteus_framework/), and duplicated in the [OSF](https://osf.io/8dumn/). When running PROTEUS, it will automatically download the necessary input data from Zenodo (or from the OSF in case the connection to Zenodo cannot be established) and store it locally inside your FWL data folder defined by the `FWL_DATA` environment variable in your shell. Placing large files in this folder allows them to be kept on 'storage' file systems on clusters to avoid reaching your allocation limits.
-
 If you want to add new input data you can either update a Zenodo record or create a new one.
-
-1. **Updating a record** For instance, if you want to add a new stellar spectra, you will update the `stellar_spectra/Named` record on Zenodo, making sure the file you add is in a consistent format with that of the other files contained in the record.
-2. **Creating a record** If you want instead to add a new model for the absorption properties of the atmosphere, you will create a new Zenodo record named `spectral_files/model_name/number_of_bands` and upload the model files in a consistent format with that of the other spectral files used in PROTEUS. It is important for clarity and data management that the name of the records follow the organisation of the FWL data repository consistently. The next step is to update/create the python download function in PROTEUS located in `src/proteus/utils/data.py` that will download the new data. The created Zenodo record number must be provided. Note that sometimes the download function is located in a submodule (e.g. Mors, Aragog…).
-
-Once your new data is uploaded on Zenodo, do not forget to also upload it on the OSF (and update PROTEUS with the OSF record number when necessary). Some checks have been implemented to detect new input data files but note that it might be necessary in some cases to delete your local input data folder (or the data cache in the CI) to enforce the download of the new data.
 
 ### Linting
 
 Linting is a term for static code analysis to flag programming errors,
 bugs, stylistic errors and suspicious constructs [[ref]](https://en.wikipedia.org/wiki/Lint_(software)).
 
-PROTEUS uses [`ruff`](https://astral.sh/ruff) for linting. The linting [rules](https://docs.astral.sh/ruff/rules/) are defined in [`pyproject.toml`](https://github.com/FormingWorlds/PROTEUS/blob/main/pyproject.toml). This check are run automatically via a Github Action: [codestyle](https://github.com/FormingWorlds/PROTEUS/blob/main/.github/workflows/codestyle.yaml).
+VULCAN uses [`ruff`](https://astral.sh/ruff) for linting. The linting [rules](https://docs.astral.sh/ruff/rules/) are defined in [`pyproject.toml`](https://github.com/FormingWorlds/VULCAN/blob/main/pyproject.toml). This check are run automatically via a Github Action: [codestyle](https://github.com/FormingWorlds/VULCAN/blob/main/.github/workflows/codestyle.yaml).
 
-You can `ruff` on locally using one of these commands:
-
-```console
-ruff check start_proteus.py  # single file
-ruff check src/proteus       # directory
-ruff check .                 # everything
-```
 
 If you prepend `--fix`, it can also fix some issues for you:
 
@@ -112,9 +94,9 @@ pre-commit install
 
 ### Running tests
 
-PROTEUS uses [pytest](https://docs.pytest.org/en/latest/) to run the tests on the code. Tests are important for ensuring that the code behaves as expected, and for finding bugs/errors as soon as they arise. You can read more about software testing in general [here](https://www.geeksforgeeks.org/software-testing/software-testing-basics/).
+VULCAN uses [pytest](https://docs.pytest.org/en/latest/) to run the tests on the code. Tests are important for ensuring that the code behaves as expected, and for finding bugs/errors as soon as they arise. You can read more about software testing in general [here](https://www.geeksforgeeks.org/software-testing/software-testing-basics/).
 
-Our tests are run automatically via a Github Action: [CI - Fast PR Checks](https://github.com/FormingWorlds/PROTEUS/blob/main/.github/workflows/ci-pr-checks.yml). You can also run the tests for yourself using the command:
+Our tests are run automatically via a Github Action. You can also run the tests for yourself using the command:
 
 ```console
 pytest
@@ -151,10 +133,10 @@ zensical serve
 
 This will generate the markdown files and serve them on a local server. You can view documentation while you edit by copy-pasting the displayed URL into your browser (e.g., `http://127.0.0.1:8000`).
 
-You can find the documentation source in the [docs](https://github.com/FormingWorlds/PROTEUS/tree/main/docs) directory.
-If you are adding new pages, make sure to update the listing in the [`mkdocs.yml`](https://github.com/FormingWorlds/PROTEUS/blob/main/mkdocs.yml) under the `nav` entry.
+You can find the documentation source in the [docs](https://github.com/FormingWorlds/VULCAN/tree/main/docs) directory.
+If you are adding new pages, make sure to update the listing in the [`docs.yml`](https://github.com/FormingWorlds/VULCAN/blob/main/docs.yml) under the `nav` entry.
 
-The documentation is hosted on the [PROTEUS framework website](https://proteus-framework.org/PROTEUS/).
+The documentation is hosted on the [PROTEUS website](https://proteus-framework.org/VULCAN/).
 
 ### Making a release
 
@@ -176,6 +158,6 @@ bump-my-version bump release
 
 2. Commit and push your changes.
 
-3. Make a new [release](https://github.com/FormingWorlds/PROTEUS/releases). Make sure to set the tag to the specified version, e.g. `24.08.12`.
+3. Make a new [release](https://github.com/FormingWorlds/VULCAN/releases). Make sure to set the tag to the specified version, e.g. `24.08.12`.
 
-4. The [upload to pypi](https://pypi.org/project/fwl-proteus) is triggered when a release is published and handled by [this workflow](https://github.com/FormingWorlds/PROTEUS/actions/workflows/publish.yaml).
+4. The [upload to pypi](https://pypi.org/project/fwl-vulcan) is triggered when a release is published and handled by [this workflow](https://github.com/FormingWorlds/VULCAN/actions/workflows/publish.yaml).

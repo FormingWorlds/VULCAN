@@ -18,11 +18,11 @@ keywords = [
     "Exoplanets",
     "Model-coupling",
 ]
-license = {text = "Apache 2.0 License"}
+license = {text = "GPL-3.0-only"}
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Science/Research",
-    "License :: OSI Approved :: Apache Software License",
+    "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
     "Natural Language :: English",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
@@ -100,7 +100,7 @@ indent-style = "space"
 
 [tool.bumpversion]
 # https://callowayproject.github.io/bump-my-version/howtos/calver/
-current_version = "25.11.19"
+current_version = "26.04.22"
 parse = """(?x)                      # Verbose mode
     (?P<release>                     # The release part
         (?:[1-9][0-9])\\.            # YY.
