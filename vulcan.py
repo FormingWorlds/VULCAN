@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-__version__ = "26.02.20"
+__version__ = "26.04.22"
 
 # Set number of threads but don't overwrite existing value, if set
 import os
