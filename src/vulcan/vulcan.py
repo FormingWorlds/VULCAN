@@ -26,8 +26,16 @@ mpl_logger.setLevel(logging.WARNING)
 log = logging.getLogger('fwl.' + __name__)
 
 
-# import the configuration inputs
-def run_vulcan(vulcan_cfg: Config, make_network: bool):
+def run_vulcan(vulcan_cfg: Config, make_network: bool = True):
+    """Run VULCAN with the given configuration.
+
+    Parameters
+    ----------
+    vulcan_cfg : Config
+        The configuration object containing all settings for the VULCAN run.
+    make_network : bool, optional
+        Whether to remake the chemical network (chem_funs.py). Default is True.
+    """
 
     # make network?
     if make_network:
@@ -160,7 +168,8 @@ def run_vulcan(vulcan_cfg: Config, make_network: bool):
 
 
 def run_cli():
-    # Entry point for the script when run directly
+    """Entry point for the script when run directly"""
+
     print('Starting VULCAN from command line')
 
     # Make config

@@ -26,10 +26,6 @@ def test_default_config_run_creates_default_outputs():
     output_file.unlink(missing_ok=True)
     cfg_dump.unlink(missing_ok=True)
 
-    # Set environment variables for the subprocess
-    env = os.environ.copy()
-    env['MPLBACKEND'] = 'Agg'
-
     # Set up the config
     vulcan_cfg = Config()
 

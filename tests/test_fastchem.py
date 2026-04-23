@@ -28,9 +28,10 @@ def test_fastchem_exists():
             capture_output=True,
             text=True,
             cwd=FASTCHEM_DIR,
+            check=True,
         )
     except sp.CalledProcessError as e:
-        pytest.fail(f'Running the FC executable failed: {e}')
+        pytest.fail(f'Running the FC executable failed: {e}\nstderr: {e.stderr}')
 
     # Check log result
     assert 'Equilibrium calculation (Fastchem) finished.' in result.stdout

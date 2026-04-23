@@ -1,4 +1,4 @@
-# Setup logger for PROTEUS
+# Setup logger for VULCAN
 from __future__ import annotations
 
 import logging
