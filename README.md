@@ -3,6 +3,10 @@
 Photochemical kinetics for exoplanetary atmospheres, a fast and easy-to-use python code.  This distribution of VULCAN contains a number of performance and usability improvements.
 
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
+<a href="https://github.com/FormingWorlds/VULCAN/actions/workflows/tests.yaml">
+    <img src="https://gist.githubusercontent.com/nichollsh/59f094e7d22cd6af9a1cb3ea665b4260/raw/covbadge.svg">
+</a>
+
 
 
 More information can be found on the [documentation](https://proteus-framework.org/VULCAN/) pages:
@@ -12,7 +16,7 @@ More information can be found on the [documentation](https://proteus-framework.o
 * [contributing guide](https://proteus-framework.org/VULCAN/Community/CONTRIBUTING.html)
 
 
-The theory papers of VULCAN can be found here: 
+The theory papers of VULCAN can be found here:
 
 * [Tsai et al. 2021](https://arxiv.org/abs/2108.01790) (with photochemistry)
 * [Tsai et al. 2017](https://arxiv.org/abs/1607.00409) (without photochemistry).
