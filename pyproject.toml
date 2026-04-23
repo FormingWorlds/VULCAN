@@ -38,7 +38,7 @@ dependencies = [
     "pandas",
     "scipy",
     "sympy",
-    "astropy"
+    "astropy",
 ]
 
 [project.optional-dependencies]
@@ -52,13 +52,20 @@ docs = [
     "mkdocstrings",
     "mkdocs-bibtex"
 ]
+develop = [
+    "coverage",
+    "tomlkit>=0.11.0",
+    "pytest >= 8.1",
+    "pytest-cov",
+    "pytest-timeout",
+    "ruff",
+    "pre-commit"
+]
+
 
 [tool.setuptools]
-package-dir = {"" = "src"}
-
-[tool.setuptools.packages.find]
-where = ["src"]
-include = ["vulcan*"]
+package-dir = {"vulcan" = "src/vulcan"}
+include-package-data = true
 
 [project.urls]
 homepage = "https://github.com/FormingWorlds/VULCAN/"
@@ -92,6 +99,59 @@ required-imports = ["from __future__ import annotations"]
 quote-style = "single"
 indent-style = "space"
 
+[tool.coverage.run]
+branch = true
+source = ["inferagni"]
+omit = [
+    "*/tests/*",
+    "*/test_*.py",
+    "*/__pycache__/*",
+    "*/conftest.py",
+]
+
+[tool.pytest.ini_options]
+minversion = "8.1"
+addopts = [
+    # Global coverage options removed from addopts.
+    # CI uses "coverage run -m pytest" with [tool.coverage.*] settings.
+    # For local development, use either:
+    #   1. "coverage run -m pytest" (matches CI behavior, compatible with coverage ratcheting)
+    #   2. "pytest --cov" (uses pytest-cov, convenient but slightly different from CI)
+    # Both approaches work; choose based on preference.
+    "--strict-markers",
+    "--strict-config",
+    "-ra",
+    "--showlocals",
+]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "integration: marks tests as integration tests",
+    "unit: marks tests as unit tests",
+    "smoke: marks tests as smoke tests (quick validation with real binaries, 1 timestep, low res)",
+]
+
+[tool.coverage.report]
+fail_under = 10
+show_missing = true
+precision = 2
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+    "if typing.TYPE_CHECKING:",
+    "@abstractmethod",
+    "@abc.abstractmethod",
+]
+
+[tool.coverage.html]
+directory = "htmlcov"
 [tool.bumpversion]
 # https://callowayproject.github.io/bump-my-version/howtos/calver/
 current_version = "26.04.22"
