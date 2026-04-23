@@ -15,11 +15,11 @@ from scipy.interpolate import PchipInterpolator
 log = logging.getLogger('fwl.' + __name__)
 
 # Import some VULCAN modules
-import paths
-from chem_funs import spec_list as gas_list
-from config import Config
-from phy_const import au, r_sun, spacer
-from store import AtmData, Variables
+from . import paths
+from .chem_funs import spec_list as gas_list
+from .config import Config
+from .phy_const import au, r_sun, spacer
+from .store import AtmData, Variables
 
 # constants
 AGNI_LOGFILE_NAME = 'agni_recent.log'

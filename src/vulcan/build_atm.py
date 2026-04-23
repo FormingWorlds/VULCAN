@@ -13,11 +13,11 @@ from scipy import interpolate
 
 log = logging.getLogger('fwl.' + __name__)
 
-from chem_funs import ni  # number of species and reactions in the network
-from chem_funs import spec_list as species
-from config import Config
-from paths import COM_FILE, FASTCHEM_DIR
-from phy_const import Navo, au, kb, r_sun
+from .chem_funs import ni  # number of species and reactions in the network
+from .chem_funs import spec_list as species
+from .config import Config
+from .paths import COM_FILE, FASTCHEM_DIR
+from .phy_const import Navo, au, kb, r_sun
 
 ### read in the basic chemistry data
 with open(COM_FILE, 'r') as f:

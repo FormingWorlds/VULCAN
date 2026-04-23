@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import os
 
-# Path to VULCAN folder
-VULCAN_DIR = os.path.dirname(os.path.abspath(__file__)) + '/'
+# Path to VULCAN repository folder
+_PACKAGE_DIR = os.path.dirname(os.path.abspath(__file__))
+VULCAN_DIR = os.path.abspath(os.path.join(_PACKAGE_DIR, '..', '..')) + '/'
 
 # Path to FastChem folder (custom version packaged with VULCAN)
 FASTCHEM_DIR = os.path.join(VULCAN_DIR, 'fastchem_vulcan') + '/'
@@ -27,4 +28,4 @@ GIBBS_FILE = os.path.join(VULCAN_DIR, 'thermo', 'gibbs_text.txt')
 CROSS_DIR = os.path.join(VULCAN_DIR, 'thermo', 'photo_cross') + '/'
 
 # Symbolic chemical functions
-CHEM_FUNS_FILE = os.path.join(VULCAN_DIR, 'chem_funs.py')
+CHEM_FUNS_FILE = os.path.join(VULCAN_DIR, 'src', 'vulcan', 'chem_funs.py')

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 
-from paths import VULCAN_DIR
+from .paths import VULCAN_DIR
 
 
 class Config:

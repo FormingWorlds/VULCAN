@@ -54,17 +54,11 @@ docs = [
 ]
 
 [tool.setuptools]
-py-modules = [
-    "agni",
-    "build_atm",
-    "config",
-    "make_chem_funs",
-    "op",
-    "paths",
-    "phy_const",
-    "store",
-    "vulcan"
-]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["vulcan*"]
 
 [project.urls]
 homepage = "https://github.com/FormingWorlds/VULCAN/"

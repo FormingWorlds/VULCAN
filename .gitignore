@@ -80,6 +80,8 @@ Zephyrus
 vulcan
 VULCAN
 Vulcan
+!src/vulcan/
+!src/vulcan/**
 lovepy
 Lovepy
 LOVEPY
