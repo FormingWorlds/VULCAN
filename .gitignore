@@ -3,8 +3,6 @@
 __pycache__
 nogit_*
 
-src/chem_funs.py
-chem_funs.py
 thermo/*network*.txt
 
 fastchem_vulcan/obj/*.o
@@ -81,8 +79,6 @@ Zephyrus
 vulcan
 VULCAN
 Vulcan
-!src/vulcan/
-!src/vulcan/**
 lovepy
 Lovepy
 LOVEPY
