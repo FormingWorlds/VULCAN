@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from vulcan import run_vulcan, Config
 
 import pytest
+
+from vulcan import Config, run_vulcan
+
 
 @pytest.mark.integration
 @pytest.mark.timeout(1800)
@@ -12,7 +14,9 @@ def test_default_config_run_creates_default_outputs():
     repo_root = Path(__file__).resolve().parents[1]
     fastchem_bin = repo_root / 'fastchem_vulcan' / 'fastchem'
 
-    assert fastchem_bin.is_file(), f'Missing FastChem binary at {fastchem_bin}; compile fastchem_vulcan first.'
+    assert fastchem_bin.is_file(), (
+        f'Missing FastChem binary at {fastchem_bin}; compile fastchem_vulcan first.'
+    )
 
     # expected output file and config dump file
     output_file = repo_root / 'output' / 'example.pkl'
