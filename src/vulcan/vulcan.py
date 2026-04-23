@@ -10,6 +10,7 @@ import time
 from vulcan import paths
 from vulcan.config import Config
 from vulcan.logs import setup_logger
+from vulcan.make_chem_funs import make_all
 
 # Get number of threads from OMP_NUM_THREADS variable, if set
 NUM_THREADS = 2
@@ -30,8 +31,6 @@ def run_vulcan(vulcan_cfg: Config, make_network: bool):
 
     # make network?
     if make_network:
-        from .make_chem_funs import make_all
-
         log.debug('Making chem_funs.py ...')
         make_all(vulcan_cfg)
     else:

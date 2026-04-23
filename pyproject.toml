@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 # https://packaging.python.org/en/latest/specifications/declaring-project-metadata/
 [project]
-name = "vulcan"
+name = "fwl-vulcan"
 version = "26.04.22"
 description = "Photochemical kinetics for exoplanetary atmospheres, a fast and easy-to-use python code."
 readme = "README.md"
