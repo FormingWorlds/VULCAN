@@ -19,8 +19,6 @@ import numpy as np
 import scipy
 from scipy import interpolate
 
-log = logging.getLogger('fwl.' + __name__)
-
 from .build_atm import compo, compo_row
 from .chem_funs import Gibbs, chemdf, ni, nr  # number of species and reactions in the network
 from .chem_funs import neg_symjac as neg_achemjac
@@ -29,6 +27,8 @@ from .chem_funs import symjac as achemjac
 from .config import Config
 from .paths import CROSS_DIR
 from .phy_const import Navo, ag0, hc, kb, spacer  # hc is used to convert to the actinic flux
+
+log = logging.getLogger('fwl.' + __name__)
 
 PLT_FMT = 'png'  # the format for saving plots, e.g. png, pdf
 
@@ -248,10 +248,10 @@ class ReadRate(object):
                 if (
                     not line.startswith('#')
                     and line.strip()
-                    and special_re == False
-                    and conden_re == False
-                    and photo_re == False
-                    and ion_re == False
+                    and not special_re
+                    and not conden_re
+                    and not photo_re
+                    and not ion_re
                 ):  # if not starts
                     Rf[i] = line.partition('[')[-1].rpartition(']')[0].strip()
                     li = line.partition(']')[-1].strip()
@@ -262,7 +262,7 @@ class ReadRate(object):
                     E[i] = float(columns[2])
 
                     # switching to trimolecular reactions (len(columns) > 3 for those with high-P limit rates)
-                    if re_tri and re_tri_k0 == False:
+                    if re_tri and not re_tri_k0:
                         a_inf[i] = float(columns[3])
                         n_inf[i] = float(columns[4])
                         E_inf[i] = float(columns[5])
@@ -276,7 +276,7 @@ class ReadRate(object):
                     # Note: make the defaut i=i
                     k_fun[i] = lambda temp, mm, i=i: a[i] * temp ** n[i] * np.exp(-E[i] / temp)
 
-                    if re_tri == False:
+                    if not re_tri:
                         k[i] = k_fun[i](Tco, M)
 
                     # for 3-body reactions, also calculating k_inf
@@ -539,7 +539,7 @@ class ReadRate(object):
                         skip_header=1,
                         names=['lambda', 'cross', 'disso', 'ion'],
                     )
-                except:
+                except FileNotFoundError:
                     raise RuntimeError('Missing the cross section from ' + sp)
                 if sp in ion_sp:
                     try:
@@ -550,7 +550,7 @@ class ReadRate(object):
                             skip_header=1,
                             names=True,
                         )
-                    except:
+                    except FileNotFoundError:
                         raise RuntimeError('Missing the ion branching ratio from ' + sp)
             else:
                 try:
@@ -561,7 +561,7 @@ class ReadRate(object):
                         skip_header=1,
                         names=['lambda', 'cross', 'disso'],
                     )
-                except:
+                except FileNotFoundError:
                     raise RuntimeError('Missing the cross section from ' + sp)
 
             # reading in the branching ratios
@@ -575,7 +575,7 @@ class ReadRate(object):
                         skip_header=1,
                         names=True,
                     )
-                except:
+                except FileNotFoundError:
                     raise RuntimeError('Missing the branching ratio from ' + sp)
 
             # reading in temperature dependent cross sections
@@ -619,7 +619,7 @@ class ReadRate(object):
                 # photolysis threshold
                 try:
                     diss_max = threshold[sp]
-                except:
+                except (KeyError, IndexError):
                     raise RuntimeError(sp + ' not in threshol.txt')
 
             else:
@@ -631,7 +631,7 @@ class ReadRate(object):
                 try:
                     if threshold[sp] > diss_max:
                         diss_max = threshold[sp]
-                except:
+                except (KeyError, IndexError):
                     raise RuntimeError(sp + ' not in threshol.txt')
 
         # constraining the bin_min and bin_max by the default values defined in store.py
@@ -742,7 +742,7 @@ class ReadRate(object):
                         bounds_error=False,
                         fill_value=(ratio_raw[sp][br_key][0], ratio_raw[sp][br_key][-1]),
                     )
-                except:
+                except (ValueError, KeyError, IndexError):
                     log.error(
                         'The branches in the network file does not match the branchong ratio file for '
                         + str(sp)
@@ -974,7 +974,7 @@ class ReadRate(object):
                                 ion_ratio_raw[sp][br_key][-1],
                             ),
                         )
-                    except:
+                    except (KeyError, IndexError, ValueError):
                         log.error(
                             'The ionic branches in the network file does not match the branchong ratio file for '
                             + str(sp)
@@ -1064,7 +1064,7 @@ class Integration(object):
                 and var.longdydt < 1.0e-6
             ):
                 self.update_photo_frq = self.cfg.final_update_photo_frq
-                if para.switch_final_photo_frq == False:
+                if not para.switch_final_photo_frq:
                     log.debug(
                         'update_photo_frq changed to ' + str(self.cfg.final_update_photo_frq)
                     )
@@ -1105,13 +1105,13 @@ class Integration(object):
             if (
                 self.cfg.use_condense
                 and var.t >= self.cfg.start_conden_time
-                and para.fix_species_start == False
+                and not para.fix_species_start
             ):
                 # updating the condensation rates
                 var = self.conden(var, atm)
 
                 if self.cfg.fix_species and var.t > self.cfg.stop_conden_time:
-                    if para.fix_species_start == False:  # switch to run for the first time
+                    if not para.fix_species_start:  # switch to run for the first time
                         para.fix_species_start = True
                         self.cfg.rtol = self.cfg.post_conden_rtol
                         log.debug(
@@ -4309,8 +4309,8 @@ class Ros2(ODESolver):
         y, ymix, h, k = var.y, var.ymix, var.dt, var.k
         M, dzi, Kzz = atm.M, atm.dzi, atm.Kzz
 
-        if self.cfg.use_vm_mol == False:
-            if self.cfg.use_moldiff and self.cfg.use_settling == False:
+        if not self.cfg.use_vm_mol:
+            if self.cfg.use_moldiff and not self.cfg.use_settling:
                 diffdf = self.diffdf
                 jac_tot = self.lhs_jac_tot
             elif self.cfg.use_moldiff and self.cfg.use_settling:
@@ -4320,7 +4320,7 @@ class Ros2(ODESolver):
                 diffdf = self.diffdf_no_mol
                 jac_tot = self.lhs_jac_no_mol
         else:  # vulcan_cfg.use_vm_mol :
-            if self.cfg.use_moldiff and self.cfg.use_settling == False:
+            if self.cfg.use_moldiff and not self.cfg.use_settling:
                 diffdf = self.diffdf_vm
                 jac_tot = self.lhs_jac_tot_vm
             elif self.cfg.use_moldiff and self.cfg.use_settling:
@@ -4339,7 +4339,7 @@ class Ros2(ODESolver):
         if self.cfg.use_condense and para.fix_species_start:
             for sp in self.cfg.fix_species:
                 if (
-                    self.cfg.fix_species_from_coldtrap_lev == False
+                    not self.cfg.fix_species_from_coldtrap_lev
                 ):  # if Ptop is not specified, fix the whole column # TEST2022
                     pass
                 else:
@@ -4419,7 +4419,7 @@ class Ros2(ODESolver):
             if para.fix_species_start:
                 for sp in self.cfg.fix_species:
                     if (
-                        self.cfg.fix_species_from_coldtrap_lev == False
+                        not self.cfg.fix_species_from_coldtrap_lev
                     ):  # if Ptop is not specified, fix the whole column # TEST2022
                         sol[:, species.index(sp)] = var.fix_y[sp].copy()
                     else:
@@ -4748,7 +4748,7 @@ class Output(object):
                 color = colors[color_index]
                 color_index += 1
 
-            if self.cfg.plot_height == False:
+            if not self.cfg.plot_height:
                 (line,) = ax.plot(
                     var.ymix[:, species.index(sp)], atm.pco / 1.0e6, color=color, label=sp_lab
                 )
@@ -4915,7 +4915,7 @@ class Output(object):
         fig, ax1 = plt.subplots()
         ax2 = ax1.twiny()  # ax1 and ax2 share y-axis
 
-        if self.cfg.plot_height == False:
+        if not self.cfg.plot_height:
             ax1.semilogy(atm.Tco, atm.pco / 1.0e6, c='black')
             ax2.loglog(atm.Kzz, atm.pico[1:-1] / 1.0e6, c='k', ls='--')
             plt.gca().invert_yaxis()

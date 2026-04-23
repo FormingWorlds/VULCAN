@@ -11,15 +11,15 @@ from juliacall import Main as jl
 from scipy.integrate import trapezoid
 from scipy.interpolate import PchipInterpolator
 
-# initialise logger for vulcan
-log = logging.getLogger('fwl.' + __name__)
-
 # Import some VULCAN modules
 from . import paths
 from .chem_funs import spec_list as gas_list
 from .config import Config
 from .phy_const import au, r_sun, spacer
 from .store import AtmData, Variables
+
+# initialise logger for vulcan
+log = logging.getLogger('fwl.' + __name__)
 
 # constants
 AGNI_LOGFILE_NAME = 'agni_recent.log'

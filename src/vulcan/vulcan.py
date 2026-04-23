@@ -3,21 +3,20 @@ from __future__ import annotations
 
 __version__ = '26.04.22'
 
-# Set number of threads but don't overwrite existing value, if set
+# Import system modules
+import logging
 import os
+import sys
+import time
 
-# Default number of threads
-NUM_THREADS = 2
+from . import paths
+from .config import Config
 
 # Get number of threads from OMP_NUM_THREADS variable, if set
+NUM_THREADS = 2
 NUM_THREADS = max(1, int(os.environ.get('OMP_NUM_THREADS', NUM_THREADS)))
 for k in ('MKL_NUM_THREADS', 'NUMEXPR_NUM_THREADS', 'OMP_NUM_THREADS'):
     os.environ[k] = str(NUM_THREADS)
-
-# Import system modules
-import logging
-import sys
-import time
 
 # disable matplotlib debug logging
 mpl_logger = logging.getLogger('matplotlib')
@@ -25,10 +24,6 @@ mpl_logger.setLevel(logging.WARNING)
 
 # initialise logger for vulcan
 log = logging.getLogger('fwl.' + __name__)
-
-# Import some VULCAN modules
-from . import paths
-from .config import Config
 
 
 # import the configuration inputs

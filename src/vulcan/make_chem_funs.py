@@ -7,10 +7,10 @@ import logging
 import numpy as np
 from sympy import Matrix, Symbol  # for constructing the symbolic Jacobian matrix
 
-log = logging.getLogger('fwl.' + __name__)
-
 from .config import Config
 from .paths import CHEM_FUNS_FILE, COM_FILE, GIBBS_FILE, THERMO_DIR
+
+log = logging.getLogger('fwl.' + __name__)
 
 
 # read the network and produce the .txt table for chemdf
@@ -64,10 +64,7 @@ def read_network(vulcan_cfg: Config):
             # skip common lines and blank lines
             # ========================================================================================
             if (
-                not line.startswith('#')
-                and line.strip()
-                and special_re == False
-                and re_end == False
+                not line.startswith('#') and line.strip() and not special_re and not re_end
             ):  # if not starts
                 Rf[i] = line.partition('[')[-1].rpartition(']')[0].strip()
                 li = line.partition(']')[-1].strip()
@@ -76,7 +73,7 @@ def read_network(vulcan_cfg: Config):
                 # updating the numerical index in the network (1, 3, ...)
                 line = '{:<4d} {:s}'.format(i, ''.join(line.partition('[')[1:]))
 
-                if not (vulcan_cfg.use_photo == False and photo_re):
+                if not (not vulcan_cfg.use_photo and photo_re):
                     ofstr += re_label + str(i) + '\n'
                     ofstr += Rf[i] + '\n'
 
@@ -100,7 +97,7 @@ def read_network(vulcan_cfg: Config):
 
                 i += 2
             # ========================================================================================
-            elif special_re and line.strip() and not line.startswith('#') and re_end == False:
+            elif special_re and line.strip() and not line.startswith('#') and not re_end:
                 # Rindx[i] = int(line.partition('[')[0].strip())
                 Rf[i] = line.partition('[')[-1].rpartition(']')[0].strip()
                 line = '{:<4d} {:s}'.format(i, ''.join(line.partition('[')[1:]))
@@ -434,10 +431,10 @@ def make_chemdf(re_table, ofname):
             ost += ','
             start, end = False, False
             for n, letter in enumerate(i):
-                if letter == 'k' and start == False:
+                if letter == 'k' and not start:
                     k_start = n + 2
                     start = True
-                elif letter == ']' and start and end == False:
+                elif letter == ']' and start and not end:
                     k_end = n
                     end = True
                     re_sp_dic[sp].append(int(i[k_start:k_end]))

@@ -88,6 +88,8 @@ select = [
 ignore = [
     "E501", # Line too long
     "E741", # Ambiguous variable name
+    "E731", # Do not assign a lambda expression, use a def
+    "F841", # local variable name is assigned to but never used
 ]
 
 [tool.ruff.lint.isort]

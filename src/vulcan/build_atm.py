@@ -11,13 +11,13 @@ import scipy
 import scipy.optimize as sop
 from scipy import interpolate
 
-log = logging.getLogger('fwl.' + __name__)
-
 from .chem_funs import ni  # number of species and reactions in the network
 from .chem_funs import spec_list as species
 from .config import Config
 from .paths import COM_FILE, FASTCHEM_DIR
 from .phy_const import Navo, au, kb, r_sun
+
+log = logging.getLogger('fwl.' + __name__)
 
 ### read in the basic chemistry data
 with open(COM_FILE, 'r') as f:
@@ -184,7 +184,7 @@ class InitialAbun(object):
                 cwd=FASTCHEM_DIR,
             )
             # check_call instead of call can catch the error
-        except:
+        except subprocess.CalledProcessError:
             raise RuntimeError(
                 f'FastChem cannot run properly. Try compiling it by running `make` inside {FASTCHEM_DIR}'
             )
@@ -261,7 +261,7 @@ class InitialAbun(object):
             for sp in species:
                 try:
                     arr = data_atm.n_0 * table[sp]
-                except:
+                except (ValueError, KeyError):
                     arr = np.zeros(len(data_atm.pco))
                 data_var.y[:, species.index(sp)] = arr
 
@@ -562,10 +562,10 @@ class Atm(object):
                 '"vz_prof" cannot be recongized.\nPlease assign it as "file" or "const" in vulcan_cfg.'
             )
 
-        if self.use_Kzz == False:
+        if not self.use_Kzz:
             # store Kzz in data_atm
             data_atm.Kzz = np.zeros(nz - 1)
-        if self.use_vz == False:
+        if not self.use_vz:
             data_atm.vz = np.zeros(nz - 1)
 
         # calculating and storing M(the third body)
@@ -631,7 +631,7 @@ class Atm(object):
         Hp = data_atm.Hp
 
         if (
-            self.cfg.rocky == False and self.P_b >= 1e6
+            not self.cfg.rocky and self.P_b >= 1e6
         ):  # if the lower BC greater than 1bar for gas giants
             # Find the index of pico closest to 1bar
             pref_indx = min(range(nz + 1), key=lambda i: abs(np.log10(pico[i]) - 6.0))
@@ -719,7 +719,7 @@ class Atm(object):
                     rho_p = data_atm.rho_p[sp]
                     r_p = data_atm.r_p[sp]
 
-                except:
+                except (ValueError, KeyError):
                     raise ValueError(sp + ' has not been prescribed size and density!')
 
                 # Calculating the setteling (terminal) velocity
@@ -829,7 +829,7 @@ class Atm(object):
         Tco_i = np.delete((Tco + np.roll(Tco, 1)) * 0.5, 0)
         n0_i = np.delete((n_0 + np.roll(n_0, 1)) * 0.5, 0)
 
-        if self.cfg.use_moldiff == False:
+        if not self.cfg.use_moldiff:
             for i in range(len(species)):
                 # this is required even without molecular weight
                 atm.ms[i] = compo[compo_row.index(species[i])][-1]
@@ -974,24 +974,24 @@ class Atm(object):
                 # T is in C
                 T -= 273.0
                 # from Seinfeld & Pandis 2006, P in mbar in the book
-                a_water = (
-                    6.107799961,
-                    4.436518521e-1,
-                    1.428945805e-2,
-                    2.650648471e-4,
-                    3.031240396e-6,
-                    2.034080948e-8,
-                    6.136820929e-11,
-                )
-                a_ice = (
-                    6.109177956,
-                    5.034698970e-1,
-                    1.886013408e-2,
-                    4.176223716e-4,
-                    5.824720280e-6,
-                    4.838803174e-8,
-                    1.838826904e-10,
-                )
+                # a_water = (
+                #     6.107799961,
+                #     4.436518521e-1,
+                #     1.428945805e-2,
+                #     2.650648471e-4,
+                #     3.031240396e-6,
+                #     2.034080948e-8,
+                #     6.136820929e-11,
+                # )
+                # a_ice = (
+                #     6.109177956,
+                #     5.034698970e-1,
+                #     1.886013408e-2,
+                #     4.176223716e-4,
+                #     5.824720280e-6,
+                #     4.838803174e-8,
+                #     1.838826904e-10,
+                # )
 
                 # saturate_p_1 = (T<0)*( a_ice[0] + a_ice[1]*T + a_ice[2]*T**2 + a_ice[3]*T**3 + a_ice[4]*T**4 + a_ice[5]*T**5 + a_ice[6]*T**6 ) +\
                 #  (T>0)*(a_water[0] + a_water[1]*T + a_water[2]*T**2 + a_water[3]*T**3 + a_water[4]*T**4 + a_water[5]*T**5 + a_water[6]*T**6)
