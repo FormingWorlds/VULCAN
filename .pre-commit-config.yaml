@@ -44,5 +44,7 @@ exclude: |
                 tests/data/.*|
                 docs/.*|
                 docs/assets/.*|
+                thermo/.*|
+                atm/.*|
                 (.*?)\.(jpg|gif|doc|pdf|svg|ods|bin)
             )$
