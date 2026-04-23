@@ -52,3 +52,15 @@ jobs:
           echo "total=$TOTAL" >> $GITHUB_ENV
           echo "Total coverage: ${TOTAL}%"
 
+      - name: Make coverage badge
+        if: ${{ github.ref == 'refs/heads/main' && matrix.python-version == '3.13' }}
+        uses: schneegans/dynamic-badges-action@v1.7.0
+        with:
+          auth: ${{ secrets.GIST_TOKEN }}
+          gistID: 59f094e7d22cd6af9a1cb3ea665b4260
+          filename: covbadge.svg
+          label: Coverage
+          message: ${{ env.total }}%
+          minColorRange: 50
+          maxColorRange: 80
+          valColorRange: ${{ env.total }}
