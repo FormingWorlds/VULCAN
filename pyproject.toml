@@ -76,12 +76,12 @@ changelog = "https://github.com/FormingWorlds/VULCAN/releases"
 [tool.ruff]
 line-length = 96
 target-version = "py312"
-extend-exclude = ["*ipynb", "tools/", "thermo/", "fastchem_vulcan/"]
+extend-exclude = ["*ipynb", "tools/", "thermo/", "fastchem_vulcan/", "cfg_examples/", "atm/"]
 
 [tool.ruff.lint]
 select = [
 	"F",  # Pyflakes
-	"E",  # pycodestyle (error)
+	"E",  # pycodestyle (errorruff)
 	"W",  # pycodestyle (warning)
     "I",    # isort
 ]
@@ -92,7 +92,6 @@ ignore = [
 
 [tool.ruff.lint.isort]
 known-first-party=["vulcan"]
-known-third-party=["zalmoxis"]
 required-imports = ["from __future__ import annotations"]
 
 [tool.ruff.format]
@@ -101,7 +100,7 @@ indent-style = "space"
 
 [tool.coverage.run]
 branch = true
-source = ["inferagni"]
+source = ["vulcan"]
 omit = [
     "*/tests/*",
     "*/test_*.py",

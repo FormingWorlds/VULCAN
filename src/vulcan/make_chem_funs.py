@@ -22,7 +22,7 @@ def read_network(vulcan_cfg: Config):
     special_re, photo_re = False, False
     re_end = False
 
-    if vulcan_cfg.use_photo == True:
+    if vulcan_cfg.use_photo:
         header = 'Chemical Network and Photolysis Reactions'
     else:
         header = 'Chemical Network without Photochemistry'
@@ -76,7 +76,7 @@ def read_network(vulcan_cfg: Config):
                 # updating the numerical index in the network (1, 3, ...)
                 line = '{:<4d} {:s}'.format(i, ''.join(line.partition('[')[1:]))
 
-                if not (vulcan_cfg.use_photo == False and photo_re == True):
+                if not (vulcan_cfg.use_photo == False and photo_re):
                     ofstr += re_label + str(i) + '\n'
                     ofstr += Rf[i] + '\n'
 
@@ -100,12 +100,7 @@ def read_network(vulcan_cfg: Config):
 
                 i += 2
             # ========================================================================================
-            elif (
-                special_re == True
-                and line.strip()
-                and not line.startswith('#')
-                and re_end == False
-            ):
+            elif special_re and line.strip() and not line.startswith('#') and re_end == False:
                 # Rindx[i] = int(line.partition('[')[0].strip())
                 Rf[i] = line.partition('[')[-1].rpartition(']')[0].strip()
                 line = '{:<4d} {:s}'.format(i, ''.join(line.partition('[')[1:]))
@@ -442,7 +437,7 @@ def make_chemdf(re_table, ofname):
                 if letter == 'k' and start == False:
                     k_start = n + 2
                     start = True
-                elif letter == ']' and start == True and end == False:
+                elif letter == ']' and start and end == False:
                     k_end = n
                     end = True
                     re_sp_dic[sp].append(int(i[k_start:k_end]))

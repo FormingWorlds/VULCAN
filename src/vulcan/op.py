@@ -262,7 +262,7 @@ class ReadRate(object):
                     E[i] = float(columns[2])
 
                     # switching to trimolecular reactions (len(columns) > 3 for those with high-P limit rates)
-                    if re_tri == True and re_tri_k0 == False:
+                    if re_tri and re_tri_k0 == False:
                         a_inf[i] = float(columns[3])
                         n_inf[i] = float(columns[4])
                         E_inf[i] = float(columns[5])
@@ -280,7 +280,7 @@ class ReadRate(object):
                         k[i] = k_fun[i](Tco, M)
 
                     # for 3-body reactions, also calculating k_inf
-                    elif re_tri == True and len(columns) >= 6:
+                    elif re_tri and len(columns) >= 6:
                         kinf_fun[i] = lambda temp, i=i: (
                             a_inf[i] * temp ** n_inf[i] * np.exp(-E_inf[i] / temp)
                         )
@@ -305,7 +305,7 @@ class ReadRate(object):
                     i += 2
                     # end if not
                 # ========================================================================================
-                elif special_re == True and line.strip() and not line.startswith('#'):
+                elif special_re and line.strip() and not line.startswith('#'):
                     Rindx[i] = int(line.partition('[')[0].strip())
                     Rf[i] = line.partition('[')[-1].rpartition(']')[0].strip()
 
@@ -355,7 +355,7 @@ class ReadRate(object):
                     i += 2
 
                 # Testing condensation
-                elif conden_re == True and line.strip() and not line.startswith('#'):
+                elif conden_re and line.strip() and not line.startswith('#'):
                     Rindx[i] = int(line.partition('[')[0].strip())
                     Rf[i] = line.partition('[')[-1].rpartition(']')[0].strip()
 
@@ -366,7 +366,7 @@ class ReadRate(object):
                     i += 2
 
                 # setting photo dissociation reactions to zeros
-                elif photo_re == True and line.strip() and not line.startswith('#'):
+                elif photo_re and line.strip() and not line.startswith('#'):
                     k[i] = np.zeros(nz)
                     Rf[i] = line.partition('[')[-1].rpartition(']')[0].strip()
 
@@ -386,7 +386,7 @@ class ReadRate(object):
 
                 # setting photo ionization reactions to zeros
                 elif (
-                    ion_re == True and line.strip() and not line.startswith('#')
+                    ion_re and line.strip() and not line.startswith('#')
                 ):  # and end_re == False
                     k[i] = np.zeros(nz)
                     Rf[i] = line.partition('[')[-1].rpartition(']')[0].strip()
@@ -988,7 +988,7 @@ class ReadRate(object):
                         var.cross_Jion[(sp, i)][n] = inter_cross_Jion(ld) * ion_inter_ratio[i](
                             ld
                         )
-        # end of if self.cfg.use_ion == True:
+        # end of if self.cfg.use_ion :
 
         # reading in cross sections of Rayleigh Scattering
         for sp in self.cfg.scat_sp:
@@ -1349,7 +1349,7 @@ class Integration(object):
             for sp in self.cfg.conver_ignore:
                 longdy[:, species.index(sp)] = 0  # added 2023
 
-        if self.cfg.use_condense == True:
+        if self.cfg.use_condense:
             longdy[:, self.non_gas_sp_index] = 0
 
         with np.errstate(
@@ -1822,7 +1822,7 @@ class ODESolver(object):
         self.atol = self.cfg.atol
         self.non_gas_sp = self.cfg.non_gas_sp
 
-        if self.cfg.use_condense == True:
+        if self.cfg.use_condense:
             self.non_gas_sp_index = [species.index(sp) for sp in self.non_gas_sp]
             self.condense_sp_index = [species.index(sp) for sp in self.cfg.condense_sp]
 
@@ -2400,11 +2400,11 @@ class ODESolver(object):
         diff = np.append(np.append(tmp0, tmp1), tmp2)
         diff = diff.reshape(nz, ni)
 
-        if self.cfg.use_topflux == True:
+        if self.cfg.use_topflux:
             # Don't forget dz!!! -d phi/ dz
             ### the const flux has no contribution to the jacobian ###
             diff[-1] += atm.top_flux / dzi[-1]
-        if self.cfg.use_botflux == True:
+        if self.cfg.use_botflux:
             ### the deposition term needs to be included in the jacobian!!!
             diff[0] += (atm.bot_flux - y[0] * atm.bot_vdep) / dzi[0]
 
@@ -2588,11 +2588,11 @@ class ODESolver(object):
         diff = np.append(np.append(tmp0, tmp1), tmp2)
         diff = diff.reshape(nz, ni)
 
-        if self.cfg.use_topflux == True:
+        if self.cfg.use_topflux:
             # Don't forget dz!!! -d phi/ dz
             ### the const flux has no contribution to the jacobian ###
             diff[-1] += atm.top_flux / dzi[-1]
-        if self.cfg.use_botflux == True:
+        if self.cfg.use_botflux:
             ### the deposition term needs to be included in the jacobian!!!
             diff[0] += (atm.bot_flux - y[0] * atm.bot_vdep) / dzi[0]
 
@@ -2705,7 +2705,7 @@ class ODESolver(object):
             + alpha / Ti[0] * (Tco[1] - Tco[0]) / dzi[0]
         )
         # deposition velocity
-        if self.cfg.use_botflux == True:
+        if self.cfg.use_botflux:
             dfdy[j_indx[0], j_indx[0]] += -1.0 * atm.bot_vdep / dzi[0]
 
         dfdy[j_indx[0], j_indx[1]] += (
@@ -2768,7 +2768,7 @@ class ODESolver(object):
 
         y = var.y.copy()
         # TEST condensation excluding non-gaseous species
-        if self.cfg.use_condense == True:
+        if self.cfg.use_condense:
             ysum = np.sum(y[:, atm.gas_indx], axis=1)
             # ysum = np.sum(y, axis=1)
         else:
@@ -2866,7 +2866,7 @@ class ODESolver(object):
             + alpha / Ti[0] * (Tco[1] - Tco[0]) / dzi[0]
         )
         # deposition velocity
-        if self.cfg.use_botflux == True:
+        if self.cfg.use_botflux:
             dfdy[j_indx[0], j_indx[0]] -= -1.0 * atm.bot_vdep / dzi[0]
 
         dfdy[j_indx[0], j_indx[1]] -= (
@@ -2929,7 +2929,7 @@ class ODESolver(object):
         nz = self.cfg.nz
 
         # TEST condensation excluding non-gaseous species
-        if self.cfg.use_condense == True:
+        if self.cfg.use_condense:
             ysum = np.sum(y[:, atm.gas_indx], axis=1)
             # ysum = np.sum(y, axis=1)
         else:
@@ -3014,7 +3014,7 @@ class ODESolver(object):
             - ((vm[0] > 0) * vm[0]) / dzi[0]
         )
         # deposition velocity
-        if self.cfg.use_botflux == True:
+        if self.cfg.use_botflux:
             dfdy[j_indx[0], j_indx[0]] -= -1.0 * atm.bot_vdep / dzi[0]
         # diffusion-limited escape
         if self.cfg.diff_esc:  # not empty list
@@ -3131,7 +3131,7 @@ class ODESolver(object):
             - ((vz[0] > 0) * vz[0]) / dzi[0]
         )
         # deposition velocity
-        if self.cfg.use_botflux == True:
+        if self.cfg.use_botflux:
             dfdy[j_indx[0], j_indx[0]] -= -1.0 * atm.bot_vdep / dzi[0]
 
         dfdy[j_indx[0], j_indx[1]] -= (
@@ -3254,7 +3254,7 @@ class ODESolver(object):
             )
 
         # deposition velocity (off with fixed all BC)
-        # if self.cfg.use_botflux == True: dfdy[j_indx[0], j_indx[0]] -= -1.*atm.bot_vdep /dzi[0]
+        # if self.cfg.use_botflux : dfdy[j_indx[0], j_indx[0]] -= -1.*atm.bot_vdep /dzi[0]
 
         # diffusion-limited escape
         if self.cfg.diff_esc:  # not empty list
@@ -3376,7 +3376,7 @@ class ODESolver(object):
 
         # dfdy[j_indx[0], j_indx[0]] -= -1./(dzi[0])*(Kzz[0]/dzi[0]) * (ysum[1]+ysum[0])/(2.*ysum[0]) -( (vz[0]>0)*vz[0] )/dzi[0]
         # deposition velocity (off with fixed all BC)
-        # if self.cfg.use_botflux == True: dfdy[j_indx[0], j_indx[0]] -= -1.*atm.bot_vdep /dzi[0]
+        # if self.cfg.use_botflux : dfdy[j_indx[0], j_indx[0]] -= -1.*atm.bot_vdep /dzi[0]
 
         # Fix bottom BC
         dfdy[:, j_indx[0]] = 0.0
@@ -3541,7 +3541,7 @@ class ODESolver(object):
             - ((vs[0] > 0) * vs[0]) / dzi[0]
         )
         # deposition velocity
-        if self.cfg.use_botflux == True:
+        if self.cfg.use_botflux:
             dfdy[j_indx[0], j_indx[0]] -= -1.0 * atm.bot_vdep / dzi[0]
 
         dfdy[j_indx[0], j_indx[1]] -= (
@@ -3714,7 +3714,7 @@ class ODESolver(object):
             - ((vs[0] > 0) * vs[0]) / dzi[0]
         )
         # deposition velocity
-        if self.cfg.use_botflux == True:
+        if self.cfg.use_botflux:
             dfdy[j_indx[0], j_indx[0]] -= -1.0 * atm.bot_vdep / dzi[0]
 
         # diffusion-limited escape
@@ -3846,7 +3846,7 @@ class ODESolver(object):
 
         elif np.any(var.y < 0):
             para.nega_count += 1
-            if self.cfg.use_print_prog == True:
+            if self.cfg.use_print_prog:
                 self.print_nega(
                     var, para
                 )  # print the info for the negative solutions (where y < 0)
@@ -3854,7 +3854,7 @@ class ODESolver(object):
 
         else:  # meaning np.amax( np.abs( np.abs(y_loss) - np.abs(loss_prev) ) )<loss_eps
             para.loss_count += 1
-            if self.cfg.use_print_prog == True:
+            if self.cfg.use_print_prog:
                 self.print_lossBig(para)
 
         # reset y and dt to the values at previous step
@@ -4310,20 +4310,20 @@ class Ros2(ODESolver):
         M, dzi, Kzz = atm.M, atm.dzi, atm.Kzz
 
         if self.cfg.use_vm_mol == False:
-            if self.cfg.use_moldiff == True and self.cfg.use_settling == False:
+            if self.cfg.use_moldiff and self.cfg.use_settling == False:
                 diffdf = self.diffdf
                 jac_tot = self.lhs_jac_tot
-            elif self.cfg.use_moldiff == True and self.cfg.use_settling == True:
+            elif self.cfg.use_moldiff and self.cfg.use_settling:
                 diffdf = self.diffdf_settling
                 jac_tot = self.lhs_jac_settling
             else:
                 diffdf = self.diffdf_no_mol
                 jac_tot = self.lhs_jac_no_mol
-        else:  # vulcan_cfg.use_vm_mol == True:
-            if self.cfg.use_moldiff == True and self.cfg.use_settling == False:
+        else:  # vulcan_cfg.use_vm_mol :
+            if self.cfg.use_moldiff and self.cfg.use_settling == False:
                 diffdf = self.diffdf_vm
                 jac_tot = self.lhs_jac_tot_vm
-            elif self.cfg.use_moldiff == True and self.cfg.use_settling == True:
+            elif self.cfg.use_moldiff and self.cfg.use_settling:
                 diffdf = self.diffdf_settling_vm
                 jac_tot = self.lhs_jac_settling_vm
             else:
@@ -4336,7 +4336,7 @@ class Ros2(ODESolver):
         lhs = jac_tot(var, atm)
 
         # Fixed species including only below the cold trap # TEST 2022
-        if self.cfg.use_condense == True and para.fix_species_start == True:
+        if self.cfg.use_condense and para.fix_species_start:
             for sp in self.cfg.fix_species:
                 if (
                     self.cfg.fix_species_from_coldtrap_lev == False
@@ -4354,7 +4354,7 @@ class Ros2(ODESolver):
                     1.0 / (r * h)
                 )  # cuz the jacobian func is directly outputing 1./(r*h)*sparse.identity(ni*nz) - dfdy
 
-        if self.cfg.use_ion == True:
+        if self.cfg.use_ion:
             df[atm.fix_e_indx] = 0
             lhs[atm.fix_e_indx, :] = 0
             lhs[atm.fix_e_indx, atm.fix_e_indx] = 1.0 / (r * h)
@@ -4368,10 +4368,10 @@ class Ros2(ODESolver):
 
         # TEST condensation
         # Fixed species
-        if self.cfg.use_condense == True and para.fix_species_start == True:
+        if self.cfg.use_condense and para.fix_species_start:
             for sp in self.cfg.fix_species:
                 df[atm.fix_sp_indx[sp]] = 0
-        if self.cfg.use_ion == True:
+        if self.cfg.use_ion:
             df[atm.fix_e_indx] = 0
 
         rhs = df - 2.0 / (r * h) * k1_flat
@@ -4408,15 +4408,15 @@ class Ros2(ODESolver):
         delta[sol < self.atol] = 0
 
         # neglecting the errors at the surface
-        if self.cfg.use_botflux == True or self.cfg.use_fix_sp_bot:
+        if self.cfg.use_botflux or self.cfg.use_fix_sp_bot:
             delta[0] = 0
 
         # TEST condensation 2022
-        if self.cfg.use_condense == True:
+        if self.cfg.use_condense:
             delta[:, self.non_gas_sp_index] = 0
             delta[:, self.condense_sp_index] = 0
 
-            if para.fix_species_start == True:
+            if para.fix_species_start:
                 for sp in self.cfg.fix_species:
                     if (
                         self.cfg.fix_species_from_coldtrap_lev == False
@@ -4429,7 +4429,7 @@ class Ros2(ODESolver):
 
                     delta[:, species.index(sp)] = 0
 
-        if self.cfg.use_print_delta == True and para.count % self.cfg.print_prog_num == 0:
+        if self.cfg.use_print_delta and para.count % self.cfg.print_prog_num == 0:
             max_indx = np.nanargmax(delta / sol, axis=1)
             max_lev_indx = np.nanargmax(delta / sol)
             log.info(
@@ -4457,7 +4457,7 @@ class Ros2(ODESolver):
         para.delta = delta
 
         # use charge balance to obtain the number density of electrons (such that [ions] = [e])
-        if self.cfg.use_ion == True:
+        if self.cfg.use_ion:
             # clear e
             var.y[:, species.index('e')] = 0
             # set e such that the net chare is zero
@@ -4482,7 +4482,7 @@ class Ros2(ODESolver):
         # store the fixed bottom level
         bottom = np.copy(ymix[0])
 
-        if self.cfg.use_moldiff == True:
+        if self.cfg.use_moldiff:
             diffdf = self.diffdf
             jac_tot = self.lhs_jac_fix_all_bot
         else:
@@ -4672,7 +4672,7 @@ class Output(object):
 
         for key in var.var_save:
             var_save[key] = getattr(var, key)
-        if self.cfg.save_evolution == True:
+        if self.cfg.save_evolution:
             # slicing time-sequential data to reduce ouput filesize
             fq = self.cfg.save_evo_frq
             for key in var.var_evol_save:
@@ -4680,7 +4680,7 @@ class Output(object):
                 setattr(var, key, as_nparray)
                 var_save[key] = getattr(var, key)
 
-        if self.cfg.output_humanread == True:
+        if self.cfg.output_humanread:
             # human-readable form, less efficient
             with open(output_file + '.var', 'w') as outfile:
                 for var in var_save.keys():
@@ -4752,7 +4752,7 @@ class Output(object):
                 (line,) = ax.plot(
                     var.ymix[:, species.index(sp)], atm.pco / 1.0e6, color=color, label=sp_lab
                 )
-                if self.cfg.use_condense == True and sp in self.cfg.condense_sp:
+                if self.cfg.use_condense and sp in self.cfg.condense_sp:
                     ax.plot(
                         atm.sat_mix[sp],
                         atm.pco / 1.0e6,
@@ -4770,7 +4770,7 @@ class Output(object):
                 (line,) = ax.plot(
                     var.ymix[:, species.index(sp)], atm.zmco / 1.0e5, color=color, label=sp_lab
                 )
-                if self.cfg.use_condense == True and sp in self.cfg.condense_sp:
+                if self.cfg.use_condense and sp in self.cfg.condense_sp:
                     ax.plot(
                         atm.sat_mix[sp],
                         atm.zco[1:] / 1.0e5,

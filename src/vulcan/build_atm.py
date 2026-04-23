@@ -88,7 +88,7 @@ class InitialAbun(object):
         # reading-in the default elemental abundances from Lodders 2009
         # depending on including ion or not (whether there is e- in the fastchem elemental abundance dat)
         solar_ele = os.path.join(FASTCHEM_DIR, 'input', 'solar_element_abundances.dat')
-        if self.cfg.use_ion == True:
+        if self.cfg.use_ion:
             copyfile(
                 os.path.join(FASTCHEM_DIR, 'input', 'parameters_ion.dat'),
                 os.path.join(FASTCHEM_DIR, 'input', 'parameters.dat'),
@@ -122,7 +122,7 @@ class InitialAbun(object):
                 'Fe',
             ]
 
-            if self.cfg.use_solar == True:
+            if self.cfg.use_solar:
                 new_str = f.read()  # read in as a string
                 log.info('Initializing with the default solar abundance.')
 
@@ -223,7 +223,7 @@ class InitialAbun(object):
                 else:
                     log.warning(sp + ' not included in fastchem.')
 
-                if self.cfg.use_ion == True:
+                if self.cfg.use_ion:
                     if compo[compo_row.index(sp)]['e'] != 0:
                         charge_list.append(sp)
 
@@ -245,8 +245,8 @@ class InitialAbun(object):
                 else:
                     log.warning(sp + ' not included in the input mixing ratios file.')
 
-            # if vulcan_cfg.use_ion == True: charge_list = vul_data['variable']['charge_list']
-            if self.cfg.use_ion == True:
+            # if vulcan_cfg.use_ion : charge_list = vul_data['variable']['charge_list']
+            if self.cfg.use_ion:
                 for sp in species:
                     if compo[compo_row.index(sp)]['e'] != 0:
                         charge_list.append(sp)
@@ -273,7 +273,7 @@ class InitialAbun(object):
                 y_ini[:, species.index(sp)] = (
                     gas_tot * self.cfg.const_mix[sp]
                 )  # this also changes data_var.y
-            if self.cfg.use_ion == True:
+            if self.cfg.use_ion:
                 for sp in species:
                     if compo[compo_row.index(sp)]['e'] != 0:
                         charge_list.append(sp)
@@ -294,7 +294,7 @@ class InitialAbun(object):
                         'Initial mixing ratios unknown. Check the setting in vulcan_cfg.py.'
                     )
 
-        if self.cfg.use_condense == True:
+        if self.cfg.use_condense:
             for sp in self.cfg.condense_sp:
                 data_atm.sat_mix[sp] = data_atm.sat_p[sp] / data_atm.pco
 
@@ -348,7 +348,7 @@ class InitialAbun(object):
         # re-normalisation
         # TEST
         # Excluding the non-gaseous species
-        if self.cfg.use_condense == True:
+        if self.cfg.use_condense:
             exc_conden = [_ for _ in range(ni) if species[_] not in self.cfg.non_gas_sp]
             ysum = np.sum(y_ini[:, exc_conden], axis=1).reshape((-1, 1))
         else:
@@ -357,7 +357,7 @@ class InitialAbun(object):
         data_var.y_ini = np.copy(y_ini)
         data_var.ymix = y_ini / ysum
 
-        if self.cfg.use_ion == True:
+        if self.cfg.use_ion:
             # if the charge_list is empty (no species with nonzero charges include)
             if not charge_list:
                 raise ValueError(
@@ -481,7 +481,7 @@ class Atm(object):
                 )
                 data_atm.Tco = PTK_fun['pT'](data_atm.pco)
 
-            if self.use_Kzz == True and self.Kzz_prof == 'file':
+            if self.use_Kzz and self.Kzz_prof == 'file':
                 PTK_fun['pK'] = interpolate.interp1d(
                     p_file,
                     Kzz_file,
@@ -673,7 +673,7 @@ class Atm(object):
         # for the j grid, dzi[j] from the grid above and dz[j-1] from the grid below
 
         # for the molecular diffsuion
-        if self.cfg.use_moldiff == True:
+        if self.cfg.use_moldiff:
             Ti = 0.5 * (Tco + np.roll(Tco, -1))
             data_atm.Ti = Ti[:-1]
             Hpi = 0.5 * (Hp + np.roll(Hp, -1))
@@ -687,7 +687,7 @@ class Atm(object):
         data_atm.g, data_atm.gs = gz, gs
         data_atm.pref_indx = pref_indx
 
-        if self.use_settling == True:
+        if self.use_settling:
             # TESTing settling velocity
             # based on L. D. Cloutman: A Database of Selected Transport Coefficients for Combustion Studies (Table 1.)
             if self.cfg.atm_base == 'N2':
@@ -922,7 +922,7 @@ class Atm(object):
         Reading-in the boundary conditions of constant flux (cm^-2 s^-1) at top/bottom
         """
         # read in the const top BC
-        if self.cfg.use_topflux == True:
+        if self.cfg.use_topflux:
             log.info('Using the prescribed constant top flux.')
             with open(self.cfg.top_BC_flux_file) as f:
                 for line in f.readlines():
@@ -931,7 +931,7 @@ class Atm(object):
                         atm.top_flux[species.index(li[0])] = li[1]
 
         # read in the const bottom BC
-        if self.cfg.use_botflux == True:
+        if self.cfg.use_botflux:
             log.info('Using the prescribed constant bottom flux.')
             with open(self.cfg.bot_BC_flux_file) as f:
                 for line in f.readlines():
@@ -941,7 +941,7 @@ class Atm(object):
                         atm.bot_vdep[species.index(li[0])] = li[2]
 
         # using fixed-mixing-ratio BC
-        if self.cfg.use_fix_sp_bot == True:
+        if self.cfg.use_fix_sp_bot:
             log.info('Using the prescribed fixed bottom mixing ratios.')
             with open(self.cfg.bot_BC_flux_file) as f:
                 for line in f.readlines():
