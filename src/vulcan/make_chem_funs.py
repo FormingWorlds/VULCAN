@@ -12,7 +12,6 @@ from .paths import CHEM_FUNS_FILE, COM_FILE, GIBBS_FILE, THERMO_DIR
 
 log = logging.getLogger('fwl.' + __name__)
 
-
 # read the network and produce the .txt table for chemdf
 # Re-arrange the numerbers in the network
 def read_network(vulcan_cfg: Config):
@@ -64,7 +63,10 @@ def read_network(vulcan_cfg: Config):
             # skip common lines and blank lines
             # ========================================================================================
             if (
-                not line.startswith('#') and line.strip() and not special_re and not re_end
+                not line.startswith('#')
+                and line.strip()
+                and not special_re
+                and not re_end
             ):  # if not starts
                 Rf[i] = line.partition('[')[-1].rpartition(']')[0].strip()
                 li = line.partition(']')[-1].strip()
@@ -850,10 +852,7 @@ def make_all(vulcan_cfg: Config):
     make_Gibbs(re_table, GIBBS_FILE, CHEM_FUNS_FILE)
 
     # import the "ofname" module as chemistry for make_jac to read df
-    if __package__:
-        chem_funs = importlib.import_module('.chem_funs', package=__package__)
-    else:
-        chem_funs = importlib.import_module('vulcan.chem_funs')
+    chem_funs = importlib.import_module('.chem_funs', package=__package__)
 
     # the last function that writes into chem_funs.py
     make_jac(ni, nr, CHEM_FUNS_FILE, chem_funs)

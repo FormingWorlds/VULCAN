@@ -19,11 +19,11 @@ import numpy as np
 import scipy
 from scipy import interpolate
 
+from .chem_funs import Gibbs, chemdf, ni, nr  # number of species and reactions in the network
+from .chem_funs import neg_symjac as neg_achemjac
+from .chem_funs import spec_list as species
+from .chem_funs import symjac as achemjac
 from vulcan.build_atm import compo, compo_row
-from vulcan.chem_funs import Gibbs, chemdf, ni, nr  # number of species and reactions in the network
-from vulcan.chem_funs import neg_symjac as neg_achemjac
-from vulcan.chem_funs import spec_list as species
-from vulcan.chem_funs import symjac as achemjac
 from vulcan.config import Config
 from vulcan.paths import CROSS_DIR
 from vulcan.phy_const import Navo, ag0, hc, kb, spacer  # hc is used to convert to the actinic flux
