@@ -40,6 +40,7 @@ class Config:
             VULCAN_DIR + 'atm/BC_bot.txt'
         )  # the file for the lower boundary conditions
 
+        self.log_level = 'INFO'
         self.output_dir = VULCAN_DIR + 'output/'
         self.plot_dir = self.output_dir + 'plot/'
         self.out_name = 'example.pkl'

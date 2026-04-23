@@ -158,7 +158,7 @@ class InitialAbun(object):
                     new_str += line
 
             # make the new elemental abundance file
-            with open(FASTCHEM_DIR + 'input/element_abundances_vulcan.dat', 'w') as f:
+            with open(os.path.join(FASTCHEM_DIR, 'input', 'element_abundances_vulcan.dat'), 'w') as f:
                 f.write(new_str)
 
         # write a T-P text file for fast_chem
@@ -173,17 +173,32 @@ class InitialAbun(object):
             ost = ost[:-1]
             f.write(ost)
 
+        # run fastchem
         try:
-            subprocess.check_call(
-                [
-                    os.path.join(FASTCHEM_DIR, 'fastchem')
-                    + ' '
-                    + os.path.join(FASTCHEM_DIR, 'input', 'config.input')
-                ],
-                shell=True,
+            fc_cmd = [
+                os.path.join(FASTCHEM_DIR, 'fastchem'),
+                os.path.join(FASTCHEM_DIR, 'input', 'config.input'),
+            ]
+            log.debug(f'Fastchem command: {fc_cmd}')
+            process = subprocess.Popen(
+                fc_cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
                 cwd=FASTCHEM_DIR,
             )
-            # check_call instead of call can catch the error
+
+            def check_io():
+                while True:
+                    out_std = process.stdout.readline().decode().strip()
+                    if out_std:
+                        log.log(logging.INFO, out_std)
+                    else:
+                        break
+
+            # keep checking stdout/stderr until the child exits
+            while process.poll() is None:
+                check_io()
+
         except subprocess.CalledProcessError:
             raise RuntimeError(
                 f'FastChem cannot run properly. Try compiling it by running `make` inside {FASTCHEM_DIR}'
@@ -228,7 +243,7 @@ class InitialAbun(object):
                         charge_list.append(sp)
 
             # remove the fc output
-            subprocess.call(['rm vulcan_EQ.dat'], shell=True, cwd=FASTCHEM_DIR + 'output/')
+            subprocess.call(['rm','vulcan_EQ.dat'], cwd=os.path.join(FASTCHEM_DIR, 'output'))
 
         elif self.cfg.ini_mix == 'vulcan_ini':
             log.info('Initializing with compositions from pickle file ' + self.cfg.vul_ini)

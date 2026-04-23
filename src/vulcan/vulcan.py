@@ -11,6 +11,7 @@ import time
 
 from . import paths
 from .config import Config
+from .logs import setup_logger
 
 # Get number of threads from OMP_NUM_THREADS variable, if set
 NUM_THREADS = 2
@@ -156,13 +157,13 @@ def run_cli():
     # Entry point for the script when run directly
     print('Starting VULCAN from command line')
 
-    # Setup basic logging
-    logfmt = '[ %(levelname)-5s ]  %(message)s'
-    # logfmt = '[ %(levelname)-5s, %(asctime)s ]  %(message)s'
-    logging.basicConfig(format=logfmt, datefmt='%H:%M:%S', encoding='utf-8', level=logging.INFO)
-
     # Make config
     vulcan_cfg = Config()
+
+    # Setup basic logging
+    logpath = os.path.join(vulcan_cfg.output_dir, 'vulcan.log')
+    setup_logger(logpath=logpath, logterm=True, level=vulcan_cfg.log_level)
+    log = logging.getLogger('fwl.' + __name__)
 
     # Remake chem_funs by default. Disabled when passing -n flag.
     if '-n' not in sys.argv:
