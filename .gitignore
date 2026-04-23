@@ -77,9 +77,6 @@ Atmodeller
 zephyrus
 ZEPHYRUS
 Zephyrus
-vulcan
-VULCAN
-Vulcan
 lovepy
 Lovepy
 LOVEPY
@@ -181,7 +178,6 @@ coverage.json
 nosetests.xml
 coverage.xml
 *.cover
-*.py,cover
 .hypothesis/
 .pytest_cache/
 cover/

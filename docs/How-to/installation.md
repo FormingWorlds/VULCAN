@@ -10,24 +10,13 @@ Before installing VULCAN, ensure you have the following:
 - **C++ compiler** (for compiling FastChem)
 - **Git** (for cloning the repository)
 - **Basic build tools** (make, cmake, etc.)
+- **Julia** (optional, for running self-consistent climate calculations)
 
 ## Installation steps
 
-### 0. Install julia
+### 0. Install Python
 
-For the coupling to the julia-based 1D radiative-convective model AGNI, julia needs to be installed. Do not install julia via your computer's package manager. Instead:
-
-```bash
-curl -fsSL https://install.julialang.org | sh
-```
-
-!!! warning "Pin Julia to version 1.11"
-    Julia 1.12+ is **not yet supported** due to OpenSSL library incompatibilities with Python. After installing Julia, pin it to version 1.11:
-
-    ```console
-    juliaup add 1.11
-    juliaup default 1.11
-    ```
+You must install Python. We recommend using [conda forge](https://conda-forge.org/).
 
 
 ### 1. Clone the VULCAN repository
@@ -37,30 +26,14 @@ git clone https://github.com/FormingWorlds/VULCAN.git
 cd VULCAN
 ```
 
-### 2. Install python dependencies
+### 2. Install VULCAN and its dependencies
 
-VULCAN requires the following Python packages (specified in `pyproject.toml`):
+VULCAN requires Python packages specified in `pyproject.toml`. These will be installed automatically.
 
-- numpy (≥2.0.0)
-- scipy
-- matplotlib
-- pandas
-- sympy
-- astropy
-- juliacall
-
-#### Option A: Install with pip (Recommended)
+To install the VULCAN package, run the following command in your `VULCAN/` folder.
 
 ```bash
-pip install -e .
-```
-
-This installs VULCAN in development mode along with all dependencies.
-
-#### Option B: Install dependencies manually
-
-```bash
-pip install numpy scipy matplotlib pandas sympy astropy juliacall
+pip install -U -e .
 ```
 
 ### 3. Compile FastChem
@@ -88,8 +61,25 @@ everything is done and fine. enjoy your day!
 
 ### 4. (Optional for RCE modelling) Install AGNI
 
-- Install AGNI following the instructions on the [AGNI website](https://www.h-nicholls.space/AGNI).
-- Create a symbolic link from your AGNI install folder to your VULCAN folder. Test this by running `file AGNI/agni.jl` inside your local `VULCAN/` folder.
+If you plan on the coupling to the julia-based 1D radiative-convective model AGNI, julia needs to be installed.
+
+To do this, run:
+
+```bash
+curl -fsSL https://install.julialang.org | sh
+```
+
+!!! warning "Pin Julia to version 1.11"
+    Julia 1.12+ is **not yet supported** due to OpenSSL library incompatibilities with Python. After installing Julia, pin it to version 1.11:
+
+    ```console
+    juliaup add 1.11
+    juliaup default 1.11
+    ```
+
+Then, install AGNI following [the instructions online](https://www.h-nicholls.space/AGNI).
+
+Finally, create a symbolic link from your AGNI install folder to your VULCAN folder. Test this by running `file AGNI/agni.jl` inside your local `VULCAN/` folder.
 
 ### 5. Verify installation
 
@@ -101,8 +91,15 @@ python vulcan.py
 
 This will:
 - Generate `chem_funs.py` based on the default chemical network
-- Run the default model (Earth-like atmosphere)
-- Display real-time plotting (if `use_live_plot = True` in `config.py`)
-- Take approximately 10-15 minutes to complete
+- Run the default model
 
-If successful, you'll see output files in the `/output` folder.
+If successful, you'll see output files in the `output/` folder.
+
+## Testing
+
+Install test dependencies and run the pytest suite:
+
+```bash
+pip install -e ".[develop]"
+pytest
+```

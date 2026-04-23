@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 
-from paths import VULCAN_DIR
+from .paths import VULCAN_DIR
 
 
 class Config:
@@ -17,8 +17,8 @@ class Config:
 
         self.atm_base = 'H2'
         self.rocky = False  # for the surface gravity
-        self.nz = 120  # number of vertical layers
-        self.P_b = 1e9  # pressure at the bottom (dyne/cm^2)
+        self.nz = 50  # number of vertical layers
+        self.P_b = 1e8  # pressure at the bottom (dyne/cm^2)
         self.P_t = 1e-2  # pressure at the top (dyne/cm^2)
 
         # Set T(p) from file
@@ -40,6 +40,7 @@ class Config:
             VULCAN_DIR + 'atm/BC_bot.txt'
         )  # the file for the lower boundary conditions
 
+        self.log_level = 'INFO'
         self.output_dir = VULCAN_DIR + 'output/'
         self.plot_dir = self.output_dir + 'plot/'
         self.out_name = 'example.pkl'

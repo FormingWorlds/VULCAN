@@ -1,0 +1,79 @@
+name: Tests
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+    types:
+      - opened
+      - reopened
+      - synchronize
+      - ready_for_review
+  workflow_dispatch:
+
+jobs:
+  test:
+    if: github.event.pull_request.draft == false
+    name: Run Coverage and Tests
+    strategy:
+      matrix:
+        os: ['ubuntu-latest',]
+        python-version: ['3.11', '3.12', '3.13']
+    env:
+      OMP_NUM_THREADS: 1
+    runs-on: ${{ matrix.os }}
+    steps:
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc g++ make
+
+      - uses: actions/checkout@v6
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - uses: actions/cache@v5
+        id: cache-virtualenv
+        with:
+          path: ${{ env.pythonLocation }}
+          key: ${{ env.pythonLocation }}-${{ hashFiles('pyproject.toml') }}
+
+      - name: Install python dependencies
+        run: |
+          python -m pip install -e '.[develop]'
+
+      - name: Compile fastchem
+        run: |
+          cd fastchem_vulcan
+          make
+          cd ..
+
+      - name: Test with pytest
+        run: |
+          pytest --cov-report term --cov-report json:coverage.json --cov-report markdown-append:$GITHUB_STEP_SUMMARY --cov=vulcan tests/
+
+      - name: Report coverage
+        run: |
+          export TOTAL=$(python -c "import json;print(json.load(open('coverage.json'))['totals']['percent_covered_display'])")
+          echo "total=$TOTAL" >> $GITHUB_ENV
+          echo "Total coverage: ${TOTAL}%"
+
+      - name: Make coverage badge
+        if: ${{ github.ref == 'refs/heads/main' && matrix.python-version == '3.13' }}
+        uses: schneegans/dynamic-badges-action@v1.7.0
+        with:
+          auth: ${{ secrets.GIST_TOKEN }}
+          gistID: 59f094e7d22cd6af9a1cb3ea665b4260
+          filename: covbadge.svg
+          label: Coverage
+          message: ${{ env.total }}%
+          minColorRange: 50
+          maxColorRange: 80
+          valColorRange: ${{ env.total }}

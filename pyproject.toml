@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 # https://packaging.python.org/en/latest/specifications/declaring-project-metadata/
 [project]
-name = "vulcan"
+name = "fwl-vulcan"
 version = "26.04.22"
 description = "Photochemical kinetics for exoplanetary atmospheres, a fast and easy-to-use python code."
 readme = "README.md"
@@ -38,7 +38,7 @@ dependencies = [
     "pandas",
     "scipy",
     "sympy",
-    "astropy"
+    "astropy",
 ]
 
 [project.optional-dependencies]
@@ -52,19 +52,20 @@ docs = [
     "mkdocstrings",
     "mkdocs-bibtex"
 ]
+develop = [
+    "coverage",
+    "tomlkit>=0.11.0",
+    "pytest >= 8.1",
+    "pytest-cov",
+    "pytest-timeout",
+    "ruff",
+    "pre-commit"
+]
+
 
 [tool.setuptools]
-py-modules = [
-    "agni",
-    "build_atm",
-    "config",
-    "make_chem_funs",
-    "op",
-    "paths",
-    "phy_const",
-    "store",
-    "vulcan"
-]
+package-dir = {"vulcan" = "src/vulcan"}
+include-package-data = true
 
 [project.urls]
 homepage = "https://github.com/FormingWorlds/VULCAN/"
@@ -75,29 +76,84 @@ changelog = "https://github.com/FormingWorlds/VULCAN/releases"
 [tool.ruff]
 line-length = 96
 target-version = "py312"
-extend-exclude = ["*ipynb", "tools/", "thermo/", "fastchem_vulcan/"]
+extend-exclude = ["*ipynb", "tools/", "thermo/", "fastchem_vulcan/", "cfg_examples/", "atm/"]
 
 [tool.ruff.lint]
 select = [
 	"F",  # Pyflakes
-	"E",  # pycodestyle (error)
+	"E",  # pycodestyle (errorruff)
 	"W",  # pycodestyle (warning)
     "I",    # isort
 ]
 ignore = [
     "E501", # Line too long
     "E741", # Ambiguous variable name
+    "E731", # Do not assign a lambda expression, use a def
+    "F841", # local variable name is assigned to but never used
 ]
 
 [tool.ruff.lint.isort]
 known-first-party=["vulcan"]
-known-third-party=["zalmoxis"]
 required-imports = ["from __future__ import annotations"]
 
 [tool.ruff.format]
 quote-style = "single"
 indent-style = "space"
 
+[tool.coverage.run]
+branch = true
+source = ["vulcan"]
+omit = [
+    "*/tests/*",
+    "*/test_*.py",
+    "*/__pycache__/*",
+    "*/conftest.py",
+    "chem_funs.py"
+]
+
+[tool.pytest.ini_options]
+minversion = "8.1"
+addopts = [
+    # Global coverage options removed from addopts.
+    # CI uses "coverage run -m pytest" with [tool.coverage.*] settings.
+    # For local development, use either:
+    #   1. "coverage run -m pytest" (matches CI behavior, compatible with coverage ratcheting)
+    #   2. "pytest --cov" (uses pytest-cov, convenient but slightly different from CI)
+    # Both approaches work; choose based on preference.
+    "--strict-markers",
+    "--strict-config",
+    "-ra",
+    "--showlocals",
+]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "integration: marks tests as integration tests",
+    "unit: marks tests as unit tests",
+    "smoke: marks tests as smoke tests (quick validation with real binaries, 1 timestep, low res)",
+]
+
+[tool.coverage.report]
+fail_under = 10
+show_missing = true
+precision = 2
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+    "if typing.TYPE_CHECKING:",
+    "@abstractmethod",
+    "@abc.abstractmethod",
+]
+
+[tool.coverage.html]
+directory = "htmlcov"
 [tool.bumpversion]
 # https://callowayproject.github.io/bump-my-version/howtos/calver/
 current_version = "26.04.22"
