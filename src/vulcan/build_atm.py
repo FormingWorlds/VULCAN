@@ -158,7 +158,9 @@ class InitialAbun(object):
                     new_str += line
 
             # make the new elemental abundance file
-            with open(os.path.join(FASTCHEM_DIR, 'input', 'element_abundances_vulcan.dat'), 'w') as f:
+            with open(
+                os.path.join(FASTCHEM_DIR, 'input', 'element_abundances_vulcan.dat'), 'w'
+            ) as f:
                 f.write(new_str)
 
         # write a T-P text file for fast_chem
@@ -243,7 +245,7 @@ class InitialAbun(object):
                         charge_list.append(sp)
 
             # remove the fc output
-            subprocess.call(['rm','vulcan_EQ.dat'], cwd=os.path.join(FASTCHEM_DIR, 'output'))
+            subprocess.call(['rm', 'vulcan_EQ.dat'], cwd=os.path.join(FASTCHEM_DIR, 'output'))
 
         elif self.cfg.ini_mix == 'vulcan_ini':
             log.info('Initializing with compositions from pickle file ' + self.cfg.vul_ini)

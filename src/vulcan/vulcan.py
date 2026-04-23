@@ -31,11 +31,11 @@ def run_vulcan(vulcan_cfg: Config, make_network: bool):
     # make network?
     if make_network:
         from .make_chem_funs import make_all
+
         log.debug('Making chem_funs.py ...')
         make_all(vulcan_cfg)
     else:
         log.debug('Skip making chem_funs.py')
-
 
     log.info('Running VULCAN')
 
