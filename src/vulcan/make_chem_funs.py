@@ -12,6 +12,7 @@ from .paths import CHEM_FUNS_FILE, COM_FILE, GIBBS_FILE, THERMO_DIR
 
 log = logging.getLogger('fwl.' + __name__)
 
+
 # read the network and produce the .txt table for chemdf
 # Re-arrange the numerbers in the network
 def read_network(vulcan_cfg: Config):
@@ -63,10 +64,7 @@ def read_network(vulcan_cfg: Config):
             # skip common lines and blank lines
             # ========================================================================================
             if (
-                not line.startswith('#')
-                and line.strip()
-                and not special_re
-                and not re_end
+                not line.startswith('#') and line.strip() and not special_re and not re_end
             ):  # if not starts
                 Rf[i] = line.partition('[')[-1].rpartition(']')[0].strip()
                 li = line.partition(']')[-1].strip()
