@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import os
+
+os.environ['OMP_NUM_THREADS'] = '1'  # noqa
 from pathlib import Path
 
 import pytest
