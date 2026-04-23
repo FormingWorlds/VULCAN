@@ -11,11 +11,11 @@ import scipy
 import scipy.optimize as sop
 from scipy import interpolate
 
-from .chem_funs import ni  # number of species and reactions in the network
-from .chem_funs import spec_list as species
-from .config import Config
-from .paths import COM_FILE, FASTCHEM_DIR
-from .phy_const import Navo, au, kb, r_sun
+from vulcan.chem_funs import ni  # number of species and reactions in the network
+from vulcan.chem_funs import spec_list as species
+from vulcan.config import Config
+from vulcan.paths import COM_FILE, FASTCHEM_DIR
+from vulcan.phy_const import Navo, au, kb, r_sun
 
 log = logging.getLogger('fwl.' + __name__)
 

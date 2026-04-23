@@ -9,8 +9,8 @@ from __future__ import annotations
 
 import numpy as np
 
-from .chem_funs import ni, spec_list  # number of species and reactions in the network
-from .config import Config
+from vulcan.chem_funs import ni, spec_list  # number of species and reactions in the network
+from vulcan.config import Config
 
 
 class Variables(object):

@@ -7,9 +7,9 @@ import os
 import sys
 import time
 
-from . import paths
-from .config import Config
-from .logs import setup_logger
+from vulcan import paths
+from vulcan.config import Config
+from vulcan.logs import setup_logger
 
 # Get number of threads from OMP_NUM_THREADS variable, if set
 NUM_THREADS = 2
