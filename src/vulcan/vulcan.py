@@ -1,8 +1,6 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
-__version__ = '26.04.22'
-
 # Import system modules
 import logging
 import os
@@ -28,7 +26,16 @@ log = logging.getLogger('fwl.' + __name__)
 
 
 # import the configuration inputs
-def main(vulcan_cfg: Config):
+def run_vulcan(vulcan_cfg: Config, make_network: bool):
+
+    # make network?
+    if make_network:
+        from .make_chem_funs import make_all
+        log.debug('Making chem_funs.py ...')
+        make_all(vulcan_cfg)
+    else:
+        log.debug('Skip making chem_funs.py')
+
 
     log.info('Running VULCAN')
 
@@ -166,16 +173,10 @@ def run_cli():
     log = logging.getLogger('fwl.' + __name__)
 
     # Remake chem_funs by default. Disabled when passing -n flag.
-    if '-n' not in sys.argv:
-        from .make_chem_funs import make_all
-
-        log.debug('Making chem_funs.py ...')
-        make_all(vulcan_cfg)
-    else:
-        log.debug('Skip making chem_funs.py')
+    make_network = bool('-n' not in sys.argv)
 
     # Run model
-    main(vulcan_cfg)
+    run_vulcan(vulcan_cfg, make_network)
 
 
 if __name__ == '__main__':

@@ -108,6 +108,7 @@ omit = [
     "*/test_*.py",
     "*/__pycache__/*",
     "*/conftest.py",
+    "chem_funs.py"
 ]
 
 [tool.pytest.ini_options]

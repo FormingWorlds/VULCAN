@@ -9,6 +9,6 @@ def test_package_imports():
 
 
 def test_cli_module_imports():
-    from vulcan.vulcan import main
+    from vulcan import run_vulcan
 
-    assert callable(main)
+    assert callable(run_vulcan)

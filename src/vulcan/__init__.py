@@ -1,5 +1,8 @@
 from __future__ import annotations
 
-from .vulcan import __version__
+__version__ = '26.04.22'
 
-__all__ = ['__version__']
+from .vulcan import run_vulcan
+from .config import Config
+
+__all__ = ['__version__', 'run_vulcan', 'Config']

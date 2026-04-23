@@ -17,8 +17,8 @@ class Config:
 
         self.atm_base = 'H2'
         self.rocky = False  # for the surface gravity
-        self.nz = 120  # number of vertical layers
-        self.P_b = 1e9  # pressure at the bottom (dyne/cm^2)
+        self.nz = 50  # number of vertical layers
+        self.P_b = 1e8  # pressure at the bottom (dyne/cm^2)
         self.P_t = 1e-2  # pressure at the top (dyne/cm^2)
 
         # Set T(p) from file
