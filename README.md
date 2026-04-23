@@ -1,8 +1,9 @@
 # VULCAN
-[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)\
-Photochemical kinetics for exoplanetary atmospheres, a fast and easy-to-use python code.
 
-This distribution of VULCAN contains a number of performance and usability improvements.
+Photochemical kinetics for exoplanetary atmospheres, a fast and easy-to-use python code.  This distribution of VULCAN contains a number of performance and usability improvements.
+
+[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
+
 
 More information can be found on the [documentation](https://proteus-framework.org/VULCAN/) pages:
 
@@ -11,10 +12,13 @@ More information can be found on the [documentation](https://proteus-framework.o
 * [contributing guide](https://proteus-framework.org/VULCAN/Community/CONTRIBUTING.html)
 
 
-The theory papers of VULCAN can be found here: [Tsai et al. 2021](https://arxiv.org/abs/2108.01790) (with photochemistry) and [Tsai et al. 2017](https://arxiv.org/abs/1607.00409) (without photochemistry).
+The theory papers of VULCAN can be found here: 
 
-* Demo with realtime plotting:\
-![Running with realtime plotting](demo/demo.gif)
+* [Tsai et al. 2021](https://arxiv.org/abs/2108.01790) (with photochemistry)
+* [Tsai et al. 2017](https://arxiv.org/abs/1607.00409) (without photochemistry).
+
+
+![Running with realtime plotting](docs/assets/demo.gif)
 
 ## Quick Demo
 
@@ -53,11 +57,3 @@ python plot_vulcan.py [vulcan output] [species] [plot name] [-h (for plotting he
 ```
 will read vulcan output (.vul files) can plot the species profiles. Species should be sepreated by commas without space. Plot is in pressure by diffcult and can be changed to height by adding "-h".
 
-## Testing
-
-Install test dependencies and run the pytest suite:
-
-```bash
-pip install -e ".[develop]"
-pytest
-```
