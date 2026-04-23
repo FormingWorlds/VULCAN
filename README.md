@@ -60,4 +60,3 @@ Run ```plot_vulcan.py``` within ```plot_py```
 python plot_vulcan.py [vulcan output] [species] [plot name] [-h (for plotting height)]
 ```
 will read vulcan output (.vul files) can plot the species profiles. Species should be sepreated by commas without space. Plot is in pressure by diffcult and can be changed to height by adding "-h".
-

@@ -1,13 +1,22 @@
 from __future__ import annotations
 
 import os
+import sys
 import types
 from pathlib import Path
 
 import numpy as np
 import pytest
 
-from vulcan import build_atm
+try:
+    from vulcan import build_atm
+except ModuleNotFoundError as exc:
+    if exc.name != 'vulcan.chem_funs':
+        raise
+    # chem_funs.py is generated at runtime, so provide a minimal test stub.
+    sys.modules['vulcan.chem_funs'] = types.SimpleNamespace(ni=0, spec_list=())
+    from vulcan import build_atm
+
 from vulcan.build_atm import InitialAbun
 from vulcan.config import Config
 
