@@ -3,6 +3,8 @@
 __pycache__
 nogit_*
 
+src/vulcan/chem_funs.py
+chem_funs.py
 thermo/*network*.txt
 
 fastchem_vulcan/obj/*.o
