@@ -20,8 +20,12 @@ Files:
 which differs from VULCAN's standard `k = A T^B exp(−C/T)` Arrhenius form.
 The algebraic conversion is: `A = α / 300^β`, `B = β`, `C = γ`.
 Three-body reactions in CRAHCN-O also include per-gas enhancement factors
-for N2, CO2, and H2 colliders. Full integration with VULCAN's network parser
-requires format conversion as a follow-up step.
+for N2, CO2, and H2 colliders. CRAHCN(-O) also uses species names that differ
+from VULCAN's existing network conventions for some excited states and radicals
+(e.g. `N2D`, `O1D`, `O3P`, `N4S` here vs. the underscore-delimited forms in
+`all_compose.txt` and shipped networks); species name mapping is a required
+additional step when integrating these files. Full integration with VULCAN's
+network parser requires format conversion as a separate follow-up.
 
 **License:** MIT — originally from https://github.com/bennski/CRAHCN
 
