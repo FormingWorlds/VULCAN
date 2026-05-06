@@ -12,7 +12,7 @@ network = 'thermo/CHO_photo_network.txt'  # Use C, H, O only
 
 Then run:
 ```bash
-python vulcan.py
+python run_vulcan.py
 ```
 
 Do **NOT** use `-n` flag when changing networks!
@@ -45,7 +45,7 @@ nano thermo/NCHO_photo_network.txt
 ```
 [ New_species1 + New_species2 -> Product1 + Product2 ]  A   B   C
 ```
-where you replace `A`, `B`, `C` with the appropriate Arrhenius coefficients. 
+where you replace `A`, `B`, `C` with the appropriate Arrhenius coefficients.
 
 3. **Remove a reaction:** Delete the line
 
@@ -53,7 +53,7 @@ where you replace `A`, `B`, `C` with the appropriate Arrhenius coefficients.
 
 5. **Save and run:**
 ```bash
-python vulcan.py
+python run_vulcan.py
 ```
 
 VULCAN will regenerate `chem_funs.py` with your changes.
@@ -75,13 +75,13 @@ a6 a7 0. a8 a9
 3. Check `thermo/all_compose.txt` for your new species. If you cannot find your species, add it in the same format, e.g.:
 
 ```
-species			H	O	C	He	N	S	P	Na	K	Si	Fe  Ar 	Ti	V	Mg	Ca	e 	mass    
+species			H	O	C	He	N	S	P	Na	K	Si	Fe  Ar 	Ti	V	Mg	Ca	e 	mass
 H2O				2	1	0	0	0	0	0	0	0	0	0	0	0   0	0	0   0   18.016
 ```
 
 4. Run VULCAN:
 ```bash
-python vulcan.py
+python run_vulcan.py
 ```
 
 

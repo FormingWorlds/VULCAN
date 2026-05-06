@@ -1,6 +1,6 @@
 cff-version: 1.2.0
 title: "VULCAN chemical kinetics code"
-version: 26.04.22
+version: 26.05.06
 date-released: 2026-04-22
 license: "GPL-3.0"
 message: "If you use this software, please cite it as below."
@@ -13,4 +13,3 @@ authors:
 - family-names: "Nicholls"
   given-names: "Harrison"
   orcid: "https://orcid.org/0000-0002-8368-4641"
-  
