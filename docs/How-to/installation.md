@@ -86,7 +86,7 @@ Finally, create a symbolic link from your AGNI install folder to your VULCAN fol
 Test that everything is working by running the demo:
 
 ```bash
-python vulcan.py
+python run_vulcan.py
 ```
 
 This will:

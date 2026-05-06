@@ -15,10 +15,10 @@ python -m pip install -e '.[docs]'
 
 ```bash
 # run model (default demo)
-python vulcan.py
+python run_vulcan.py
 
 # skip chemistry regeneration (only safe when network is unchanged)
-python vulcan.py -n
+python run_vulcan.py -n
 
 # compile FastChem executable used by eq initialisation
 cd fastchem_vulcan && make
@@ -51,7 +51,7 @@ zensical build --clean
 
 ## High-level architecture
 
-`vulcan.py` at the repository root is the CLI entrypoint; it prepends `src/` to `sys.path` and calls `vulcan.vulcan.run_cli()`.
+`run_vulcan.py` at the repository root is the CLI entrypoint; it prepends `src/` to `sys.path` and calls `vulcan.vulcan.run_cli()`.
 
 `src/vulcan/vulcan.py` orchestrates a run in this order:
 1. Create `Config` (`src/vulcan/config.py`), optionally regenerate chemistry (`make_chem_funs.make_all`) unless `-n`.

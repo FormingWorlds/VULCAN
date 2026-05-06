@@ -35,7 +35,7 @@ make
 
 After compilation has finished, go back to the main directory of VULCAN and run
 ```
-python vulcan.py
+python run_vulcan.py
 ```
 
 You should see the default model starts running with real-time plotting.

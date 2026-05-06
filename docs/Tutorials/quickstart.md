@@ -1,4 +1,4 @@
-# VULCAN Quick Start 
+# VULCAN Quick Start
 
 Run your first photochemical simulation!
 
@@ -7,7 +7,7 @@ Run your first photochemical simulation!
 From the main VULCAN directory:
 
 ```bash
-python vulcan.py
+python run_vulcan.py
 ```
 
 This will:
@@ -45,41 +45,26 @@ use_live_plot = False
 
 Then run again:
 ```bash
-python vulcan.py
+python run_vulcan.py
 ```
 
----
 
-## 3. Try planet examples
-
-VULCAN includes examples for different planets, listed in `cgf_examples`. 
-
-Available examples:
-
-- `cfg_Earth.txt` - Earth
-- `cfg_HD189.txt` - HD 189733b (hot Jupiter)
-- `cfg_HD209.txt` - HD 209458b (hot Jupiter)
-- `cfg_Jupiter.txt` - Jupiter
-
-To try one of these examples, update `config.py` with the parameters as listed in the example `.txt` files. 
-
----
-
-## 4. Plot results
+## 3. Plot results
 
 Run ```plot_vulcan.py``` within ```tools```:
 
 ```
+cd tools/
 python plot_vulcan.py [vulcan output] [species] [plot name] [-h (for plotting height)]
 ```
 
 ---
 
-## 5. Speed tips
+## 4. Speed tips
 
 Skip regenerating chemistry if you only changed `config.py`:
 ```bash
-python vulcan.py -n
+python run_vulcan.py -n
 ```
 
 Only use `-n` if you haven't modified the reaction network!
