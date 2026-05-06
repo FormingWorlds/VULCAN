@@ -2,26 +2,19 @@
 This script reads VULCAN output (.vul) files using pickle and plot the species volumn mixing ratios as a function of pressure, with the initial abundances (typically equilibrium) shown in dashed lines.
 Plots are saved in the folder assigned in vulcan_cfg.py, with the default plot_dir = 'plot/'.
 """
+
 from __future__ import annotations
 
-import sys
-
-sys.path.insert(0, '../')  # including the upper level of directory for the path of modules
-
-import matplotlib.pyplot as plt
-import numpy as np
-import vulcan_cfg
-
-try:
-    from PIL import Image
-except ImportError:
-    try:
-        import Image
-    except:
-        vulcan_cfg.use_PIL = False
 import os
 import pickle
 import sys
+
+import matplotlib.pyplot as plt
+import numpy as np
+
+from vulcan.config import Config
+
+vulcan_cfg = Config()
 
 # swtich for plot
 if '-h' in sys.argv:
@@ -111,7 +104,6 @@ tex_labels = {
     'NO2': 'NO$_2$',
     'HCN': 'HCN',
     'NO': 'NO',
-    'NO2': 'NO$_2$',
 }
 
 
@@ -129,7 +121,7 @@ for color_index, sp in enumerate(plot_spec):
     else:
         sp_lab = sp
 
-    if use_height == False:
+    if not use_height:
         plt.plot(
             data['variable']['ymix'][:, vulcan_spec.index(sp)],
             data['atm']['pco'] / 1.0e6,
@@ -162,7 +154,7 @@ for color_index, sp in enumerate(plot_spec):
         )  # plotting the initial (equilibrium) abundances
 
 
-if use_height == False:
+if not use_height:
     plt.gca().set_yscale('log')
     plt.gca().invert_yaxis()
     plt.ylim((data['atm']['pco'][0] / 1e6, data['atm']['pco'][-1] / 1e6))
@@ -186,8 +178,4 @@ plt.legend(frameon=0, prop={'size': 12}, loc='best')
 
 plt.savefig(plot_dir + plot_name + '.png')
 # plt.savefig(plot_dir + plot_name + '.eps')
-if vulcan_cfg.use_PIL == True:
-    plot = Image.open(plot_dir + plot_name + '.png')
-    plot.show()
-else:
-    plt.show()
+plt.show()
