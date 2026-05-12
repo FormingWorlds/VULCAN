@@ -5,12 +5,12 @@ from __future__ import annotations
 
 import logging
 import os
+from tempfile import mkdtemp
 
 import numpy as np
 from juliacall import Main as jl
 from scipy.integrate import trapezoid
 from scipy.interpolate import PchipInterpolator
-from tempfile import mkdtemp
 
 # Import some VULCAN modules
 from . import paths
