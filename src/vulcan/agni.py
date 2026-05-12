@@ -49,7 +49,7 @@ def activate_julia(vulcan_cfg: Config):
     # Setup logging from AGNI
     #    This handle will be kept open throughout, so the file
     #    should not be deleted at runtime. However, it will be emptied when appropriate.
-    verbosity = 1
+    verbosity = 2
     logpath = os.path.join(vulcan_cfg.output_dir, AGNI_LOGFILE_NAME)
     jl.AGNI.setup_logging(logpath, verbosity)
 

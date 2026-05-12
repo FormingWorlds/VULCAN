@@ -175,6 +175,10 @@ def run_cli():
     # Make config
     vulcan_cfg = Config()
 
+    # Make output folder
+    if not os.path.exists(vulcan_cfg.output_dir):
+        os.makedirs(vulcan_cfg.output_dir)
+
     # Setup basic logging
     logpath = os.path.join(vulcan_cfg.output_dir, 'vulcan.log')
     setup_logger(logpath=logpath, logterm=True, level=vulcan_cfg.log_level)
