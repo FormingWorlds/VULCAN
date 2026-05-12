@@ -10,6 +10,7 @@ import numpy as np
 from juliacall import Main as jl
 from scipy.integrate import trapezoid
 from scipy.interpolate import PchipInterpolator
+from tempfile import mkdtemp
 
 # Import some VULCAN modules
 from . import paths
@@ -100,6 +101,9 @@ def init_agni_atmos(vulcan_cfg: Config, atm: AtmData, var: Variables):
     p_surf = atm.pico[0] * 1e-6  # convert to bar
     p_top = atm.pico[-1] * 1e-6  # convert to bar
 
+    # FC working directory for AGNI
+    fastchem_work = mkdtemp()
+
     # Setup struct
     succ = jl.AGNI.atmosphere.setup_b(
         atmos,
@@ -125,7 +129,7 @@ def init_agni_atmos(vulcan_cfg: Config, atm: AtmData, var: Variables):
         surface_material='greybody',
         condensates=condensates,
         use_all_gases=False,
-        fastchem_work='',
+        fastchem_work=fastchem_work,
         real_gas=False,
         skin_d=0.01,
         skin_k=2.0,
