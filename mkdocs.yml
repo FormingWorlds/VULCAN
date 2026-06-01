@@ -17,7 +17,16 @@ nav:
       - Quick start: Tutorials/quickstart.md
 
   - Explanations:
-      - Model usage: Explanations/model_usage.md
+      - Model overview: 
+        - Overview: Explanations/model_overview.md
+        - Basic equations: Explanations/basic_equations.md
+        - Boundary conditions: Explanations/boundary_conditions.md
+        - Chemical networks: Explanations/chemical_networks.md
+        - Photochemistry: Explanations/photochemistry.md
+        - UV cross sections: Explanations/uv_cross_sections.md
+        - Condensation and rainout: Explanations/condensation.md
+        - Titanium and vanadium chemistry: Explanations/titanium_vanadium.md
+        - Haze precursors: Explanations/haze_precursors.md
 
   - Reference:
       - Publications: Reference/bibliography.md
