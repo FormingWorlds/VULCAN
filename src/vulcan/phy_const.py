@@ -1,5 +1,14 @@
-### Physical const (in cgs)
-# values taken from the astropy package (http://docs.astropy.org/en/stable/index.html)
+"""
+----
+
+Physical constants (in cgs).
+
+Values taken from the [astropy package](http://docs.astropy.org/en/stable/index.html).
+
+----
+"""
+
+
 from __future__ import annotations
 
 kb = 1.38064852e-16  # Boltzmann constant (erg K^-1)

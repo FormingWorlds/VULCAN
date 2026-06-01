@@ -1,10 +1,19 @@
-# ==============================================================================
-# Module contains classes that store all the variables used in VULCAN.
-# Copyright (C) 2016 Shang-Min Tsai (Shami)
-# ==============================================================================
-# There are three classes: Variables, AtmData, and Parameters, which store the main
-# physical variables, atmospheric variables, and numerical parameters, respectively.
-# ==============================================================================
+"""
+----
+
+Module that contains classes that store all the variables used in VULCAN.
+
+Copyright (C) 2016 Shang-Min Tsai (Shami)
+
+There are three classes: `Variables`, `AtmData`, and `Parameters`, which store the main physical variables, atmospheric variables, and numerical parameters, respectively.
+
+Imports
+---
+- [`vulcan.config`](config.md): `Config` class for handling configuration settings.
+- `vulcan.chem_funs`: `ni`, `spec_list`: Number of species and reactions in the chemical network.
+
+"""
+
 from __future__ import annotations
 
 import numpy as np

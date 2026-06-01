@@ -1,4 +1,17 @@
-# Wrapper functions for coupling VULCAN to AGNI
+"""
+---
+
+Wrapper functions for coupling VULCAN to AGNI.
+
+Imports
+---
+
+- [`vulcan.config`](config.md): `Config` class for handling configuration settings.
+- [`vulcan.paths`](paths.md): Paths to various files and directories used in VULCAN.
+- [`vulcan.phy_const`](phy_const.md): Physical constants used in VULCAN.
+- [`vulcan.store`](store.md): `AtmData` and `Variables` classes for storing atmospheric data and variables.
+- `vulcan.chem_funs`: `spec_list` for the list of chemical species in VULCAN, `gas_list` for the list of gas species in AGNI.
+"""
 
 # Import system modules
 from __future__ import annotations

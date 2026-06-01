@@ -1,3 +1,13 @@
+"""
+---
+
+Configuration module for VULCAN. Contains the `Config` class, which holds all the configuration settings for running VULCAN. 
+
+Imports:
+---
+- [`vulcan.paths`](paths.md): Paths to various files and directories used in VULCAN.
+"""
+
 from __future__ import annotations
 
 import os

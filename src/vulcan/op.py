@@ -9,7 +9,14 @@ on the T-P sturcture.
 - `Integration()` is the backbone of integrating for one time step
 - `ODESolver()` contains the functions for solving system of ODEs (e.g. dy/dt, Jacobian, etc.)
 
--------
+Imports
+---
+- [`vulcan.config`](config.md): `Config` class for handling configuration settings.
+- [`vulcan.paths`](paths.md): Paths to various files and directories used in VULCAN.
+- [`vulcan.build_atm`](build_atm.md): `compo` and `compo_row` functions for building the atmospheric composition.
+- [`vulcan.phy_const`](phy_const.md): Physical constants used in VULCAN.
+- `vulcan.chem_funs`: Functions related to the chemical network.
+
 """
 
 from __future__ import annotations
