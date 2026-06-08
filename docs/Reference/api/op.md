@@ -12,3 +12,4 @@ title: vulcan.op
         - Output
       inherited_members: false
       show_source: true
+      show_if_no_docstring: true
