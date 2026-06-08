@@ -46,8 +46,8 @@ $A_j y_j + B_{j+1} y_{j+1} + C_{j-1} y_{j-1}$ per layer.
 
 ### Implementation in VULCAN
 
-The transport operator is assembled in [`op.ODESolver`](../Reference/api/op.md), with four variants selected at
-runtime in `Ros2.solver` according to the [config flags](../Reference/config.md):
+The transport operator is assembled in [`op.ODESolver`](../Reference/api/op.md#vulcan.op.ODESolver), with four variants selected at
+runtime in [`Ros2.solver`](../Reference/api/op.md#vulcan.op.Ros2.solver) according to the [config flags](../Reference/config.md):
 
 | Method | `use_moldiff` | `use_settling` | `use_vm_mol` |
 |---|---|---|---|
