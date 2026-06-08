@@ -5,7 +5,7 @@ Module that includes all the numerical functions of VULCAN.
 Copyright (C) 2016 Shang-Min Tsai (Shami)
 
 - `ReadRate()` reads in the chemical network and construct the rate constants based
-on the T-P sturcture.
+on the T-P structure.
 - `Integration()` is the backbone of integrating for one time step
 - `ODESolver()` contains the functions for solving system of ODEs (e.g. dy/dt, Jacobian, etc.)
 
