@@ -22,7 +22,7 @@ where $P_i$ and $L_i$ are the chemical production and loss rates (cm$^{-3}$ s$^{
 from both thermochemical and photochemical reactions, and $\Phi_i$ is the vertical
 transport flux. The transport flux combines advection, eddy diffusion, and molecular
 plus thermal diffusion; its form and discretization are described in
-[Basic equations and numerics](basic_equations.md).
+[basic equations and numerics](basic_equations.md).
 
 The system is integrated forward in time with a second-order Rosenbrock solver
 until a steady state is reached, rather than being solved as a boundary-value problem.
@@ -32,7 +32,7 @@ atmospheres down to cold, photochemistry-dominated stratospheres.
 ## Scope and validation
 
 The released model has been validated against three reference cases spanning a wide
-range of temperature and oxidation state[^tsai2021]: the hot Jupiter HD 189733b
+range of temperature and oxidation state [^tsai2021]: the hot Jupiter HD 189733b
 (intercompared with Moses et al. 2011 and Venot et al. 2012), Jupiter (low-temperature
 hydrocarbon and condensation chemistry), and present-day Earth (an oxidizing atmosphere
 with surface sources and sinks). The default configuration shipped in `config.py`
@@ -41,7 +41,7 @@ $a = 0.03142$ au, $g = 2140$ cm s$^{-2}$).
 
 ## Code structure
 
-The physics described in the Methods pages maps onto the source modules as follows.
+The physics described in the Methods pages maps onto the source code, located in [src/vulcan](https://github.com/FormingWorlds/VULCAN/tree/main/src/vulcan), as follows.
 
 | Module | Role |
 |---|---|
