@@ -8,13 +8,14 @@ copyright: '© 2023-2026 <a href="https://formingworlds.space">Forming Worlds La
 nav:
   - Home:
       - About: index.md
+      - Quick start: quickstart.md
 
   - How-to guides:
       - Installation: How-to/installation.md
       - Editing or using a different chemical network: How-to/chem_network.md
 
   - Tutorials:
-      - Quick start: Tutorials/quickstart.md
+      - First run: Tutorials/first_run.md
 
   - Explanations:
       - Model overview: 
@@ -30,6 +31,8 @@ nav:
 
   - Reference:
       - Publications: Reference/bibliography.md
+      - Configuration: Reference/config.md
+      - Constants: Reference/constants.md
       - API reference:
           - API overview: Reference/api/index.md
           - vulcan.vulcan: Reference/api/vulcan.md
