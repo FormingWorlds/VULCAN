@@ -70,9 +70,15 @@ long-term evolution of rocky-planet atmospheres and interiors.
 
 </div>
 
-## Citation and credit
-
-If you use VULCAN, please cite the theory papers listed in the [publications](Reference/bibliography.md) and state the code version used. Citation metadata is provided in
-[`CITATION.cff`](https://github.com/FormingWorlds/VULCAN/blob/main/CITATION.cff). VULCAN
-embeds the [FastChem](https://github.com/NewStrangeWorlds/FastChem) equilibrium-chemistry code (Daniel Kitzmann &amp; Joachim Stock) for initialization, and is released under the
-[GPL-3.0 license](https://www.gnu.org/licenses/gpl-3.0).
+## Citation and license
+ 
+If you use VULCAN through PROTEUS, please cite the VULCAN theory papers listed in the [publications](Reference/bibliography.md) and state the code version used. Citation metadata is provided in [`CITATION.cff`](https://github.com/FormingWorlds/VULCAN/blob/main/CITATION.cff).
+ 
+VULCAN is released under the [GPL-3.0 license](https://github.com/FormingWorlds/VULCAN/blob/main/LICENSE.txt).
+ 
+### Embedded dependency: FastChem
+ 
+VULCAN embeds [FastChem](https://github.com/NewStrangeWorlds/FastChem) (Daniel Kitzmann & Joachim Stock) for equilibrium-chemistry initialisation of mixing ratios. FastChem carries its own license and should be cited independently. The relevant papers are listed in the [publications](Reference/bibliography.md).
+ 
+!!! info "Licenses across the PROTEUS framework"
+    Different components within the PROTEUS framework carry different licenses. Please find information about the use of licenses within the PROTEUS framework on the PROTEUS [licence page](https://proteus-framework.org/license).
