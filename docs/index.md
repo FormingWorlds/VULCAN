@@ -76,7 +76,7 @@ If you use VULCAN through PROTEUS, please cite the VULCAN theory papers listed i
  
 VULCAN is released under the [GPL-3.0 license](https://github.com/FormingWorlds/VULCAN/blob/main/LICENSE.txt).
  
-### Embedded dependency: FastChem
+### FastChem
  
 VULCAN embeds [FastChem](https://github.com/NewStrangeWorlds/FastChem) (Daniel Kitzmann & Joachim Stock) for equilibrium-chemistry initialisation of mixing ratios. FastChem carries its own license and should be cited independently. The relevant papers are listed in the [publications](Reference/bibliography.md).
  
