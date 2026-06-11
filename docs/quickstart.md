@@ -40,7 +40,7 @@ Here is the quickest path to getting started:
 
 -   :fontawesome-solid-earth: **Understand the use in PROTEUS**
 
-    [Go to the PROTEUS framework](https://proteus-framework.org/PROTEUS)
+    [Go to PROTEUS coupling](Explanations/proteus_coupling.md)
 
 -   :material-github: **Contribute / browse code**
 
