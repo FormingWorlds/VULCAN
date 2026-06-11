@@ -13,6 +13,7 @@ nav:
   - How-to guides:
       - Installation: How-to/installation.md
       - Editing or using a different chemical network: How-to/chem_network.md
+      - Use in PROTEUS: How-to/use_in_proteus.md
 
   - Tutorials:
       - First run: Tutorials/first_run.md
@@ -28,6 +29,7 @@ nav:
         - Condensation and rainout: Explanations/condensation.md
         - Titanium and vanadium chemistry: Explanations/titanium_vanadium.md
         - Haze precursors: Explanations/haze_precursors.md
+      - PROTEUS coupling: Explanations/proteus_coupling.md
 
   - Reference:
       - Publications: Reference/bibliography.md
@@ -122,6 +124,11 @@ markdown_extensions:
   - pymdownx.emoji:
       emoji_index: !!python/name:material.extensions.emoji.twemoji
       emoji_generator: !!python/name:material.extensions.emoji.to_svg
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
 
 # footer:
 extra:
