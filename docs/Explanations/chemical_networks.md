@@ -53,7 +53,7 @@ All thermochemical reactions are reversed using the equilibrium constant derived
 NASA polynomials. The forward/reverse reaction rate coefficients follow the following relation: 
 
 
-$$\frac{k_f}{k_r} = K_\mathrm{eq} \left(\frac{k_B T}{P_0}\right)^{\Delta\mu} \tag{8}$$
+$$\frac{k_\text{f}}{k_\text{r}} = K_\mathrm{eq} \left(\frac{k_\text{B} T}{P_0}\right)^{\Delta\mu} \tag{8}$$
 
 where $K_\mathrm{eq}$ is the dimensional equilibrium constant, expressed via the standard Gibbs free energy as
 
@@ -61,7 +61,7 @@ $$K_\mathrm{eq} = \exp\!\left(-\frac{\Delta G^0}{\mathcal{R}T}\right) = \exp\!\l
 
 with $\Delta G^0 = \Delta G[\text{products}] - \Delta G[\text{reactants}]$, so the reverse rate coefficient is
 
-$$k_r = \frac{k_f}{\exp\!\left[-(\Delta H^0 - T\Delta s^0)/\mathcal{R}T\right]} \left(\frac{k_B T}{P_0}\right)^{-\Delta\mu} \tag{10}$$
+$$k_\text{r} = \frac{k_\text{f}}{\exp\!\left[-(\Delta H^0 - T\Delta s^0)/\mathcal{R}T\right]} \left(\frac{k_\text{B} T}{P_0}\right)^{-\Delta\mu} \tag{10}$$
 
 The standard enthalpy and entropy from the NASA polynomials are
 
@@ -86,7 +86,7 @@ Rather than evaluating the network interpretively, VULCAN **writes out Python so
 the chemistry. [`make_chem_funs.make_chemdf`](../Reference/api/make_chem_funs.md#vulcan.make_chem_funs.make_chemdf) parses the reaction table and emits
 `chem_funs.py` containing:
 
-- `chemdf(y, M, k)`: the vectorized production-minus-loss term $P_i - L_i$;
+- `chemdf(y, M, k)`: the vectorized production-minus-loss term $P_\text{i} - L_\text{i}$;
 - `df(y, M, k)`: the explicit per-reaction expressions used to build the Jacobian;
 - `re_dict` / `re_wM_dict`: reactant/product maps (with and without $M$);
 - `spec_list`, `ni` (number of species), `nr` (number of reactions).
