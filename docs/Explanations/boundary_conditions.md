@@ -21,7 +21,7 @@ deep enough to lie in the thermochemical-equilibrium region.
 
 For light escaping species, the top flux can instead be set to the diffusion-limited value
 
-$$\Phi_{i,\mathrm{top}} = -D_i\left(\frac{1}{H_i} - \frac{1}{H_0}\right) n_i \tag{6}$$
+$$\Phi_{\text{i},\mathrm{top}} = -D_\text{i}\left(\frac{1}{H_\text{i}} - \frac{1}{H_0}\right) n_\text{i} \tag{6}$$
 
 which assumes escape is throttled by diffusion into the exosphere.
 
