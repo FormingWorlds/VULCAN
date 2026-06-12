@@ -26,9 +26,9 @@ independent of beam direction.
 
 The optical depth includes absorption and scattering,
 
-$$\tau(z,\lambda) = \int \sum_i \big[\sigma_{a,i}(\lambda) + \sigma_{s,i}(\lambda)\big]\,n_i\,\mathrm{d}z \tag{9}$$
+$$\tau(z,\lambda) = \int \sum_\text{i} \big[\sigma_{\text{a},\text{i}}(\lambda) + \sigma_{\text{s},\text{i}}(\lambda)\big]\,n_\text{i}\,\mathrm{d}z \tag{9}$$
 
-where the absorption cross section $\sigma_{a,i}$ can differ from the photodissociation cross
+where the absorption cross section $\sigma_{\text{a},\text{i}}$ can differ from the photodissociation cross
 section (absorption is not always followed by dissociation).
 
 The diffuse flux is obtained with the two-stream approximation of Malik et al. (2019) [^malik2019]
@@ -45,7 +45,7 @@ Multiple scattering is handled iteratively; the converged state is typically rea
 The photolysis rate coefficient integrates the actinic flux and absorption cross section over
 wavelength,
 
-$$k = \int \sigma_a(\lambda)\,q(\lambda)\,J(z,\lambda)\,\mathrm{d}\lambda \tag{11}$$
+$$k = \int \sigma_\text{a}(\lambda)\,q(\lambda)\,J(z,\lambda)\,\mathrm{d}\lambda \tag{11}$$
 
 with $q(\lambda)$ the quantum yield (probability of a given branch per absorbed photon), and
 the photolysis rate of the reaction is $\mathrm{d}n_A/\mathrm{d}t = -k\,n_A$. Cross sections
@@ -78,7 +78,7 @@ initially, switching to `final_update_photo_frq` once the solution is near conve
 
 | Parameter | Meaning |
 |---|---|
-| `sl_angle` | stellar zenith angle $\theta$ (radians); dayside/terminator-average values discussed in Appendix C of the paper ($\approx 58°$ and $67°$) |
+| `sl_angle` | stellar zenith angle $\theta$ (radians); dayside-average values |
 | `edd` | first Eddington coefficient $\bar\epsilon$ (0.5) |
 | `f_diurnal` | diurnal-averaging factor |
 | `dbin1`, `dbin2`, `dbin_12trans` | bin widths (nm) and the switch wavelength |
