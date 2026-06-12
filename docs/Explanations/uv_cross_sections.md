@@ -37,7 +37,7 @@ increases with temperature.
 
 ## Implementation in VULCAN
 
-Temperature dependence is activated by listing species in [`config.T_cross_sp`](../Reference/config.md##photochemistry-radiation) (empty by
+Temperature dependence is activated by listing species in [`config.T_cross_sp`](../Reference/config.md#photochemistry-radiation) (empty by
 default). In [`op.ReadRate.make_bins_read_cross`](../Reference/api/op.md#vulcan.op.ReadRate.make_bins_read_cross):
 
 - For each such species, per-temperature files `<sp>_cross_<T>K.csv` are read from
