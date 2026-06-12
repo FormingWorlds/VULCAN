@@ -71,7 +71,7 @@ $$\frac{H^0}{\mathcal{R}T} = -a_1 T^{-2} + a_2 \frac{\ln T}{T} + a_3 + \frac{a_4
 
 [`make_chem_funs.make_Gibbs`](../Reference/api/make_chem_funs.md#vulcan.make_chem_funs.make_Gibbs) writes a `Gibbs(i, T)` function into `chem_funs.py` that
 evaluates $K_\mathrm{eq}$ from the per-species Gibbs free energy. NASA-9 polynomials are loaded
-from `thermo/NASA9/`. [`op.ReadRate.rev_rate`](../Reference/api/op.md#l#vulcan.op.ReadRate.rev_rate) then sets `k[i] = k[i-1] / Gibbs(i-1, Tco)` for
+from `thermo/NASA9/`. [`op.ReadRate.rev_rate`](../Reference/api/op.md#vulcan.op.ReadRate.rev_rate) then sets `k[i] = k[i-1] / Gibbs(i-1, Tco)` for
 every reversible reaction up to the `# reverse stops` marker. Reactions in
 `config.remove_list` are zeroed by `remove_rate`.
 

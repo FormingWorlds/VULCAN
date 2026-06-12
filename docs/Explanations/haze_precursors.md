@@ -49,7 +49,7 @@ As with the [Ti/V chemistry](titanium_vanadium.md), haze precursors require no d
 path: the precursor species and the benzene mechanism are part of the network file and are
 integrated like any other species through `chemdf` and the photolysis routines. The benzene
 photodissociation branches and cross sections (Boechat-Roberty et al. 2004; Capalbo et al.
-2016) are read by [`op.ReadRate.make_bins_read_cross`](../Reference/api/op.md#vulcan.op/ReadRate.make_bins_read_cross) and applied in `compute_J`.
+2016) are read by [`op.ReadRate.make_bins_read_cross`](../Reference/api/op.md#vulcan.op.ReadRate.make_bins_read_cross) and applied in `compute_J`.
 
 
 !!! note "Caveat"
