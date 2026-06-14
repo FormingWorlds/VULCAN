@@ -16,9 +16,9 @@ A reference for configuration parameters can be found [here](../Reference/config
 VULCAN integrates the Eulerian continuity equation for the number density $n_i$
 (cm$^{-3}$) of each species $i$:
 
-$$\frac{\partial n_i}{\partial t} = P_i - L_i - \frac{\partial \Phi_i}{\partial z} \tag{1}$$
+$$\frac{\partial n_\text{i}}{\partial t} = P_\text{i} - L_\text{i} - \frac{\partial \Phi_\text{i}}{\partial z} \tag{1}$$
 
-where $P_i$ and $L_i$ are the chemical production and loss rates (cm$^{-3}$ s$^{-1}$)
+where $P_\text{i}$ and $L_\text{i}$ are the chemical production and loss rates (cm$^{-3}$ s$^{-1}$)
 from both thermochemical and photochemical reactions, and $\Phi_i$ is the vertical
 transport flux. The transport flux combines advection, eddy diffusion, and molecular
 plus thermal diffusion; its form and discretization are described in
