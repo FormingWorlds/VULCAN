@@ -34,7 +34,7 @@ src/vulcan
 | Module | Key entry points | Reference |
 |---|---|---|
 | `vulcan` | `run_vulcan`, `run_cli` | [API](vulcan.md) |
-| `config` | `Config` | [API](config.md) · [Parameter reference](parameters.md) |
+| `config` | `Config` | [API](config.md) · [Parameter reference](../config.md) |
 | `make_chem_funs` | `make_all` (and the lower-level `make_chemdf`, `make_jac`, `make_Gibbs`, `check_conserv`, `check_duplicate`) | [API](make_chem_funs.md) |
 
 ### State and atmosphere
