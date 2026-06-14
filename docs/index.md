@@ -78,7 +78,7 @@ VULCAN is released under the [GPL-3.0 license](https://github.com/FormingWorlds/
  
 ### FastChem
  
-VULCAN embeds [FastChem](https://github.com/NewStrangeWorlds/FastChem) (Daniel Kitzmann & Joachim Stock) for equilibrium-chemistry initialisation of mixing ratios. FastChem carries its own license and should be cited independently. The relevant papers are listed in the [publications](Reference/bibliography.md).
+VULCAN embeds [FastChem](https://github.com/NewStrangeWorlds/FastChem) (Daniel Kitzmann & Joachim Stock) for equilibrium-chemistry initialisation of mixing ratios. FastChem carries its own license and should be cited independently. The relevant papers are listed in the [publications](Reference/bibliography.md). Please see the separate [FastChem page](fastchem.md) for more information.
  
 !!! info "Licenses across the PROTEUS framework"
     Different components within the PROTEUS framework carry different licenses. Please find information about the use of licenses within the PROTEUS framework on the PROTEUS [licence page](https://proteus-framework.org/license).
