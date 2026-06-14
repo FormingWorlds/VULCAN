@@ -33,29 +33,29 @@ src/vulcan
 
 | Module | Key entry points | Reference |
 |---|---|---|
-| `vulcan` | `run_vulcan`, `run_cli` | [API](../Reference/api/vulcan.md) |
-| `config` | `Config` | [API](../Reference/api/config.md) · [Parameter reference](../Reference/parameters.md) |
-| `make_chem_funs` | `make_all` (and the lower-level `make_chemdf`, `make_jac`, `make_Gibbs`, `check_conserv`, `check_duplicate`) | [API](../Reference/api/make_chem_funs.md) |
+| `vulcan` | `run_vulcan`, `run_cli` | [API](vulcan.md) |
+| `config` | `Config` | [API](config.md) · [Parameter reference](parameters.md) |
+| `make_chem_funs` | `make_all` (and the lower-level `make_chemdf`, `make_jac`, `make_Gibbs`, `check_conserv`, `check_duplicate`) | [API](make_chem_funs.md) |
 
 ### State and atmosphere
 
 | Module | Key classes | Reference |
 |---|---|---|
-| `store` | `Variables`, `AtmData`, `Parameters` | [API](../Reference/api/store.md) |
-| `build_atm` | `InitialAbun`, `Atm` | [API](../Reference/api/build_atm.md) |
-| `chem_funs` *(generated)* | `chemdf`, `Gibbs`, `symjac`, `neg_symjac`, `spec_list` | [API](../Reference/api/chem_funs.md) |
+| `store` | `Variables`, `AtmData`, `Parameters` | [API](store.md) |
+| `build_atm` | `InitialAbun`, `Atm` | [API](build_atm.md) |
+| `chem_funs` *(generated)* | `chemdf`, `Gibbs`, `symjac`, `neg_symjac`, `spec_list` | - |
 
 ### Numerical core
 
 | Module | Key classes | Reference |
 |---|---|---|
-| `op` | `ReadRate`, `Integration`, `ODESolver`, `Ros2`, `Output` | [API](../Reference/api/op.md) |
-| `agni` | `run_agni` (optional, requires `agni_call_frq > 0`) | [API](../Reference/api/agni.md) |
+| `op` | `ReadRate`, `Integration`, `ODESolver`, `Ros2`, `Output` | [API](op.md) |
+| `agni` | `run_agni` (optional, requires `agni_call_frq > 0`) | [API](agni.md) |
 
 ### Utilities
 
 | Module | Contents | Reference |
 |---|---|---|
-| `phy_const` | Physical constants in cgs units (`kb`, `Navo`, `hc`, …) | [API](../Reference/api/phy_const.md) |
-| `paths` | `VULCAN_DIR`, `THERMO_DIR`, `CROSS_DIR` and related path constants | [API](../Reference/api/paths.md) |
-| `logs` | Logger configuration (`fwl.*` loggers) | [API](../Reference/api/logs.md) |
+| `phy_const` | Physical constants in cgs units (`kb`, `Navo`, `hc`, …) | [API](phy_const.md) |
+| `paths` | `VULCAN_DIR`, `THERMO_DIR`, `CROSS_DIR` and related path constants | [API](paths.md) |
+| `logs` | Logger configuration (`fwl.*` loggers) | [API](logs.md) |
