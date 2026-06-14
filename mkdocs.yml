@@ -48,7 +48,7 @@ nav:
           - vulcan.store: Reference/api/store.md
           - vulcan.logs: Reference/api/logs.md
           
-
+  - FastChem: fastchem.md
   - Community:
       - Contact: Community/contact.md
       - Contributing: Community/CONTRIBUTING.md
