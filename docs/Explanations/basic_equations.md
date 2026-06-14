@@ -43,7 +43,7 @@ The diffusive terms use a **second-order central difference** and the advective 
 **first-order upwind** scheme (Brasseur & Jacob 2017 [^bj2017]). On the staggered grid the
 flux divergence in layer $\text{j}$ is
 
-$$\frac{\partial \Phi_{\text{i}}}{\partial z}\bigg|_{\text{j}} \approx \frac{\Phi_{\text{i},\,\text{j}+1/2} - \Phi_{\text{i},\,\text{j}-1/2}}{\Delta z_{\text{j}}}$$
+$$\frac{\partial \Phi_{\text{i}}}{\partial z}\bigg|_{\text{j}} \approx \frac{\Phi_{\text{i},\,\text{j}+1/2} - \Phi_{\text{i},\,\text{j}-1/2}}{\Delta z_{\text{j}}} \tag{3}$$
 
 Substituting Eq. (2) reduces Eq. (1) to a system of ODEs of the form
 $A_{\text{j}} y_{\text{j}} + B_{\text{j}+1} y_{\text{j}+1} + C_{\text{j}-1} y_{\text{j}-1}$ per layer.
@@ -78,16 +78,16 @@ Newton–Raphson iteration for $n_{\text{k}+1}$. The Rosenbrock method is *linea
 the Jacobian $J \equiv \partial f/\partial n$ directly, avoiding iteration. The two-stage,
 second-order scheme is
 
-$$n_{\text{k}+1} = n_{\text{k}} + \tfrac{3}{2}\Delta t\, g_1 + \tfrac{1}{2}\Delta t\, g_2$$
+$$n_{\text{k}+1} = n_{\text{k}} + \tfrac{3}{2}\Delta t\, g_1 + \tfrac{1}{2}\Delta t\, g_2 \tag{4}$$
 
 $$(I - \gamma \Delta t J)\,g_1 = f(n_{\text{k}}), \qquad
-(I - \gamma \Delta t J)\,g_2 = f(n_{\text{k}} + \Delta t\, g_1) - 2 g_1$$
+(I - \gamma \Delta t J)\,g_2 = f(n_{\text{k}} + \Delta t\, g_1) - 2 g_1 \tag{5}$$
 
 with $\gamma = 1 + 1/\sqrt{2}$. Verwer et al. (1999) [^verwer1999] recommend this method for
 its stability over large stepsizes, which suits the needs of chemical kinetics. Both stages
 share the same left-hand-side matrix
 
-$$\mathrm{LHS} = \frac{1}{\gamma\,\Delta t}\,I - J$$
+$$\mathrm{LHS} = \frac{1}{\gamma\,\Delta t}\,I - J \tag{6}$$
 
 so it is factored only once per step. The chemical part of $J$ is **analytic** (generated
 symbolically by [`make_chem_funs.make_jac`/`make_neg_jac`](../Reference/api/make_chem_funs.md#vulcan.make_chem_funs.make_jac)
@@ -101,7 +101,7 @@ The step size adapts to the truncation error $\mathcal{E} = |n_{\text{k}+1} - n^
 $n^*_{\text{k}+1} = n_{\text{k}} + \Delta t\, g_1$ is the embedded first-order estimate. In
 [`Ros2.step_size`](../Reference/api/op.md#vulcan.op.Ros2.step_size),
  
-$$\Delta t_{\text{k}+1} = \Delta t_{\text{k}} \cdot \mathrm{clamp}\!\left(0.9\,(\mathrm{rtol}/\mathcal{E})^{1/2},\ r_{\min},\ r_{\max}\right)$$
+$$\Delta t_{\text{k}+1} = \Delta t_{\text{k}} \cdot \mathrm{clamp}\!\left(0.9\,(\mathrm{rtol}/\mathcal{E})^{1/2},\ r_{\min},\ r_{\max}\right) \tag{7}$$
  
 where `rtol` is the desired relative tolerance and 0.9 is a safety factor. The step-change
 factor is bounded to $[r_{\min}, r_{\max}] = [0.5,\ 2]$ — the config parameters `dt_var_min`
@@ -114,7 +114,7 @@ evaluated over a look-back window from $f\tau$ to the current integration time $
 set by `st_factor`):
 
 $$\Delta\hat{n} \equiv \max_{\text{i},\text{j}} \frac{|n_{\text{i},\text{j},\text{k}} - n_{\text{i},\text{j},\text{k}'}|}{n_{\text{i},\text{j},\text{k}}},
-\qquad \Delta t \equiv t_{\text{k}} - t_{\text{k}'}$$
+\qquad \Delta t \equiv t_{\text{k}} - t_{\text{k}'} \tag{8}$$
  
 where $\text{k}'$ is the timestep at $f\tau$. Species with mixing ratios below `mtol_conv` or number
 densities below `atol` are excluded from the maximum so that negligible trace species do not

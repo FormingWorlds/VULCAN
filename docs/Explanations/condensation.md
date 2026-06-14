@@ -10,7 +10,7 @@ $A_\mathrm{(gas)} \leftrightarrow A_\mathrm{(particle)}$, the growth rate in the
 **continuum regime** (particles larger than the mean free path, Knudsen number $\mathrm{Kn} < 1$)
 follows the mass-balance expression (Seinfeld & Pandis 2016 [^sp2016]):
 
-$$\frac{\mathrm{d}n_A}{\mathrm{d}t} = -\frac{D_A\,m_A}{\rho_\text{p}\,r_\text{p}^{2}}\left(n_A - n_A^\mathrm{sat}\right) n_A \tag{14}$$
+$$\frac{\mathrm{d}n_A}{\mathrm{d}t} = -\frac{D_A\,m_A}{\rho_\text{p}\,r_\text{p}^{2}}\left(n_A - n_A^\mathrm{sat}\right) n_A \tag{20}$$
 
 where $D_A$ and $m_A$ are the molecular diffusion coefficient and mass of gas $A$, $\rho_\text{p}$ and
 $r_\text{p}$ the particle density and radius, and $n_A^\mathrm{sat}$ the saturation number density.
@@ -27,7 +27,7 @@ A negative value (when $n_A > n_A^\mathrm{sat}$) is condensation; a positive val
 
 Once gas condenses to particles, they fall at the terminal velocity from Stokes' law:
 
-$$v_\text{s} = \frac{2\,r_\text{p}^{2}\,\rho_\text{p}\,g}{9\,\mu} \tag{15}$$
+$$v_\text{s} = \frac{2\,r_\text{p}^{2}\,\rho_\text{p}\,g}{9\,\mu} \tag{21}$$
 
 with $\mu$ the atmospheric dynamic viscosity. The slip-correction factor is taken as unity
 (large-particle limit).

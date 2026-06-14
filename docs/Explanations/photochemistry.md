@@ -8,7 +8,7 @@ to obtain photolysis rates (Section 2.4 of Tsai et al. 2021 [^tsai2021]).
 
 A photolysis reaction is written schematically as the unimolecular process
 
-$$A + h\nu \rightarrow B + C$$
+$$A + h\nu \rightarrow B + C \tag{15}$$
 
 producing reactive radicals that initiate chains essential to atmospheric chemistry (the
 ozone cycle on Earth, organic-haze formation on Titan).
@@ -18,7 +18,7 @@ ozone cycle on Earth, organic-haze formation on Titan).
 The radiation field is described by the **actinic flux** $J(z,\lambda)$: photons per unit
 time, area, and wavelength from all directions. It has a direct-beam and a diffuse component:
 
-$$J(z,\lambda) = J_\infty(\lambda)\,e^{-\tau(z,\lambda)/\mu} + J_\mathrm{diff}(z,\lambda) \tag{8}$$
+$$J(z,\lambda) = J_\infty(\lambda)\,e^{-\tau(z,\lambda)/\mu} + J_\mathrm{diff}(z,\lambda) \tag{16}$$
 
 with $\mu = \cos\theta$ for stellar zenith angle $\theta$. The direct term has no cosine
 prefactor (unlike radiative heating) because the number of intercepted molecules is
@@ -26,7 +26,7 @@ independent of beam direction.
 
 The optical depth includes absorption and scattering,
 
-$$\tau(z,\lambda) = \int \sum_\text{i} \big[\sigma_{\text{a},\text{i}}(\lambda) + \sigma_{\text{s},\text{i}}(\lambda)\big]\,n_\text{i}\,\mathrm{d}z \tag{9}$$
+$$\tau(z,\lambda) = \int \sum_\text{i} \big[\sigma_{\text{a},\text{i}}(\lambda) + \sigma_{\text{s},\text{i}}(\lambda)\big]\,n_\text{i}\,\mathrm{d}z \tag{17}$$
 
 where the absorption cross section $\sigma_{\text{a},\text{i}}$ can differ from the photodissociation cross
 section (absorption is not always followed by dissociation).
@@ -35,7 +35,7 @@ The diffuse flux is obtained with the two-stream approximation of Malik et al. (
 and converted to total intensity using the first Eddington coefficient $\bar\epsilon$
 (Heng et al. 2018 [^heng2018]):
 
-$$J_\mathrm{diff}(z,\lambda) = \frac{F_\mathrm{diff}(z,\lambda)}{\bar\epsilon}, \qquad \bar\epsilon = 0.5 \tag{10}$$
+$$J_\mathrm{diff}(z,\lambda) = \frac{F_\mathrm{diff}(z,\lambda)}{\bar\epsilon}, \qquad \bar\epsilon = 0.5 \tag{18}$$
 
 Multiple scattering is handled iteratively; the converged state is typically reached within
 ~200 iterations for a strongly irradiated hot Jupiter.
@@ -45,7 +45,7 @@ Multiple scattering is handled iteratively; the converged state is typically rea
 The photolysis rate coefficient integrates the actinic flux and absorption cross section over
 wavelength,
 
-$$k = \int \sigma_\text{a}(\lambda)\,q(\lambda)\,J(z,\lambda)\,\mathrm{d}\lambda \tag{11}$$
+$$k = \int \sigma_\text{a}(\lambda)\,q(\lambda)\,J(z,\lambda)\,\mathrm{d}\lambda \tag{19}$$
 
 with $q(\lambda)$ the quantum yield (probability of a given branch per absorbed photon), and
 the photolysis rate of the reaction is $\mathrm{d}n_A/\mathrm{d}t = -k\,n_A$. Cross sections

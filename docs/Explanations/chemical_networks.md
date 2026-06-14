@@ -26,7 +26,7 @@ The active network is selected with [`config.network`](../Reference/config.md#ch
 Forward rate coefficients follow the generalised Arrhenius equation:
 
 $$
-k = a\,T^{n}\exp(-E/T), \tag{7}
+k = a\,T^{n}\exp(-E/T), \tag{10}
 $$ 
 
 where $k$ is the rate coefficient in cm$^3$s$^{-1}$ for bimolecular reactions and  cm$^6$s$^{-1}$ for termolecular reactions. Three-body reactions additionally carry high-pressure-limit
@@ -53,19 +53,19 @@ All thermochemical reactions are reversed using the equilibrium constant derived
 NASA polynomials. The forward/reverse reaction rate coefficients follow the following relation: 
 
 
-$$\frac{k_\text{f}}{k_\text{r}} = K_\mathrm{eq} \left(\frac{k_\text{B} T}{P_0}\right)^{\Delta\mu} \tag{8}$$
+$$\frac{k_\text{f}}{k_\text{r}} = K_\mathrm{eq} \left(\frac{k_\text{B} T}{P_0}\right)^{\Delta\mu} \tag{11}$$
 
 where $K_\mathrm{eq}$ is the dimensional equilibrium constant, expressed via the standard Gibbs free energy as
 
-$$K_\mathrm{eq} = \exp\!\left(-\frac{\Delta G^0}{\mathcal{R}T}\right) = \exp\!\left(-\frac{\Delta H^0 - T\Delta s^0}{\mathcal{R}T}\right) \tag{9}$$
+$$K_\mathrm{eq} = \exp\!\left(-\frac{\Delta G^0}{\mathcal{R}T}\right) = \exp\!\left(-\frac{\Delta H^0 - T\Delta s^0}{\mathcal{R}T}\right) \tag{12}$$
 
 with $\Delta G^0 = \Delta G[\text{products}] - \Delta G[\text{reactants}]$, so the reverse rate coefficient is
 
-$$k_\text{r} = \frac{k_\text{f}}{\exp\!\left[-(\Delta H^0 - T\Delta s^0)/\mathcal{R}T\right]} \left(\frac{k_\text{B} T}{P_0}\right)^{-\Delta\mu} \tag{10}$$
+$$k_\text{r} = \frac{k_\text{f}}{\exp\!\left[-(\Delta H^0 - T\Delta s^0)/\mathcal{R}T\right]} \left(\frac{k_\text{B} T}{P_0}\right)^{-\Delta\mu} \tag{13}$$
 
 The standard enthalpy and entropy from the NASA polynomials are
 
-$$\frac{H^0}{\mathcal{R}T} = -a_1 T^{-2} + a_2 \frac{\ln T}{T} + a_3 + \frac{a_4}{2}T + \frac{a_5}{3}T^2 + \frac{a_6}{4}T^3 + \frac{a_7}{5}T^4 + \frac{a_8}{T} \tag{11}$$
+$$\frac{H^0}{\mathcal{R}T} = -a_1 T^{-2} + a_2 \frac{\ln T}{T} + a_3 + \frac{a_4}{2}T + \frac{a_5}{3}T^2 + \frac{a_6}{4}T^3 + \frac{a_7}{5}T^4 + \frac{a_8}{T} \tag{14}$$
 
 ### Implementation in VULCAN
 

@@ -37,8 +37,7 @@ for the supporting species.
 ## Diagnostic: column density above 1 mbar
 
 The model does not grow particles; instead the **column number density of each precursor
-above 1 mbar** is used as the diagnostic of haze-forming potential (Figure 37 of the paper [^tsai2021]).
-Across the irradiated H$_2$-dominated atmospheres studied, HCN is consistently the most
+above 1 mbar** is used as the diagnostic of haze-forming potential. Across the irradiated H$_2$-dominated atmospheres studied, HCN is consistently the most
 abundant precursor, but this does not by itself imply complex-nitrile formation. HC$_3$N,
 C$_4$H$_2$, and C$_6$H$_6$ tend to increase with decreasing temperature, while CH$_3$CN shows
 the opposite trend; CS$_2$ (containing no hydrogen) is most favored in hot Jupiter conditions.
