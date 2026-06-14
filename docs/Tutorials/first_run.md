@@ -98,9 +98,15 @@ cd tools/
 python plot_vulcan.py <vulcan_output.pkl> <species> <plot_name> [-h for height axis]
 ```
 
-For example, plotting the main species from the default run. The script reads the pickled
-output and writes a figure of mixing ratio versus pressure (or height with `-h`).
+For example, to plot the default species from the HD 189733b run:
 
+```sh
+python plot_vulcan.py ../output/example.pkl H2,H,H2O,CH4,CO,CO2,C2H2 hd189b
+```
+
+This reads the pickled output and writes `hd189b.png` to `plot_dir`, showing mixing ratio
+versus pressure (or height with `-h`), with the initial (equilibrium) abundances shown as
+dotted lines.
 
 ---
 
@@ -112,7 +118,7 @@ output and writes a figure of mixing ratio versus pressure (or height with `-h`)
   python run_vulcan.py -n
   ```
   Only use `-n` if you have **not** edited the network, see
-  [editing../How-to/chem_network.md).
+  [editing the chemical network](../How-to/chem_network.md).
 - **Turn off live plotting:** `self.use_live_plot = False`.
 - **Lower the vertical resolution.** The number of layers is `nz` (default 50); fewer layers
   run faster at the cost of vertical detail:
