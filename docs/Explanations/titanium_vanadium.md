@@ -48,7 +48,7 @@ machinery already supports:
   three-body forms;
 - the thermodynamic data sit in `thermo/NASA9/` (with the externally sourced fits for TiH,
   TiC, etc.), and are reversed to enforce equilibrium through the same
-  [`make_chem_funs.make_Gibbs`](../Reference/api/make_chem_funs.md#vulcan.make_chem_funs.make_Gibbs) / [`op.ReadRate.rev_rate`]((../Reference/api/op.md#vulcan.op.ReadRate.rev_rate)) path described in
+  [`make_chem_funs.make_Gibbs`](../Reference/api/make_chem_funs.md#vulcan.make_chem_funs.make_Gibbs) / [`op.ReadRate.rev_rate`](../Reference/api/op.md#vulcan.op.ReadRate.rev_rate) path described in
   [Chemical networks](chemical_networks.md);
 - the Ti/V photodissociation branches are handled by `compute_J` using their tabulated cross
   sections, exactly as for the C–H–N–O–S photolysis reactions.
