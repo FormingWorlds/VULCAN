@@ -1,6 +1,6 @@
 """
 -------
-Module that includes all the numerical functions of VULCAN. 
+Module that includes all the numerical functions of VULCAN.
 
 Copyright (C) 2016 Shang-Min Tsai (Shami)
 

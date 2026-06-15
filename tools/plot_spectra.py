@@ -1,12 +1,12 @@
 import sys
 sys.path.insert(0, '../') # including the upper level of directory for the path of modules
 
-import numpy as np 
+import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.legend as lg
 import vulcan_cfg
 try: from PIL import Image
-except ImportError: 
+except ImportError:
     try: import Image
     except: vulcan_cfg.use_PIL = False
 import os, sys
@@ -43,10 +43,10 @@ tran = {}
 
 for index, data in enumerate(data_list):
     tran[index] = np.genfromtxt(data,dtype=float,skip_header=1, names = ['lambda','R'])
-    
+
     plt.plot(tran[index]['lambda'], 100*(tran[index]['R']/r_sun)**2, color=colors[index], label=label_list[index], lw=1, alpha=0.5)
-        
-plt.gca().set_xscale('log') 
+
+plt.gca().set_xscale('log')
 plt.xlim((1,6.01))
 #plt.xticks([1,5,10])
 plt.gca().xaxis.set_major_formatter(mtick.FormatStrFormatter('%i'))
@@ -63,4 +63,3 @@ if vulcan_cfg.use_PIL == True:
     plot = Image.open(plot_dir + plot_name + '.png')
     plot.show()
 else: plt.show()
-

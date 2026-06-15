@@ -103,7 +103,7 @@ struct Element : public ChemicalSpecies<double_type>
 
   void calcMinorSpeciesDensities(const std::vector< Molecule<double_type> > &molecules);
   void calcEpsilon(const std::vector< Element<double_type> > &elements);
-  
+
   void checkN(const double_type& min_limit, const double_type& gas_density);
   bool checkElementConservation(const std::vector< Molecule<double_type> >& molecules, const double_type total_density, const double_type& accuracy);
   bool checkChargeConservation(const std::vector< Molecule<double_type> >& molecules, const double_type& accuracy);

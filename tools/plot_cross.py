@@ -2,27 +2,27 @@
 """
 Created on Mon Oct 16 10:29:09 2017
 
-@author: 
+@author:
 """
 import numpy as np
 from matplotlib import pyplot as plt
 import csv, ast
 try: from PIL import Image
-except ImportError: 
+except ImportError:
     try: import Image
     except: vulcan_cfg.use_PIL = False
 
 network = 'New-NCHO_earth_photo_network.txt'
 plot_dir = '../plot/'
 
-    
+
 #molecule='CO'
 #mol_list = ['H2O'] # 'CH4','CH3','C2H2','C2H4','C2H6','CO','CO2','H2','H2O','H2CO','HCO','HCN','N2','NH3','NO','O2', 'OH', 'NO2','HO2','H2O2'
 molecule = 'SH'
-# H/OH     H2/O1D   O/H/H    OH+H     O+H2     H+OH     H2O+ 
-# sCH2/H2  CH3/H    CH2/H/H  CH4+     CH3+H    CH2+H2   CH+H2/H  H+CH3    CH/H2/H  
+# H/OH     H2/O1D   O/H/H    OH+H     O+H2     H+OH     H2O+
+# sCH2/H2  CH3/H    CH2/H/H  CH4+     CH3+H    CH2+H2   CH+H2/H  H+CH3    CH/H2/H
 
-#O2: Lambda  Total   O/O      O/O1D    O+O      O1S/O1S  O2+       
+#O2: Lambda  Total   O/O      O/O1D    O+O      O1S/O1S  O2+
 # number of branches
 n_branch = 1
 
@@ -48,11 +48,11 @@ leiden = np.genfromtxt('../thermo/photo_cross/'+molecule+'/'+molecule+'_cross.cs
 #
 # exomol = np.genfromtxt('ExoMol_highT/'+molecule+'_181-231_T1630K.txt',dtype=float, skip_header=1, names = ['lambda','cross'])
 
-color_list = ['r', 'g', 'b', 'purple', 'c', 'orange']    
+color_list = ['r', 'g', 'b', 'purple', 'c', 'orange']
 for _,T in enumerate(T_list):
     plt.plot( cross[T]['lambda'], cross[T]['cross'], alpha=0.8, label = str(T), lw=1.5)
-    
-    
+
+
 plt.plot( leiden['lambda'], leiden['cross'], c='k', alpha=0.6, label = 'reference')
 
 
@@ -65,7 +65,7 @@ plt.savefig(plot_dir + '_cross.png')
 #plt.savefig(plot_dir + molecule + '_tot_cross.eps')
 plot = Image.open(plot_dir + '_cross.png')
 plot.show()
- 
+
 
 # plt.figure()
 # # plotting to verify

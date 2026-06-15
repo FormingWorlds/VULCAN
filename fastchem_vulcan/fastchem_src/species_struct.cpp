@@ -35,23 +35,23 @@ namespace fastchem {
 template <class double_type>
 void Element<double_type>::calcMinorSpeciesDensities(const std::vector< Molecule<double_type> > &molecules)
 {
-  
+
   number_density_min = 0.0;
-  
+
   for (size_t jj=0; jj<minor_molecules.size(); ++jj)
-  { 
+  {
     const unsigned int j = minor_molecules[jj];
-    
+
     number_density_min += (molecules[j].stoichometric_vector[index] + epsilon * molecules[j].sigma) * molecules[j].number_density;
   }
- 
+
 }
 
 
 
 template <class double_type>
 void Element<double_type>::calcEpsilon(const std::vector< Element<double_type> > &elements)
-{ 
+{
 
   double_type element_sum = 0.0;
 

@@ -95,7 +95,7 @@ FastChem<double_type>::FastChem(const FastChem &obj) : solver(&options)
 
   options.verbose_level = obj.options.verbose_level;
   options.use_scaling_factor = obj.options.use_scaling_factor;
-  
+
 
 
   options.chemical_element_file = obj.options.chemical_element_file;

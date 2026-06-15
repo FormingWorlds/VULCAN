@@ -1,22 +1,22 @@
 import sys
 sys.path.insert(0, '../') # including the upper level of directory for the path of modules
 
-import numpy as np 
+import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.legend as lg
 import vulcan_cfg
 try: from PIL import Image
-except ImportError: 
+except ImportError:
     try: import Image
     except: vulcan_cfg.use_PIL = False
 import os, sys
 import pickle
 
 
-# Setting the 2nd input argument as the filename of vulcan output   
+# Setting the 2nd input argument as the filename of vulcan output
 vul_data = '../output/db02-HD189.vul'
 
-# Setting the 4th input argument as the output eps filename        
+# Setting the 4th input argument as the output eps filename
 plot_name = 'TPK-HD189'
 
 plot_dir = '../' + vulcan_cfg.plot_dir
@@ -39,9 +39,9 @@ vulcan_spec = data['variable']['species']
 plt.plot(data['atm']['Tco'], data['atm']['pco']/1.e6, color='r')
 #plt.plot(data['atm']['Kzz'], data['atm']['pico'][1:-1]/1.e6, color='r')
 
-#plt.gca().set_xscale('log')       
-plt.gca().set_yscale('log') 
-plt.gca().invert_yaxis() 
+#plt.gca().set_xscale('log')
+plt.gca().set_yscale('log')
+plt.gca().invert_yaxis()
 plt.xlim(right=4000)
 #plt.ylim((0, 80.))
 plt.ylim((1.E3,data['atm']['pco'][-1]/1e6))
@@ -68,9 +68,9 @@ else: plt.show()
 plt.figure()
 plt.plot(data['atm']['Kzz'], data['atm']['pico'][1:-1]/1.e6, color='k')
 
-plt.gca().set_xscale('log')       
-plt.gca().set_yscale('log') 
-plt.gca().invert_yaxis() 
+plt.gca().set_xscale('log')
+plt.gca().set_yscale('log')
+plt.gca().invert_yaxis()
 #plt.xlim((1.E-12, 1.))
 #plt.ylim((0, 80.))
 #plt.ylim((1.E3,data['atm']['pco'][-1]/1e6))

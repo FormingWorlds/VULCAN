@@ -1,7 +1,7 @@
 """
 ---
 
-Configuration module for VULCAN. Contains the `Config` class, which holds all the configuration settings for running VULCAN. 
+Configuration module for VULCAN. Contains the `Config` class, which holds all the configuration settings for running VULCAN.
 
 Imports:
 ---

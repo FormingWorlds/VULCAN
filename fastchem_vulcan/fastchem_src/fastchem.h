@@ -68,7 +68,7 @@ class FastChem{
     void setElementAbundance(std::vector<double> abundances);
 
     void setVerboseLevel(const unsigned int level) { if (level > 4) options.verbose_level = 4; else options.verbose_level = level;}
-    
+
     void setMaxChemistryIter(const unsigned int nb_steps) {options.nb_max_fastchem_iter = nb_steps;}
     void setMaxNewtonIter(const unsigned int nb_steps) {options.nb_max_newton_iter = nb_steps;}
     void setMaxBisectionIter(const unsigned int nb_steps) {options.nb_max_bisection_iter = nb_steps;}
@@ -112,7 +112,7 @@ class FastChem{
     bool readElementAbundances();
     void setElementAbundance(const std::string symbol, const double abundance);
     void setMoleculeAbundances();
-  
+
     bool readSpeciesData();
     void addMolecule(const std::string name, const std::string symbol,
                      const std::vector<std::string> species_elements, const std::vector<int> stoichometric_coeff,
@@ -136,7 +136,7 @@ class FastChem{
 
     //Functions for the calculations of the number densities
     unsigned int calcDensity(const double temperature, const double pressure, const bool use_previous_solution,
-                             std::vector<double>& number_densities, double& total_element_density, 
+                             std::vector<double>& number_densities, double& total_element_density,
                              double& mean_molecular_weight,
                              std::vector<unsigned int>& element_conserved,
                              unsigned int& nb_chemistry_iterations);
@@ -147,12 +147,12 @@ class FastChem{
     void calculateElementDensities(Element<double_type>& species, const double_type gas_density,
                                    bool use_backup_solver, double_type& n_major);
     double_type calculateMoleculeDensities(Element<double_type>& species, const double_type gas_density);
-    
+
     void calculateElectronDensities(Element<double_type>& species, const double_type& old_number_density, const double_type gas_density);
     void calculateSinglyIonElectrons(Element<double_type>& electron, const double_type& old_number_density);
     void calculateMultIonElectrons(Element<double_type>& electron, const double_type& old_number_density, const double_type& gas_density);
-    
-    
+
+
     double totalElementDensity();
     double meanMolecularWeight(const double gas_density);
 };

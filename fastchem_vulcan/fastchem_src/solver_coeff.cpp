@@ -33,11 +33,11 @@
 namespace fastchem {
 
 template <class double_type>
-FastChemSolver<double_type>::FastChemSolver(FastChemOptions<double_type>* options_ptr) 
+FastChemSolver<double_type>::FastChemSolver(FastChemOptions<double_type>* options_ptr)
 {
 
-  options = options_ptr; 
-  
+  options = options_ptr;
+
 }
 
 
@@ -54,7 +54,7 @@ double_type FastChemSolver<double_type>::A1Coeff(const Element<double_type>& spe
   {
     const unsigned int i = species.molecule_list[j];
 
-    
+
     if (molecules[i].stoichometric_vector[index] == 1 && molecules[i].abundance == species.abundance)
     {
       double_type sum = 0;
@@ -62,19 +62,19 @@ double_type FastChemSolver<double_type>::A1Coeff(const Element<double_type>& spe
       for (size_t k=0; k<molecules[i].element_indices.size(); ++k)
       {
         unsigned int l = molecules[i].element_indices[k];
-  
+
 
         if (l != species.index && molecules[i].stoichometric_vector[l] != 0)
           sum += molecules[i].stoichometric_vector[l] * std::log(elements[l].number_density);
       }
 
       const double_type kappa = 1.0 + species.epsilon * molecules[i].sigma;
-      
+
       A1 += std::exp(molecules[i].mass_action_constant + sum) * kappa;
     }
   }
 
-  
+
   return A1;
 
 }
@@ -108,20 +108,20 @@ double_type FastChemSolver<double_type>::A2Coeff(const Element<double_type>& spe
       }
 
 
-      const double_type kappa = 2.0 + species.epsilon * molecules[i].sigma; 
-      
+      const double_type kappa = 2.0 + species.epsilon * molecules[i].sigma;
+
       A2 += std::exp(molecules[i].mass_action_constant + sum) * kappa;
     }
   }
-  
-  
+
+
   return A2;
 }
 
 
 
 template <class double_type>
-double_type FastChemSolver<double_type>::AmCoeff(const Element<double_type>& species, const std::vector< Element<double_type> >& elements, const std::vector< Molecule<double_type> >& molecules, 
+double_type FastChemSolver<double_type>::AmCoeff(const Element<double_type>& species, const std::vector< Element<double_type> >& elements, const std::vector< Molecule<double_type> >& molecules,
                                                  const unsigned int order)
 {
   const unsigned int index = species.index;
@@ -148,13 +148,13 @@ double_type FastChemSolver<double_type>::AmCoeff(const Element<double_type>& spe
       }
 
 
-      const double_type kappa = order + species.epsilon * molecules[i].sigma; 
-      
+      const double_type kappa = order + species.epsilon * molecules[i].sigma;
+
       Am += std::exp(molecules[i].mass_action_constant + sum) * kappa;
     }
   }
-  
-  
+
+
   return Am;
 }
 
@@ -163,7 +163,7 @@ double_type FastChemSolver<double_type>::AmCoeff(const Element<double_type>& spe
 //Alternative description of the Am coefficients
 //Takes the full law of mass action into account, i.e. doesn't stop at minor species as the regular calculation
 template <class double_type>
-double_type FastChemSolver<double_type>::AmCoeffAlt(const Element<double_type>& species, const std::vector< Element<double_type> >& elements, const std::vector< Molecule<double_type> >& molecules, 
+double_type FastChemSolver<double_type>::AmCoeffAlt(const Element<double_type>& species, const std::vector< Element<double_type> >& elements, const std::vector< Molecule<double_type> >& molecules,
                                                     const unsigned int order)
 {
   const unsigned int index = species.index;
@@ -190,13 +190,13 @@ double_type FastChemSolver<double_type>::AmCoeffAlt(const Element<double_type>& 
       }
 
 
-      const double_type kappa = order + species.epsilon * molecules[i].sigma; 
-      
+      const double_type kappa = order + species.epsilon * molecules[i].sigma;
+
       Am += std::exp(molecules[i].mass_action_constant + sum) * kappa;
     }
   }
-  
-  
+
+
   return Am;
 }
 
@@ -205,7 +205,7 @@ double_type FastChemSolver<double_type>::AmCoeffAlt(const Element<double_type>& 
 //Alternative description of the Am coefficients
 //Takes the full law of mass action into account, i.e. doesn't stop at minor species as the regular calculation
 template <class double_type>
-double_type FastChemSolver<double_type>::AmCoeffElectron(const Element<double_type>& electron, const std::vector< Element<double_type> >& elements, const std::vector< Molecule<double_type> >& molecules, 
+double_type FastChemSolver<double_type>::AmCoeffElectron(const Element<double_type>& electron, const std::vector< Element<double_type> >& elements, const std::vector< Molecule<double_type> >& molecules,
                                                          const int order)
 {
   const unsigned int index = electron.index;
@@ -231,12 +231,12 @@ double_type FastChemSolver<double_type>::AmCoeffElectron(const Element<double_ty
 
       }
 
-      
+
       Am += std::exp(molecules[i].mass_action_constant + sum) * order;
     }
   }
-  
-  
+
+
   return Am;
 }
 
@@ -246,6 +246,3 @@ template class FastChemSolver<double>;
 template class FastChemSolver<long double>;
 
 }
-
-
-

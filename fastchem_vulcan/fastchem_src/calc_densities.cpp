@@ -37,7 +37,7 @@ unsigned int FastChem<double_type>::calcDensities(FastChemInput& input, FastChem
 {
   if (!is_initialized)
     return FASTCHEM_INITIALIZATION_FAILED;
-  
+
 
   if (is_busy == true)
   {
@@ -54,23 +54,23 @@ unsigned int FastChem<double_type>::calcDensities(FastChemInput& input, FastChem
 
   if ( pressure <= 0.0 || temperature <= 0.0 )
   {
-     
+
      std::cout << "Check input values! Temperature: " << temperature << "  pressure: " << pressure << "\n";
      is_busy = false;
-     
+
      return FASTCHEM_WRONG_INPUT_VALUES;
 
   }
-  
-  
-  unsigned int status = calcDensity(temperature, pressure, input.use_previous_solution, 
+
+
+  unsigned int status = calcDensity(temperature, pressure, input.use_previous_solution,
                                     output.number_densities,
-                                    output.total_element_density, 
+                                    output.total_element_density,
                                     output.mean_molecular_weight,
                                     output.element_conserved,
                                     output.nb_chemistry_iterations);
-  
-    
+
+
   is_busy = false;
 
   return status;
@@ -84,7 +84,7 @@ unsigned int FastChem<double_type>::calcDensities(FastChemInput& input, FastChem
 //This function will be called by any public calcDensity function
 template <class double_type>
 unsigned int FastChem<double_type>::calcDensity(const double temperature, const double pressure, const bool use_previous_solution,
-                                                std::vector<double>& number_densities, double& total_element_density, 
+                                                std::vector<double>& number_densities, double& total_element_density,
                                                 double& mean_molecular_weight,
                                                 std::vector<unsigned int>& element_conserved,
                                                 unsigned int& nb_chemistry_iterations)
@@ -95,33 +95,33 @@ unsigned int FastChem<double_type>::calcDensity(const double temperature, const 
   //this value will be fixed.
   double_type gas_density = pressure/(CONST_K * temperature);
 
-  
+
   if (use_previous_solution == true)
   {
 
    //if we use the previous solution, convert the stored mixing ratios to number densities
    for (auto & i : species)  i->number_density *= gas_density;
-  
+
   }
   else
   {
 
     //for a fresh start set all species to the minimum value
     for (auto & i : species) i->number_density = options.element_density_minlimit;
-    
+
     //set the initial electron density to 1 (for stability reasons)
     if (e_ != FASTCHEM_UNKNOWN_SPECIES)
       elements[e_].number_density = 1.0;
 
   }
-  
 
 
-  //call the main FastChem solver  
+
+  //call the main FastChem solver
   bool fastchem_converged = solveFastchem(temperature, gas_density, nb_chemistry_iterations);
 
 
-  
+
   if (!fastchem_converged && options.verbose_level >= 1) std::cout << "Convergence problem in FastChem. :(\n";
 
 
@@ -129,7 +129,7 @@ unsigned int FastChem<double_type>::calcDensity(const double temperature, const 
   number_densities.assign(nb_species, 0.0);
 
   for (size_t i=0; i<nb_species; ++i)
-    number_densities[i] = species[i]->number_density; 
+    number_densities[i] = species[i]->number_density;
 
 
   mean_molecular_weight = meanMolecularWeight(gas_density);
@@ -139,7 +139,7 @@ unsigned int FastChem<double_type>::calcDensity(const double temperature, const 
 
 
   for (auto & i : elements) i.checkElementConservation(molecules, total_element_density, options.accuracy);
-  
+
   element_conserved.assign(nb_elements, 0);
 
   for (size_t i=0; i<nb_elements; ++i)
@@ -154,7 +154,7 @@ unsigned int FastChem<double_type>::calcDensity(const double temperature, const 
   //store the mixing ratios in case we want to use them in the future
   for (auto & i : species) i->number_density /= gas_density;
 
-  
+
   return return_state;
 }
 
@@ -165,5 +165,3 @@ template class FastChem<long double>;
 
 
 }
-
-

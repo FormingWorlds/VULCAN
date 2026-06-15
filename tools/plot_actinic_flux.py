@@ -1,17 +1,17 @@
 import sys
 sys.path.insert(0, '../') # including the upper level of directory for the path of modules
 
-import numpy as np 
+import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.legend as lg
 import vulcan_cfg
 try: from PIL import Image
-except ImportError: 
+except ImportError:
     try: import Image
     except: vulcan_cfg.use_PIL = False
 import os, sys
 import pickle
-       
+
 plot_name = 'Earth-photosphere_sp_sum'
 vul_data = '../output/v321-100nmcut-cap_condenR1e-6-Paul-ini-Earth.vul'
 plot_dir = '../' + vulcan_cfg.plot_dir
@@ -33,7 +33,7 @@ height_list = [10, 20, 30, 40, 50, 60]
 # photosphere of each species
 tau_sp= {}
 
-photo_sp = ['O2', 'O3', 'H2O'] # , 'H2', 'CH4', 'CO2'   
+photo_sp = ['O2', 'O3', 'H2O'] # , 'H2', 'CH4', 'CO2'
 #, 'N2', 'C2H4', 'C2H2','C2H6', 'CH3', 'CO2', 'HCO','HCN'  ,'CH3CHO','NO' , 'NO2'
 #scat_sp = ['H2','He']
 scat_sp = ['N2', 'O2']
@@ -46,7 +46,7 @@ vulcan_spec = data['variable']['species']
 
 for zz in height_list:
     # Find the index of zco
-    z_indx = min( range(len(data['atm']['zco'])), key=lambda i: abs(data['atm']['zco'][i]-zz*1e5))    
+    z_indx = min( range(len(data['atm']['zco'])), key=lambda i: abs(data['atm']['zco'][i]-zz*1e5))
     plt.plot(bins, data['variable']['aflux'][z_indx], c=colors[color_index], lw=1.2, label=str(int(data['atm']['zco'][z_indx]/1e5))  )
     color_index += 1
 
@@ -54,9 +54,9 @@ for zz in height_list:
 
 
 #plt.plot(data['variable']['bins'], photosph_abs, c='red')
-           
-plt.gca().set_yscale('log') 
-#plt.gca().invert_yaxis() 
+
+plt.gca().set_yscale('log')
+#plt.gca().invert_yaxis()
 plt.ylim((1.E9,1.E15))
 plt.xlim((150,400))
 plt.legend(frameon=0, prop={'size':12}, loc='best')
@@ -69,4 +69,3 @@ if vulcan_cfg.use_PIL == True:
     plot = Image.open(plot_dir + plot_name + '.png')
     plot.show()
 else: plt.show()
-

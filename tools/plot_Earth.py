@@ -1,23 +1,23 @@
 import sys
 sys.path.insert(0, '../') # including the upper level of directory for the path of modules
 
-import numpy as np 
+import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.legend as lg
 import vulcan_cfg
 try: from PIL import Image
-except ImportError: 
+except ImportError:
     try: import Image
     except: vulcan_cfg.use_PIL = False
 import os, sys
 import pickle
 
 
-# Setting the 2nd input argument as the filename of vulcan output   
+# Setting the 2nd input argument as the filename of vulcan output
 vul_data = sys.argv[1]
 # Setting the 3rd input argument as the species names to be plotted (separated by ,)
 plot_spec = sys.argv[2]
-# Setting the 4th input argument as the output eps filename        
+# Setting the 4th input argument as the output eps filename
 plot_name = sys.argv[3]
 
 plot_dir = '../' + vulcan_cfg.plot_dir
@@ -35,7 +35,7 @@ tex_labels = {'H':'H','H2':'H$_2$','O':'O','OH':'OH','H2O':'H$_2$O','CH':'CH','C
 # Data from MASSIE & HUNTEN (1981)
 z_MH = np.arange(0,66,5)
 z_MH[0] = 1
-n2o_MH = 1e-9* np.array([316., 316., 316., 304, 251., 177., 112., 51., 16, 5.4, 2.1, 1.1, 0.62, 0.35])  
+n2o_MH = 1e-9* np.array([316., 316., 316., 304, 251., 177., 112., 51., 16, 5.4, 2.1, 1.1, 0.62, 0.35])
 ch4_MH = 1e-6* np.array([1.54,1.54,1.54, 1.48,1.28,1.09,0.93,0.76,0.60,0.47,0.36,0.27,0.22,0.18])
 o3_MH =  1e-6* np.array([0.3,0.32,0.05,0.33,2.2,5.7,6.5,6.2,4.7,2.9,1.6,0.86,0.56,0.41])
 
@@ -46,7 +46,7 @@ no_sen = 1e-7/30.*np.array([0.1, 0.15, 0.2, 0.3,0.5,0.7,0.85,1., 1.5,2,3,5,7,8,9
 # Data from U.S. Standard Atmosphere 1976
 z_us = np.arange(0,16.1,2)
 z_us[0] = 1.
-z_us = np.append(z_us,np.arange(18,33,2)) 
+z_us = np.append(z_us,np.arange(18,33,2))
 z_us = np.append(z_us,np.arange(35,81,5))
 
 h2o_us = 1e-6/18*100*np.array([3700,2843,1268,554,216,43.2,11.3,3.3,3.3,3.3,4.5,7.2,11.6,18.6,18.2,17.6,16.8,15.4,12.2,11.1,7.6,4.9,3.8,2.3,1.4,1.1,0.6])
@@ -64,19 +64,19 @@ vulcan_spec2 = data2['variable']['species']
 for sp in plot_spec:
     if color_index == len(colors): # when running out of colors
         colors.append(tuple(np.random.rand(3)))
-    
+
     if sp in tex_labels: sp_lab = tex_labels[sp]
-    else: sp_lab = sp  
-    
+    else: sp_lab = sp
+
     plt.plot(data['variable']['ymix'][:,vulcan_spec.index(sp)], data['atm']['zco'][:-1]/1.e5, color=colors[color_index], label=sp_lab)
     #plt.plot(data['variable']['y_ini'][:,vulcan_spec.index(sp)]/data['atm']['n_0'], data['atm']['pco']/1.e6, color=colors[color_index], ls=':', lw=1.5)
-    
+
     plt.plot(data2['variable']['ymix'][:,vulcan_spec2.index(sp)], data2['atm']['zco'][:-1]/1.e5, color=colors[color_index], ls='--')
-    
+
     if sp == 'H2O': plt.plot(data['atm']['sat_p']['H2O']/data['atm']['pco'], data['atm']['zco'][:-1]/1.e5, color=colors[color_index], ls='-.', label='H2O saturation')
-        
-        
-        
+
+
+
     if sp == 'O3':
         plt.scatter(o3_MH, z_MH, marker='o', color=colors[color_index], facecolor= 'None', alpha=0.7)
         plt.errorbar(o3_MH, z_MH, xerr=np.vstack((o3_MH*0.9,o3_MH*9)), color=colors[color_index], linestyle='None', alpha=0.7)
@@ -86,22 +86,22 @@ for sp in plot_spec:
     elif sp == 'CH4':
         plt.scatter(ch4_MH, z_MH, marker='o', color=colors[color_index], facecolor= 'None', alpha=0.7)
         plt.errorbar(ch4_MH, z_MH, xerr=np.vstack((ch4_MH*0.9,ch4_MH*9)), color=colors[color_index], linestyle='None', alpha=0.7)
-    
+
     elif sp == 'NO':
         plt.scatter(no_sen, z_sen, marker='o', color=colors[color_index], facecolor= 'None', alpha=0.7)
         plt.errorbar(no_sen, z_sen, xerr=np.vstack((no_sen*0.9,no_sen*9)), color=colors[color_index], linestyle='None', alpha=0.7)
-    
+
     elif sp == 'H2O':
         plt.scatter(h2o_us, z_us, marker='o', color=colors[color_index], facecolor= 'None', alpha=0.7)
         plt.errorbar(h2o_us, z_us, xerr=np.vstack((h2o_us*0.9,h2o_us*9)), color=colors[color_index], linestyle='None', alpha=0.7)
-        
-    
+
+
     color_index +=1
 
 
-plt.gca().set_xscale('log')       
-#plt.gca().set_yscale('log') 
-#plt.gca().invert_yaxis() 
+plt.gca().set_xscale('log')
+#plt.gca().set_yscale('log')
+#plt.gca().invert_yaxis()
 plt.xlim((1.E-14, 1.e-2))
 plt.ylim((0, 80.))
 #plt.ylim((1.E3,data['atm']['pco'][-1]/1e6))
@@ -127,11 +127,11 @@ else: plt.show()
 
 # Plot concentration
 plt.figure()
-plt.plot(data['variable']['y'][:,vulcan_spec.index('H2O')], data['atm']['zco'][:-1]/1.e5, color='b', label='H2O')    
+plt.plot(data['variable']['y'][:,vulcan_spec.index('H2O')], data['atm']['zco'][:-1]/1.e5, color='b', label='H2O')
 plt.plot(data['variable']['y'][:,vulcan_spec.index('OH')], data['atm']['zco'][:-1]/1.e5, color='g', label='OH')
 plt.plot(data['variable']['y'][:,vulcan_spec.index('HO2')], data['atm']['zco'][:-1]/1.e5, color='r', label='HO2')
 
-plt.gca().set_xscale('log')  
+plt.gca().set_xscale('log')
 plt.legend(frameon=0, prop={'size':12}, loc='best')
 
 
@@ -148,7 +148,7 @@ plt.savefig(plot_dir + plot_name + '-concentration.eps')
 
 plt.figure()
 #plt.plot(data['atm']['sat_p']['H2O']/data['atm']['pco'], data['atm']['zco'][:-1]/1.e5, color='b')
-    
+
 plt.plot(data['variable']['y'][:,vulcan_spec.index('HO2')], data['atm']['zco'][:-1]/1.e5, color='b')
 
 plt.xlabel("Saturation mixing ratio", fontsize=12)

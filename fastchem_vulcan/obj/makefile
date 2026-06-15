@@ -16,6 +16,6 @@ o-files     = $(shell echo *.o)
 all-l:
 	@echo "linking program --> $(o-files)"
 	@$(CC) $(o-files) $(F77LIBS) $(LDFLAGS) -o ../$(EXECUTABLE_NAME)
-	
-clean: 
-	rm -f $(o-files) 
+
+clean:
+	rm -f $(o-files)

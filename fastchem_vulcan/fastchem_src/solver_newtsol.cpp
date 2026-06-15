@@ -38,11 +38,11 @@ namespace fastchem {
 //The standard version (use_alternative = false) uses the n_min approach to account for minor species
 //For use_alternative = true, it will use all species in the law of mass action
 template <class double_type>
-void FastChemSolver<double_type>::newtonSol(Element<double_type>& species, std::vector< Element<double_type> >& elements, const std::vector< Molecule<double_type> >& molecules, 
+void FastChemSolver<double_type>::newtonSol(Element<double_type>& species, std::vector< Element<double_type> >& elements, const std::vector< Molecule<double_type> >& molecules,
                                             const double_type gas_density, const bool use_alternative)
 {
   double_type scaling_factor = 0.0;
-  
+
   //in case we use the scaling factor, see Appendix A for details
   if (options->use_scaling_factor)
     scaling_factor = solverScalingFactor(species, gas_density); // + std::numeric_limits<double_type>::min_exponent/6.0;
@@ -51,7 +51,7 @@ void FastChemSolver<double_type>::newtonSol(Element<double_type>& species, std::
   unsigned int order = 0;
 
   //calculation of the polynomial coefficients
-  std::vector<double_type> Aj; 
+  std::vector<double_type> Aj;
 
   //The standard case using the n_min
   if (!use_alternative)
@@ -79,7 +79,7 @@ void FastChemSolver<double_type>::newtonSol(Element<double_type>& species, std::
     for (size_t i=0; i<molecules.size(); ++i)
       if (molecules[i].stoichometric_vector[species.index] == 0)
         n_exc += molecules[i].sigma * molecules[i].number_density;
-  
+
     n_exc *= species.epsilon;
 
     Aj[0] = std::exp(-scaling_factor) * (n_exc - gas_density * species.epsilon);
@@ -89,7 +89,7 @@ void FastChemSolver<double_type>::newtonSol(Element<double_type>& species, std::
       Aj[k] = AmCoeffAlt(species, elements, molecules, k);
   }
 
-  
+
 
   //Newton's method
   bool converged = false;
@@ -126,7 +126,7 @@ void FastChemSolver<double_type>::newtonSol(Element<double_type>& species, std::
 
 
   //Newton iteration
-  unsigned int mu = 0; 
+  unsigned int mu = 0;
   for (mu=0; mu<options->nb_max_newton_iter; ++mu)
   {
     double_type x_new = newton_step(x);
@@ -152,7 +152,7 @@ void FastChemSolver<double_type>::newtonSol(Element<double_type>& species, std::
   }
 
 
-  
+
   //test if root is in (max(0,x*(1-newton_err)),x*(1+newton_err))
   double_type x_lower = std::fmax(0., x * (1. - options->newton_err));
   double_type x_upper = x * (1. + options->newton_err);
@@ -170,13 +170,13 @@ void FastChemSolver<double_type>::newtonSol(Element<double_type>& species, std::
   if (converged)
     species.number_density = x;
 
-  
+
   //in case the normal Newton solver does not work, we switch to other solvers
   if (x < 0 || !converged || P_j_lower*P_j_upper > 0.)
-  { 
+  {
     //if the normal Newton's method does not converge, switch to the alternative version of it
     if (!use_alternative)
-    { 
+    {
       newtonSol(species, elements, molecules, gas_density, true);
 
       if (options->verbose_level >= 3)
@@ -190,11 +190,11 @@ void FastChemSolver<double_type>::newtonSol(Element<double_type>& species, std::
       if (options->verbose_level >= 3)
         std::cout << "FastChem: WARNING: NewtSol Alt failed for species " << species.symbol << " switched to Bisection as backup " << x << "\t" << species.number_density << "\n";
     }
-      
-    
+
+
   }
 
-}  
+}
 
 
 
@@ -202,7 +202,7 @@ void FastChemSolver<double_type>::newtonSol(Element<double_type>& species, std::
 //Newton's method for the electrons
 //Instead of element conservation, solves for charge balance
 template <class double_type>
-void FastChemSolver<double_type>::newtonSolElectron(Element<double_type>& species, std::vector< Element<double_type> >& elements, const std::vector< Molecule<double_type> >& molecules, 
+void FastChemSolver<double_type>::newtonSolElectron(Element<double_type>& species, std::vector< Element<double_type> >& elements, const std::vector< Molecule<double_type> >& molecules,
                                                     const double_type gas_density)
 {
 
@@ -221,7 +221,7 @@ void FastChemSolver<double_type>::newtonSolElectron(Element<double_type>& specie
   bool converged = false;
   double_type x = order_cation/(1.0 + order_cation) * gas_density; //Initial guess ensures monotonous convergence.
 
- 
+
   //one Newton step as lambda function
   auto newton_step = [&] (const double_type &x)
     {
@@ -268,7 +268,7 @@ void FastChemSolver<double_type>::newtonSolElectron(Element<double_type>& specie
 
     //prevent x to become negative due to numerical underflow
     if (x_new < 1.e-8*x) x_new = 1.e-8*x;
-    
+
     x = x_new;
 
 
@@ -304,8 +304,8 @@ void FastChemSolver<double_type>::newtonSolElectron(Element<double_type>& specie
 
 
 
-  species.number_density = x; 
-  
+  species.number_density = x;
+
 
 
   //in case something went wrong again, we try to use another backup
@@ -329,6 +329,3 @@ template class FastChemSolver<double>;
 template class FastChemSolver<long double>;
 
 }
-
-
-

@@ -7,4 +7,4 @@ Modified by Shami Tsai  14/05/2019
 The steps I have done to change the original fastchem:
 1. Providing nasa9_logK_NCHOTi.dat
 2. Modify mass_action_constant.cpp for calculating log_K (of all elements too)
-3. In model_main.cpp, change the ouput names: e.g. P (bar) => P 
+3. In model_main.cpp, change the ouput names: e.g. P (bar) => P

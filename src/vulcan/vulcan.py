@@ -4,7 +4,7 @@
 
 ----
 
-Main module for running VULCAN. 
+Main module for running VULCAN.
 Contains the `run_vulcan` function, which executes the main VULCAN workflow, and the `run_cli` function, which serves as the entry point when running the script directly.
 
 Imports

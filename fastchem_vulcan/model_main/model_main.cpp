@@ -107,7 +107,7 @@ int main(int argc, char *argv[])
   for (unsigned int i=0; i<nb_grid_points; i++)
     total_density[i] /= fastchem::CONST_K * temperature[i];
 
-  
+
   //std::cout << "\n" << "Read in p-T structure: \n";
 
   //for (unsigned int i=0; i<nb_grid_points; i++)
@@ -155,7 +155,7 @@ int main(int argc, char *argv[])
        return 1.0;
     }
 
-    
+
     densities[i] = output.number_densities;
     total_element_density[i] = output.total_element_density;
     mean_molecular_weights[i] = output.mean_molecular_weight;

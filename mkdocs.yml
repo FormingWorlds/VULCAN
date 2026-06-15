@@ -19,7 +19,7 @@ nav:
       - First run: Tutorials/first_run.md
 
   - Explanations:
-      - Model overview: 
+      - Model overview:
         - Overview: Explanations/model_overview.md
         - Basic equations: Explanations/basic_equations.md
         - Boundary conditions: Explanations/boundary_conditions.md
@@ -47,7 +47,7 @@ nav:
           - vulcan.phy_const: Reference/api/phy_const.md
           - vulcan.store: Reference/api/store.md
           - vulcan.logs: Reference/api/logs.md
-          
+
   - FastChem: fastchem.md
   - Community:
       - Contact: Community/contact.md

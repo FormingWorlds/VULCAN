@@ -28,12 +28,12 @@ HISTORY:
 import sys
 sys.path.insert(0, '../') # including the upper level of directory for the path of modules
 
-import numpy as np 
+import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.legend as lg
 import vulcan_cfg
 try: from PIL import Image
-except ImportError: 
+except ImportError:
     try: import Image
     except: vulcan_cfg.use_PIL = False
 import os, sys
@@ -48,13 +48,13 @@ from petitRADTRANS.retrieval import util as prt_util
 
 # swtich for plot
 if '-h' in sys.argv: use_height = True
-else: use_height = False 
+else: use_height = False
 
-# Setting the 2nd input argument as the filename of vulcan output   
+# Setting the 2nd input argument as the filename of vulcan output
 vul_data = sys.argv[1]
 # Setting the 3rd input argument as the species names to be plotted (separated by ,)
 plot_spec = sys.argv[2]
-# Setting the 4th input argument as the output eps filename        
+# Setting the 4th input argument as the output eps filename
 if len(sys.argv)<4:
     saveplot=False
 else:
@@ -71,15 +71,15 @@ else:
 plot_spec = tuple(plot_spec.split(','))
 nspec = len(plot_spec)
 
-# These are the "Tableau 20" colors as RGB.    
+# These are the "Tableau 20" colors as RGB.
 tableau20 = [(31, 119, 180),(255, 127, 14),(44, 160, 44),(214, 39, 40),(148, 103, 189),(140, 86, 75), (227, 119, 194),(127, 127, 127),(188, 189, 34),(23, 190, 207),\
-(174, 199, 232),(255, 187, 120),(152, 223, 138),(255, 152, 150),(197, 176, 213),(196, 156, 148),(247, 182, 210),(199, 199, 199),(219, 219, 141),(158, 218, 229)] 
-# 
+(174, 199, 232),(255, 187, 120),(152, 223, 138),(255, 152, 150),(197, 176, 213),(196, 156, 148),(247, 182, 210),(199, 199, 199),(219, 219, 141),(158, 218, 229)]
+#
 
 
-# Scale the RGB values to the [0, 1] range, which is the format matplotlib accepts.    
-for i in range(len(tableau20)):    
-    r, g, b = tableau20[i]    
+# Scale the RGB values to the [0, 1] range, which is the format matplotlib accepts.
+for i in range(len(tableau20)):
+    r, g, b = tableau20[i]
     tableau20[i] = (r / 255., g / 255., b / 255.)
 
 # tex labels for plotting
@@ -93,7 +93,7 @@ with open(vul_data, 'rb') as handle:
   data = pickle.load(handle)
 
 
-  
+
 ########################################
 # Shenanigans to import *this* CFG file (saved as cfg_xxxxx.txt):
 ########################################
@@ -126,12 +126,12 @@ else:
 
 # Convert plot_spec molecule names to pRT-style opacity names:
 
-# CO_all_iso_Chubb      CO_all_iso_HITEMP    
+# CO_all_iso_Chubb      CO_all_iso_HITEMP
 # H2O_Exomol H2O_HITEMP
-# K_allard   K_burrows   K_lor_cut 
-# Na_allard  Na_burrows  Na_lor_cut 
-# TiO_all_Exomol          TiO_all_Plez 
-# VO_Plez      
+# K_allard   K_burrows   K_lor_cut
+# Na_allard  Na_burrows  Na_lor_cut
+# TiO_all_Exomol          TiO_all_Plez
+# VO_Plez
 pRT_longnames = dict(CO='CO_all_iso_HITEMP', H2O='H2O_HITEMP', K='K_allard', Na='Na_allard', TiO='TiO_all_Exomol', VO='VO_Plez')
 pRT_species = ['Al','Al+','AlH','AlO','C2H2','C2H4','CH4','CO','CO2','Ca','Ca+','CaH','CrH','Fe','Fe+','FeH','H2O','H2S','HCN','K','Li','Mg','Mg+','MgH','MgO','NH3','Na','NaH','O','O+','O2','O3','OH','PH3','SH','Si','Si+','SiO','SiO2','Ti','Ti+','TiO','V','V+','VO']
 pRT_species += ['SO2', 'SO3', 'CH3', 'C2', 'CH', 'CN']
@@ -155,7 +155,7 @@ for species in plot_spec:
         line_species_vul.append(species)
         line_species_prt.append(species)
 
-        
+
 atmosphere = Radtrans(line_species = line_species_prt,
       rayleigh_species = rayleigh_species,
       continuum_opacities = continuum_opacities,
@@ -201,11 +201,11 @@ for sp,sv in zip(line_species_prt,line_species_vul):
 if atmo=='H2':
     h2ind = vulcan_species.index('H2')
     heind = vulcan_species.index('He')
-    mass_fractions['H2'] = vulcan_mmr[:,h2ind][psort] # sort by increasing pressure    
-    mass_fractions['He'] = vulcan_mmr[:,heind][psort] # sort by increasing pressure    
-    
+    mass_fractions['H2'] = vulcan_mmr[:,h2ind][psort] # sort by increasing pressure
+    mass_fractions['He'] = vulcan_mmr[:,heind][psort] # sort by increasing pressure
 
-    
+
+
 atmosphere.calc_transm(temperature, mass_fractions, cfg.gs, mmw_profile, R_pl=cfg.Rp, P0_bar=P0)
 
 wlen_micron = c_cgs/atmosphere.freq/1e-4
@@ -221,7 +221,7 @@ if oneatatime:
                 mf[spec] = np.zeros(mass_fractions[spec].size)
         atmosphere.calc_transm(temperature, mf, cfg.gs, mmw_profile, R_pl=cfg.Rp, P0_bar=P0)
         rprss[ii] = (atmosphere.transm_rad / (cfg.r_star * rsun_cgs))**2
-    
+
 ########################################
 ########################################
 
@@ -244,11 +244,11 @@ if saveplot:
     plt.title(cfg.output_dir + cfg.out_name, fontsize=12)
     plt.tight_layout()
     plt.xlim(wlen_micron.min(), wlen_micron.max())
-    
+
     plt.savefig(plot_dir + plot_name + '_transmission.png')
     plt.savefig(plot_dir + plot_name + '_transmission.eps')
 
-    
+
     plt.figure()
     plt.plot(wlen_micron, rprs2*1e6, '-k', label='All species')
     for jj,spec in enumerate(line_species_prt):
@@ -264,8 +264,8 @@ if saveplot:
 
     plt.savefig(plot_dir + plot_name + '_transmission_1by1.png')
     plt.savefig(plot_dir + plot_name + '_transmission_1by1.eps')
-    
-    
+
+
 
 ########################################
 ########################################

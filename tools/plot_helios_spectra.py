@@ -1,12 +1,12 @@
 import sys
 sys.path.insert(0, '../') # including the upper level of directory for the path of modules
 
-import numpy as np 
+import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.legend as lg
 import vulcan_cfg
 try: from PIL import Image
-except ImportError: 
+except ImportError:
     try: import Image
     except: vulcan_cfg.use_PIL = False
 import os, sys
@@ -35,8 +35,8 @@ emi = {}
 for index, data in enumerate(data_list):
     emi[index] = np.genfromtxt(data,dtype=float,skip_header=3)
     plt.plot(emi[index][:,1], emi[index][:,6], color=colors[index], label=label_list[index], lw=1, alpha=0.5)
-        
-plt.gca().set_xscale('log') 
+
+plt.gca().set_xscale('log')
 plt.xlim((emi[0][:,1][0],20.))
 #plt.xlim((0.0001,10.))
 #plt.ylim((0,0.002))
@@ -55,4 +55,3 @@ if vulcan_cfg.use_PIL == True:
     plot = Image.open(plot_dir + plot_name + '.png')
     plot.show()
 else: plt.show()
-
