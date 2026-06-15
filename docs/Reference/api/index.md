@@ -7,7 +7,7 @@ If you want to understand the underlying model rather than the code structure, s
 
 ```text
 src/vulcan
-├── __init__.py        # package entry point: exposes Config, run_vulcan, make_chem_funs, paths, __version__
+├── __init__.py        # package entry point: exposes Config, run_vulcan, __version__
 ├── vulcan.py           # CLI driver: run_vulcan / run_cli (the `-n` flag skips network regeneration)
 ├── config.py           # Config class: every run parameter (see Configuration parameters)
 ├── store.py            # Variables, AtmData, Parameters: the runtime state containers
