@@ -37,7 +37,7 @@ known source of uncertainty (especially for sulfur).
 
 ### Implementation in VULCAN
 
-[`op.ReadRate.read_rate`](../Reference/api/op.mdl#vulcan.op.ReadRate.read_rate) parses the network file block by block, recognizing the section
+[`op.ReadRate.read_rate`](../Reference/api/op.md#vulcan.op.ReadRate.read_rate) parses the network file block by block, recognizing the section
 headers `# 3-body`, `# 3-body reactions without high-pressure rates`, `# special`,
 `# condensation`, `# radiative`, `# photo`, and `# ionisation`. For each reaction it stores
 $a, n, E$ (and $a_\infty, n_\infty, E_\infty$ for three-body reactions) and builds a callable
