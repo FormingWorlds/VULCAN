@@ -19,7 +19,7 @@ carbons, except for a few higher-order species retained as sinks or haze precurs
 
 The active network is selected with [`config.network`](../Reference/config.md#chemistry-network) (default
 `thermo/CHO_photo_network.txt`) and `config.atom_list`. The reaction files live under
-`atm/` in the repository.
+`thermo/` in the repository.
 
 ## Rate coefficients
 
