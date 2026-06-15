@@ -1,6 +1,6 @@
 # Publications
 
-VULCAN is built on two layers of published methodology. The core kinetics framework and thermochemical network are described in [Tsai et al. (2017)](https://doi.org/10.3847/1538-4357/ac29bc); the full photochemical extension with C–H–N–O–S networks, condensation, and temperature-dependent cross sections is described in [Tsai et al. (2021)](https://doi.org/10.3847/1538-4365/228/2/20). The equilibrium-chemistry initialization relies on the embedded FastChem code, developed independently by Stock, Kitzmann & Patzer; the version bundled with VULCAN is 2.0 ([Stock et al. 2022](https://doi.org/10.1093/mnras/stac2623)). Full references are given below.
+VULCAN is built on two layers of published methodology. The core kinetics framework and thermochemical network are described in [Tsai et al. (2017)](https://doi.org/10.3847/1538-4365/228/2/20); the full photochemical extension with C–H–N–O–S networks, condensation, and temperature-dependent cross sections is described in [Tsai et al. (2021)](https://doi.org/10.3847/1538-4357/ac29bc). The equilibrium-chemistry initialization relies on the embedded FastChem code, developed independently by Stock, Kitzmann & Patzer; the version bundled with VULCAN is 2.0 ([Stock et al. 2022](https://doi.org/10.1093/mnras/stac2623)). Full references are given below.
 
 ## VULCAN
 
