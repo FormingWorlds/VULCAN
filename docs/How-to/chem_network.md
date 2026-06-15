@@ -8,6 +8,46 @@ VULCAN's chemistry is **not hard-coded**: the network is read from a plain-text 
 
 ---
 
+## Available networks
+
+The shipped networks live in **`thermo/`**. The default is
+`thermo/CHO_photo_network.txt` (set in `config.py`). The file name encodes what a network
+covers and how it is used:
+
+- **Element prefix**: the elements the network spans, e.g. `CHO` (C, H, O), `NCHO` (adds N),
+  `SNCHO` (adds S), `PHO` (P, H, O), `TiSNCHO` (N-C-H-O plus TiO/VO kinetics). The file's first comment line states this explicitly (e.g. `# VULCAN S-N-C-H-O network…`).
+- **`_photo_` vs `_thermo_`**: `photo` networks include a photochemistry section;
+  `thermo` networks are thermochemistry-only (no photodissociation).
+- **`_full`**: a more complete set than the standard variant (e.g.
+  `NCHO_full_photo_network.txt` adds more oxidizing species).
+- **`_lowT`**: extended with low-temperature rate fits (pair these with
+  `use_lowT_limit_rates` in `config.py`).
+- **Target/variant suffixes**: `_Jupiter`, `_earth`, `_oxidising`, `_DMS`, `_C3`, `_2024`,
+  `_2025`, etc. denote application- or version-specific variants.
+
+The main networks, grouped by element coverage:
+
+| Elements | Networks (`thermo/…`) |
+|---|---|
+| C–H–O | `CHO_photo_network.txt` (default), `CHO_photo_network_lowT.txt`, `CHO_thermo_network.txt` |
+| N–C–H–O | `NCHO_photo_network.txt`, `NCHO_full_photo_network.txt`, `NCHO_thermo_network.txt`, `NCHO_photo_network_lowT.txt`, `NCHO_photo_network_lowT_Jupiter.txt`, `NCHO_earth_photo_network.txt`, `NCHO_photo_oxidising_network.txt` |
+| S–N–C–H–O | `SNCHO_photo_network.txt`, `SNCHO_full_photo_network.txt`, `SNCHO_photo_network_2024.txt`, `SNCHO_photo_network_2025.txt`, `SNCHO_photo_network_C3.txt`, `SNCHO_DMS_photo_network_Tsai2024.txt` |
+| P–H–O | `PHO_full_photo_network.txt` |
+| N–C–H–O + Ti/V | `TiSNCHO_photo_network.txt` |
+| older C/H/N/O sets | `CRAHCNO_network_old.txt`, `CRAHCNO_network_v3.txt` |
+| specialized mechanism | `SO3-H2SO4_mechanism.txt` (S oxidation sub-mechanism, not a standalone network) |
+
+Additional variants live in `thermo/Test_networks/`. The other files in `thermo/` are
+**support data, not networks**: `all_compose.txt` (species composition table), `NASA9/`
+(thermodynamic polynomials), and `photo_cross/` (UV cross sections).
+
+!!! tip "Confirm a network's elements before using it"
+    Always read the chosen network's first comment line (and `thermo/README.md`) to confirm
+    which elements it actually spans, then set `atom_list` to match (see below). The element
+    prefix is a reliable guide, but the header is authoritative.
+
+---
+
 ## Switching networks
 
 The active network and the elements it spans are both set in the `Config` class
@@ -57,7 +97,7 @@ and `C` (the activation term) expressed in kelvin. Example:
 ```
 
 !!! note "Reactions are auto-numbered"
-    VULCAN **rewrites the network file in place** on each run, prefixing every reaction with a managed integer index (`read_network` in `make_chem_funs.py`). Any leading number you type is overwritten, so just write the `[ ... ] A B C` line and let the code handle indexing.
+    VULCAN **rewrites the network file in place** on each run, prefixing every reaction with a managed integer index (`read_network` in `make_chem_funs.py`). Any leading number you type is overwritten, so just write the `[ ... ] A B C` line and let the code handle indexing. Forward reactions receive odd numbers (1, 3, 5, …).
 
 ### Reaction sections
 
@@ -136,8 +176,8 @@ This file drives the element-conservation check, so an incorrect atom count will
 
 A species that appears in the `# photo` section also needs photoabsorption / dissociation
 cross sections and branching ratios under `thermo/photo_cross/<SPECIES>/` (read by
-`op.ReadRate.make_bins_read_cross`). Without them the run will stop with a "missing cross
-section" error.
+`op.ReadRate.make_bins_read_cross`). Without them the run stops with a
+`Missing the cross section from <SPECIES>` error.
 
 ### 4. Run
 
