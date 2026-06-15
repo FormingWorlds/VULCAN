@@ -13,16 +13,6 @@ Imports
 
 from __future__ import annotations
 
-Imports
----
-- [`vulcan.config`](config.md): `Config` class for handling configuration settings.
-- [`vulcan.paths`](paths.md): Paths to various files and directories used in VULCAN.
-
-"""
-
-#!/usr/bin/env python3
-from __future__ import annotations
-
 import importlib
 import logging
 
