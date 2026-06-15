@@ -3,7 +3,7 @@
 This page walks you through enabling and configuring the VULCAN atmospheric chemistry module in a PROTEUS config file. For a description of how VULCAN is wired into the framework, see the [PROTEUS coupling page](../Explanations/proteus_coupling.md). 
 
 !!! info "Working PROTEUS + VULCAN installation"
-    This page assumed you have installed PROTEUS by following its [installation guide](https://proteus-framework.org/PROTEUS/How-to/installation.html) and [installed VULCAN as an optional dependency](https://proteus-framework.org/PROTEUS/How-to/installation.html#atmospheric-chemistry-vulcan). 
+    This page assumes you have installed PROTEUS by following its [installation guide](https://proteus-framework.org/PROTEUS/How-to/installation.html) and [installed VULCAN as an optional dependency](https://proteus-framework.org/PROTEUS/How-to/installation.html#atmospheric-chemistry-vulcan).
 
 ---
 
