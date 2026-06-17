@@ -1,21 +1,21 @@
 import sys
 sys.path.insert(0, '../') # including the upper level of directory for the path of modules
 
-import numpy as np 
+import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.legend as lg
 import vulcan_cfg
 try: from PIL import Image
-except ImportError: 
+except ImportError:
     try: import Image
     except: vulcan_cfg.use_PIL = False
 import os, sys
 import pickle
 from scipy import interpolate
- 
+
 bin_down = True
 bin_array = np.arange(10,500,1.)
-       
+
 plot_name = 'photosphere-Earth'
 vul_data = '../output/Earth-rtol01.vul'
 plot_dir = '../' + vulcan_cfg.plot_dir
@@ -24,13 +24,13 @@ plot_all_sp = False
 plot_sp = [ 'O2', 'O3','N2', 'H2O', 'CO2', 'CH4'] # costomized what species to plot
 
 color_index = 0
-# These are the "Tableau 20" colors as RGB.    
+# These are the "Tableau 20" colors as RGB.
 tableau20 = [(31, 119, 180),(255, 127, 14),(44, 160, 44),(214, 39, 40),(148, 103, 189),(140, 86, 75), (227, 119, 194),(127, 127, 127),(188, 189, 34),(23, 190, 207),\
-(174, 199, 232),(255, 187, 120),(152, 223, 138),(255, 152, 150),(197, 176, 213),(196, 156, 148),(247, 182, 210),(199, 199, 199),(219, 219, 141),(158, 218, 229)] 
+(174, 199, 232),(255, 187, 120),(152, 223, 138),(255, 152, 150),(197, 176, 213),(196, 156, 148),(247, 182, 210),(199, 199, 199),(219, 219, 141),(158, 218, 229)]
 
-# Scale the RGB values to the [0, 1] range, which is the format matplotlib accepts.    
-for i in range(len(tableau20)):    
-    r, g, b = tableau20[i]    
+# Scale the RGB values to the [0, 1] range, which is the format matplotlib accepts.
+for i in range(len(tableau20)):
+    r, g, b = tableau20[i]
     tableau20[i] = (r / 255., g / 255., b / 255.)
 
 # tex labels for plotting
@@ -64,7 +64,7 @@ tau_sum = np.zeros( (nz+1, len(bins)) )
 
 for sp in photo_sp: tau_sp[sp] = np.zeros( (nz+1, len(bins)) )
 tau_scat = np.zeros( (nz+1, len(bins)) )
-            
+
 for j in range(nz-1,-1,-1):
     for sp in photo_sp: # scat_sp are not necessary photo_sp, e.g. He
         #absorption of speecies sp at level j
@@ -72,23 +72,23 @@ for j in range(nz-1,-1,-1):
             # cross_T is 2D
             cross_sp = data['variable']['cross_T'][sp][j]
         else: cross_sp = data['variable']['cross'][sp]
-        
+
         tau_sp[sp][j] += data['variable']['y'][j,vulcan_spec.index(sp)] * dz[j] * cross_sp
         #absorption of all speecies sp at level j
         tau_sum[j] += tau_sp[sp][j]
-        
+
         #adding the layer above for species j
         tau_sp[sp][j] += tau_sp[sp][j+1]
-    
+
     for sp in scat_sp:
         tau_scat[j] += data['variable']['y'][j,vulcan_spec.index(sp)] * dz[j] * data['variable']['cross_scat'][sp]
         tau_sum[j] += data['variable']['y'][j,vulcan_spec.index(sp)] * dz[j] * data['variable']['cross_scat'][sp]
-    
-    # adding the layer above only at the end of species loop    
-    tau_scat[j] += tau_scat[j+1] 
-    tau_sum[j] += tau_sum[j+1] 
 
-       
+    # adding the layer above only at the end of species loop
+    tau_scat[j] += tau_scat[j+1]
+    tau_sum[j] += tau_sum[j+1]
+
+
 photosph = []
 photosph_abs = []
 photosph_sp = {}
@@ -100,12 +100,12 @@ for n in range(len(bins)):
     photosph.append( data['atm']['zco'][np.argmin(np.abs(data['variable']['tau'][:,n]-tau1)) ]/1.e5 )
     #photosph_abs.append( data['atm']['pco'][np.argmin(np.abs(data['variable']['tau_abs'][:,n]-tau1)) ]/1.e6 )
     photosph_scat.append( data['atm']['zco'][np.argmin(np.abs(tau_scat[:,n]-tau1)) ]/1.e5 )
-    
+
     photosph_sum.append( data['atm']['zco'][np.argmin(np.abs(tau_sum[:,n]-tau1)) ]/1.e5 )
-    
-    
-    
-    
+
+
+
+
 # finding out the main absorber
 print ('zero tau:')
 for n in range(len(bins)): #
@@ -113,21 +113,21 @@ for n in range(len(bins)): #
     tau_one = 0 # where tau = 1
     max_sp = 'NA'
     for species in photo_sp:
-        if tau_sp[species][0,n] > tau_bot: 
+        if tau_sp[species][0,n] > tau_bot:
             tau_bot = tau_sp[species][0,n]
             max_sp = species
-        
+
     main_sp.add(max_sp)
     spectrum_sp.append(max_sp)
     if tau_bot == 0: print (bins[n])
 
 print ('Dominant species at the bottom:')
 print (spectrum_sp[::10])
-    
-    
-    
-    
-    
+
+
+
+
+
 if 'NA' in main_sp:
     print ('Warning! No absorbers at all in some bins!')
     main_sp.remove('NA')
@@ -137,7 +137,7 @@ if 'NA' in main_sp:
 
 # flag to plot all main_sp
 if plot_all_sp == True: plot_sp = main_sp
-    
+
 for sp in plot_sp:
     photosph_sp[sp] = []
     for n in range(len(bins)):
@@ -156,7 +156,7 @@ else:
 for sp in plot_sp:
     if sp in tex_labels: tex_lab = tex_labels[sp]
     else: tex_lab = sp
-    
+
     tau_sp = np.array(photosph_sp[sp])
     # above 1000 bar
     if bin_down == False: plt.plot(bins[tau_sp<1000.], tau_sp[tau_sp<1000.], color=tableau20[color_index], label = tex_lab, alpha=0.75 )
@@ -164,20 +164,20 @@ for sp in plot_sp:
         tau_inter = interpolate.interp1d(bins, tau_sp)
         tau_sp = np.empty(len(bin_array))
         for _,ld in enumerate(bin_array): tau_sp[_] = float(tau_inter(ld))
-        
+
         plt.plot(bin_array[tau_sp<1000.], tau_sp[tau_sp<1000.], color=tableau20[color_index], label = tex_lab, alpha=0.75 )
     # if sp == 'N2':
     #     plt.plot(bins, photosph_sp[sp], color=tableau20[color_index], label = tex_lab, alpha=0.6, lw=5 )
-    
+
     color_index += 1
 
 plt.plot(bins, photosph_scat, color=tableau20[color_index], label = 'Rayleigh', alpha=0.6)
 
 #plt.plot(bins, photosph_sum, c='plum', lw=3, alpha=0.6)
 #plt.plot(data['variable']['bins'], photosph_abs, c='red')
-           
-#plt.gca().set_yscale('log') 
-#plt.gca().invert_yaxis() 
+
+#plt.gca().set_yscale('log')
+#plt.gca().invert_yaxis()
 plt.ylim((0,120))
 plt.xlim((20,360))
 plt.legend(frameon=0, prop={'size':12}, loc='best')
@@ -190,4 +190,3 @@ plt.savefig(plot_dir + plot_name + '.pdf')
 plot = Image.open(plot_dir + plot_name + '.png')
 plot.show()
 #else: plt.show()
-

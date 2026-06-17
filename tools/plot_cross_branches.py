@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
-Created on 
-@author: 
+Created on
+@author:
 """
 import sys
 sys.path.insert(0, '../') # including the upper level of directory for the path of modules
@@ -10,11 +10,11 @@ import numpy as np
 from matplotlib import pyplot as plt
 import csv, ast
 try: from PIL import Image
-except ImportError: 
+except ImportError:
     try: import Image
     except: vulcan_cfg.use_PIL = False
 from scipy import interpolate
- 
+
 network = '_photo_network.txt'
 plot_dir = '../plot/'
 
@@ -38,17 +38,17 @@ ratio_raw[sp] = np.genfromtxt('../'+ vulcan_cfg.cross_folder+sp+'/'+sp+'_branch.
 cross =  np.zeros(len(bins))
 for i in range(1,num_br+1): # fill_value extends the first and last elements for branching ratios
     cross_J[i] = np.zeros(len(bins))
-    
-    inter_cross = interpolate.interp1d(cross_raw[sp]['lambda'], cross_raw[sp]['cross'], bounds_error=False, fill_value=0) 
+
+    inter_cross = interpolate.interp1d(cross_raw[sp]['lambda'], cross_raw[sp]['cross'], bounds_error=False, fill_value=0)
     inter_cross_J = interpolate.interp1d(cross_raw[sp]['lambda'], cross_raw[sp]['disso'], bounds_error=False, fill_value=0)
     br_key = 'br_ratio_' + str(i)
     inter_ratio[i] = interpolate.interp1d(ratio_raw[sp]['lambda'], ratio_raw[sp][br_key], bounds_error=False, fill_value=(ratio_raw[sp][br_key][0],ratio_raw[sp][br_key][-1]))
     # interpolate
-    
+
     for n, ld in enumerate(bins):
         cross[n] = inter_cross(ld)
-        cross_J[i][n] = inter_cross_J(ld) * inter_ratio[i](ld)                     
-                
+        cross_J[i][n] = inter_cross_J(ld) * inter_ratio[i](ld)
+
 plt.plot( bins[cross>=0], cross[cross>=0], c='k', alpha=0.7, label = tex_labels[sp])
 for i in range(1,num_br+1):
     if i == 1:
@@ -71,7 +71,7 @@ plt.savefig(plot_dir + sp + '_cross_branches.png')
 plt.savefig(plot_dir + sp + '_cross_branches.pdf')
 plot = Image.open(plot_dir + sp + '_cross_branches.png')
 plot.show()
- 
+
 
 plt.figure('T')
 T_list = [195,230,300,420,500,585,700,800,1160]
@@ -120,7 +120,7 @@ plot.show()
 # plt.savefig(plot_dir +  molecule + '_cross.eps')
 # plot = Image.open(plot_dir + molecule + '_cross.png')
 # plot.show()
-    
+
 
 # H2O
     # if nbr == 1: brname = 'OH + H'
@@ -132,7 +132,7 @@ plot.show()
     # if nbr == 2: brname = r'$^1$CH2 + H2'
     # if nbr == 3: brname = '$^1$CH2 + H + H'
     # if nbr == 4: brname = 'CH + H2 + H'
-# C2H2 
+# C2H2
     # if nbr == 1: brname = r'C$_2$H + H'
     # if nbr == 2: brname = r'C$_2$ + H$_2$'
 # CO2
@@ -145,7 +145,7 @@ plot.show()
     # if nbr == 1: brname = r'C2H2 + H$_2$'
     # if nbr == 2: brname = r'C2H2 + 2H'
     # if nbr == 3: brname = r'C2H3 + H'
-    
+
 # C2H3
     # if nbr == 1: brname = r'C2H2 + H$_2$'
     # if nbr == 2: brname = r'C2H2 + 2H'
@@ -156,7 +156,7 @@ plot.show()
     # if nbr == 3: brname = r'$C_2H_2$ + 2H$_2$'
     # if nbr == 4: brname = r'$CH_4$ + $^1CH_2$'
     # if nbr == 5: brname = r'$CH_3$ + $CH_3$'
-# CH3CHO    
+# CH3CHO
     # if nbr == 1: brname = r'CH$_4$ + CO'
     # if nbr == 2: brname = r'CH$_3$ + HCO'
 # CH3OH
@@ -165,7 +165,7 @@ plot.show()
 # NH3
     # if nbr == 1: brname = r'NH$_2$ + H'
     # if nbr == 2: brname = r'NH + 2H'
- 
+
 # for molecule in mol_list:
 #     L_csv_open=np.genfromtxt ('./leiden_csv/'+molecule+"_cross.csv", delimiter=",")
 #     L_wave = L_csv_open[:,0]

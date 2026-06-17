@@ -1,29 +1,29 @@
 import sys
 sys.path.insert(0, '../') # including the upper level of directory for the path of modules
 
-import numpy as np 
+import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.legend as lg
 import vulcan_cfg
 try: from PIL import Image
-except ImportError: 
+except ImportError:
     try: import Image
     except: vulcan_cfg.use_PIL = False
 import os, sys
 import pickle
 
 
-# Setting the vulcan output file to read in    
+# Setting the vulcan output file to read in
 vul_data = '../output/rtol005-continue-1e7conden-evap-cap-Earth.vul'
 #vul_data2 = '../output/COini-noPhoto-HD189.vul'
 
 # Setting the list of species to plot
 plot_spec = ['CH4', 'CO', 'H2O', 'H']
 plot_spec = ['CH4','H2O', 'OH', 'O2', 'O3']
-# Setting the output plot filename        
+# Setting the output plot filename
 plot_name = 'evolution'
 
-# Setting the pressure level (cgs) to plot 
+# Setting the pressure level (cgs) to plot
 plot_p = 1e5
 
 
@@ -43,7 +43,7 @@ species = data['variable']['species']
 # Find the index of pco closest to p_ana
 p_indx1 = min( range(len(data['atm']['pco'])), key=lambda i: abs(data['atm']['pco'][i]-plot_p))
 
-try: 
+try:
     with open(vul_data2, 'rb') as handle:
         data2 = pickle.load(handle)
         species2 = data2['variable']['species']
@@ -54,16 +54,16 @@ color_index = 0
 for sp in plot_spec:
     if sp in tex_labels: sp_lab = tex_labels[sp]
     else: sp_lab = sp
-    plt.plot(data['variable']['t_time'], np.array(data['variable']['y_time'])[:,p_indx1,species.index(sp)]/float(data['atm']['n_0'][p_indx1]),  color=colors[color_index], label=sp_lab) 
-    
-    try: plt.plot(data2['variable']['t_time'], np.array(data2['variable']['y_time'])[:,p_indx2,species2.index(sp)]/float(data2['atm']['n_0'][p_indx2]),  color=colors[color_index], ls='--') 
+    plt.plot(data['variable']['t_time'], np.array(data['variable']['y_time'])[:,p_indx1,species.index(sp)]/float(data['atm']['n_0'][p_indx1]),  color=colors[color_index], label=sp_lab)
+
+    try: plt.plot(data2['variable']['t_time'], np.array(data2['variable']['y_time'])[:,p_indx2,species2.index(sp)]/float(data2['atm']['n_0'][p_indx2]),  color=colors[color_index], ls='--')
     except NameError: pass
 
     color_index += 1
 
-plt.gca().set_xscale('log')       
-plt.gca().set_yscale('log') 
-#plt.gca().invert_yaxis() 
+plt.gca().set_xscale('log')
+plt.gca().set_yscale('log')
+#plt.gca().invert_yaxis()
 #plt.xlim((1.E-12, 1.))
 plt.ylim((1e-22, 2.))
 plt.legend(frameon=0, prop={'size':13}, loc='best')

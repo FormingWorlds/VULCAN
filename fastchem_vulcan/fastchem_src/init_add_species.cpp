@@ -136,10 +136,10 @@ void FastChem<double_type>::addMolecule(const std::string name, const std::strin
     for (size_t i=0; i<species.element_indices.size(); ++i)
       elements[species.element_indices[i]].molecule_list.push_back(molecules.size()-1);
   }
-  else 
+  else
     std::cout << "Stoichometry of species " << symbol << " incomplete. Neglected!\n";
 
-    
+
 }
 
 

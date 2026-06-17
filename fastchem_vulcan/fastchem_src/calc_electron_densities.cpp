@@ -39,18 +39,18 @@ template <class double_type>
 void FastChem<double_type>::calculateElectronDensities(Element<double_type>& electron, const double_type& old_number_density, const double_type gas_density)
 {
 
-  //Am I the electron? 
+  //Am I the electron?
   if (electron.symbol != "e-") return;
 
 
-  //no ions present   
+  //no ions present
   if (electron.molecule_list.size() == 0)
   {
-    
-    electron.number_density = 0.0;
-    return; 
 
-  } 
+    electron.number_density = 0.0;
+    return;
+
+  }
 
 
   //if we have't determined the maximum order of cations and anions, we do so now
@@ -81,7 +81,7 @@ void FastChem<double_type>::calculateElectronDensities(Element<double_type>& ele
     calculateSinglyIonElectrons(electron, old_number_density);
   else
     calculateMultIonElectrons(electron, old_number_density, gas_density);
-  
+
 }
 
 
@@ -90,7 +90,7 @@ void FastChem<double_type>::calculateElectronDensities(Element<double_type>& ele
 template <class double_type>
 void FastChem<double_type>::calculateSinglyIonElectrons(Element<double_type>& electron, const double_type& old_number_density)
 {
- 
+
   double_type alpha = 0.0;
   double_type beta = 0.0;
 
@@ -108,14 +108,14 @@ void FastChem<double_type>::calculateSinglyIonElectrons(Element<double_type>& el
       for (size_t k=0; k<molecules[i].element_indices.size(); ++k)
       {
         unsigned int l = molecules[i].element_indices[k];
-  
+
 
         if (l != electron.index && molecules[i].stoichometric_vector[l] != 0)
           sum += molecules[i].stoichometric_vector[l] * std::log(elements[l].number_density);
       }
 
-      
-      
+
+
       beta += std::exp(molecules[i].mass_action_constant + sum);
     }
     else if (molecules[i].stoichometric_vector[index] == -1)  //the cations, Eq. (B4) in Paper 1
@@ -125,14 +125,14 @@ void FastChem<double_type>::calculateSinglyIonElectrons(Element<double_type>& el
       for (size_t k=0; k<molecules[i].element_indices.size(); ++k)
       {
         unsigned int l = molecules[i].element_indices[k];
-  
+
 
         if (l != electron.index && molecules[i].stoichometric_vector[l] != 0)
           sum += molecules[i].stoichometric_vector[l] * std::log(elements[l].number_density);
       }
 
-      
-      
+
+
       alpha += std::exp(molecules[i].mass_action_constant + sum);
     }
 
@@ -141,7 +141,7 @@ void FastChem<double_type>::calculateSinglyIonElectrons(Element<double_type>& el
   //Eq. (B2) in Paper 1
   double_type electron_density = std::sqrt(alpha/(1.0 + beta));
 
-  elements[e_].number_density = electron_density; 
+  elements[e_].number_density = electron_density;
 
 }
 
@@ -175,7 +175,7 @@ void FastChem<double_type>::calculateMultIonElectrons(Element<double_type>& elec
 
 
   double_type delta = 0.9;
-  
+
   if (electron_density > delta*positive_ion_density)
   {
 
@@ -197,6 +197,3 @@ template class FastChem<double>;
 template class FastChem<long double>;
 
 }
-
-
-

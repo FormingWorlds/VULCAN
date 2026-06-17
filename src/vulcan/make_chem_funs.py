@@ -1,4 +1,16 @@
 #!/usr/bin/env python3
+"""
+---
+
+Module that reads the chemical network and produces the .txt table for `chemdf`. Rearranges the numbers in the chemical network.
+
+Imports
+---
+- [`vulcan.config`](config.md): `Config` class for handling configuration settings.
+- [`vulcan.paths`](paths.md): Paths to various files and directories used in VULCAN.
+
+"""
+
 from __future__ import annotations
 
 import importlib
@@ -12,9 +24,6 @@ from .paths import CHEM_FUNS_FILE, COM_FILE, GIBBS_FILE, THERMO_DIR
 
 log = logging.getLogger('fwl.' + __name__)
 
-
-# read the network and produce the .txt table for chemdf
-# Re-arrange the numerbers in the network
 def read_network(vulcan_cfg: Config):
 
     Rf, Rindx = {}, {}

@@ -1,17 +1,17 @@
 import sys
 sys.path.insert(0, '../') # including the upper level of directory for the path of modules
 
-import numpy as np 
+import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.legend as lg
 import vulcan_cfg
 try: from PIL import Image
-except ImportError: 
+except ImportError:
     try: import Image
     except: vulcan_cfg.use_PIL = False
 import os, sys
 import pickle
-       
+
 plot_name = 'T1400-S'
 vul_data = '../output/T1400-K7-5XM-noDzz-dbin10.vul'
 plot_dir = '../' + vulcan_cfg.plot_dir
@@ -33,7 +33,7 @@ tau1 = 1.
 # photosphere of each species
 tau_sp= {}
 
-photo_sp = [ 'H2O','CO', 'CO2','H2', 'SH', 'H2S', 'CH4', 'S2'] # , 'H2', 'CH4', 'CO2'   
+photo_sp = [ 'H2O','CO', 'CO2','H2', 'SH', 'H2S', 'CH4', 'S2'] # , 'H2', 'CH4', 'CO2'
 #photo_sp = ['H2CO', 'HCO',  'O2',  'HCN', 'NH3', 'NO', 'N2',  'NO2', 'N2O', 'O3', 'HO2', 'H2O2', 'NO3', 'HNO3', 'HNO2'  ]
 #, 'N2', 'C2H4', 'C2H2','C2H6', 'CH3', 'CO2', 'HCO','HCN'  ,'CH3CHO','NO' , 'NO2'
 scat_sp = ['H2','He']
@@ -50,26 +50,26 @@ tau_sp, tau_scat = {}, {}
 
 for sp in photo_sp: tau_sp[sp] = np.zeros( (nz+1, len(bins)) )
 tau_scat = np.zeros( (nz+1, len(bins)) )
-            
+
 for j in range(nz-1,-1,-1):
     for sp in photo_sp: # scat_sp are not necessary photo_sp, e.g. He
         #absorption of speecies sp at level j
         tau_sp[sp][j] += data['variable']['y'][j,vulcan_spec.index(sp)] * dz[j] * data['variable']['cross'][sp]
         #absorption of all speecies sp at level j
         tau_sum[j] += tau_sp[sp][j]
-        
+
         #adding the layer above for species j
         tau_sp[sp][j] += tau_sp[sp][j+1]
-    
+
     for sp in scat_sp:
         tau_scat[j] += data['variable']['y'][j,vulcan_spec.index(sp)] * dz[j] * data['variable']['cross_scat'][sp]
         tau_sum[j] += data['variable']['y'][j,vulcan_spec.index(sp)] * dz[j] * data['variable']['cross_scat'][sp]
-    
-    # adding the layer above only at the end of species loop    
-    tau_scat[j] += tau_scat[j+1] 
-    tau_sum[j] += tau_sum[j+1] 
 
-       
+    # adding the layer above only at the end of species loop
+    tau_scat[j] += tau_scat[j+1]
+    tau_sum[j] += tau_sum[j+1]
+
+
 plt.figure()
 
 
@@ -84,15 +84,15 @@ for n in range(len(bins)):
     photosph.append( data['atm']['pico'][np.argmin(np.abs(data['variable']['tau'][:,n]-tau1)) ]/1.e5 )
     #photosph_abs.append( data['atm']['pco'][np.argmin(np.abs(data['variable']['tau_abs'][:,n]-tau1)) ]/1.e6 )
     photosph_scat.append( data['atm']['pico'][np.argmin(np.abs(tau_scat[:,n]-tau1)) ]/1.e5 )
-    
+
     photosph_sum.append( data['atm']['pico'][np.argmin(np.abs(tau_sum[:,n]-tau1)) ]/1.e5 )
-    
+
 for sp in photo_sp:
     photosph_sp[sp] = []
     for n in range(len(bins)):
         photosph_sp[sp].append( data['atm']['pico'][np.argmin(  np.abs(tau_sp[sp][:,n] -tau1)) ]/1.e5 )
-    
-    
+
+
 
 
 
@@ -113,9 +113,9 @@ plt.plot(bins, photosph_scat, color=colors[color_index+1], label = 'Rayleigh', a
 
 
 #plt.plot(data['variable']['bins'], photosph_abs, c='red')
-           
-plt.gca().set_yscale('log') 
-plt.gca().invert_yaxis() 
+
+plt.gca().set_yscale('log')
+plt.gca().invert_yaxis()
 #plt.ylim((0,95))
 plt.xlim((200,300))
 plt.legend(frameon=0, prop={'size':13}, loc='best')
@@ -128,4 +128,3 @@ if vulcan_cfg.use_PIL == True:
     plot = Image.open(plot_dir + plot_name + '.png')
     plot.show()
 else: plt.show()
-

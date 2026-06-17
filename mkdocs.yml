@@ -8,22 +8,47 @@ copyright: '© 2023-2026 <a href="https://formingworlds.space">Forming Worlds La
 nav:
   - Home:
       - About: index.md
+      - Quick start: quickstart.md
 
   - How-to guides:
-      - Overview: How-to/index.md
       - Installation: How-to/installation.md
       - Editing or using a different chemical network: How-to/chem_network.md
+      - Use in PROTEUS: How-to/use_in_proteus.md
 
   - Tutorials:
-      - Overview: Tutorials/index.md
-      - Quick start: Tutorials/quickstart.md
+      - First run: Tutorials/first_run.md
 
   - Explanations:
-      - Model usage: Explanations/model_usage.md
+      - Model overview:
+        - Overview: Explanations/model_overview.md
+        - Basic equations: Explanations/basic_equations.md
+        - Boundary conditions: Explanations/boundary_conditions.md
+        - Chemical networks: Explanations/chemical_networks.md
+        - Photochemistry: Explanations/photochemistry.md
+        - UV cross sections: Explanations/uv_cross_sections.md
+        - Condensation and rainout: Explanations/condensation.md
+        - Titanium and vanadium chemistry: Explanations/titanium_vanadium.md
+        - Haze precursors: Explanations/haze_precursors.md
+      - PROTEUS coupling: Explanations/proteus_coupling.md
 
   - Reference:
-      - Bibliography: Reference/bibliography.md
+      - Publications: Reference/bibliography.md
+      - Configuration: Reference/config.md
+      - Constants: Reference/constants.md
+      - API reference:
+          - API overview: Reference/api/index.md
+          - vulcan.vulcan: Reference/api/vulcan.md
+          - vulcan.op: Reference/api/op.md
+          - vulcan.make_chem_funs: Reference/api/make_chem_funs.md
+          - vulcan.build_atm: Reference/api/build_atm.md
+          - vulcan.agni: Reference/api/agni.md
+          - vulcan.config: Reference/api/config.md
+          - vulcan.paths: Reference/api/paths.md
+          - vulcan.phy_const: Reference/api/phy_const.md
+          - vulcan.store: Reference/api/store.md
+          - vulcan.logs: Reference/api/logs.md
 
+  - FastChem: fastchem.md
   - Community:
       - Contact: Community/contact.md
       - Contributing: Community/CONTRIBUTING.md
@@ -34,20 +59,19 @@ nav:
   - Source code: https://github.com/FormingWorlds/VULCAN
 
   - Other PROTEUS modules:
-      - PROTEUS submodules: submodules.md
+      - Other PROTEUS modules: proteus_framework.md
+      - PROTEUS: https://proteus-framework.org/PROTEUS/
       - MORS: https://proteus-framework.org/MORS/
       - JANUS: https://proteus-framework.org/JANUS/
       - ZEPHYRUS: https://proteus-framework.org/ZEPHYRUS/
       - CALLIOPE: https://proteus-framework.org/CALLIOPE/
       - AGNI: https://www.h-nicholls.space/AGNI/
       - Obliqua: https://proteus-framework.org/Obliqua/
-      - VULCAN: https://proteus-framework.org/VULCAN/
       - Zalmoxis: https://proteus-framework.org/Zalmoxis/
       - Aragog: https://proteus-framework.org/aragog/
       - SPIDER: https://proteus-framework.org/SPIDER/
-      - Atmodeller: https://atmodeller.readthedocs.io/en/latest/
-      - FastChem: https://newstrangeworlds.github.io/FastChem/
-      - PLATON: https://platon.readthedocs.io/en/latest/
+      - Atmodeller: https://github.com/FormingWorlds/atmodeller/
+      - FastChem: https://github.com/FormingWorlds/FastChem/
       - SOCRATES: https://github.com/FormingWorlds/SOCRATES/
 
 theme:
@@ -100,6 +124,11 @@ markdown_extensions:
   - pymdownx.emoji:
       emoji_index: !!python/name:material.extensions.emoji.twemoji
       emoji_generator: !!python/name:material.extensions.emoji.to_svg
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
 
 # footer:
 extra:
@@ -124,6 +153,8 @@ extra_javascript:
 
 extra_css:
   - stylesheets/extra.css
+  - stylesheets/footnotes.css
+  - stylesheets/proteus_theme.css
 
 plugins:
   - search
@@ -149,7 +180,7 @@ plugins:
             show_root_toc_entry: true
             show_docstring_attributes: true
             show_root_full_path: false
-            docstring_section_style: list
+            docstring_section_style: table
             members_order: alphabetical
             merge_init_into_class: yes
             filters: ["!^_"]

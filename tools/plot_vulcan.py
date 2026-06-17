@@ -29,7 +29,7 @@ plot_spec = sys.argv[2]
 # Setting the 4th input argument as the output eps filename
 plot_name = sys.argv[3]
 
-plot_dir = '../' + vulcan_cfg.plot_dir
+plot_dir = vulcan_cfg.plot_dir
 # Checking if the plot folder exsists
 if not os.path.exists(plot_dir):
     print('The plotting directory assigned in vulcan_cfg.py does not exist.')

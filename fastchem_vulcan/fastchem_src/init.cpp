@@ -170,7 +170,7 @@ void FastChem<double_type>::reInitialiseFastChem()
 
   //update the solver order for the new abundances
   determineSolverOrder();
-  
+
   //recalculate the epsilons
   for (auto & i : elements) i.calcEpsilon(elements);
 }
@@ -180,7 +180,7 @@ void FastChem<double_type>::reInitialiseFastChem()
 template <class double_type>
 void FastChem<double_type>::setMoleculeAbundances()
 {
-  
+
   for (size_t i=0; i<nb_elements; ++i)
     for (size_t j=0; j<nb_elements; ++j)
     {
@@ -190,7 +190,7 @@ void FastChem<double_type>::setMoleculeAbundances()
         elements[j].abundance += std::numeric_limits<double_type>::epsilon()*elements[j].abundance;
     }
 
-  
+
   //update the definition of the molecular abundances
   for (size_t i=0; i<nb_molecules; ++i)
   {
@@ -222,14 +222,14 @@ void FastChem<double_type>::setMoleculeAbundances()
 template <class double_type>
 void FastChem<double_type>::createMoleculeLists()
 {
-  
+
   //reset the lists
   for (auto & i : elements) i.major_molecules_inc.resize(0);
   for (auto & i : elements) i.major_molecules_exc.resize(0);
   for (auto & i : elements) i.minor_molecules.resize(0);
 
 
-  
+
   for (size_t i=0; i<nb_molecules; ++i)
   {
 
@@ -244,7 +244,7 @@ void FastChem<double_type>::createMoleculeLists()
            elements[j].major_molecules_exc.push_back(i);
          else
            elements[j].major_molecules_inc.push_back(i);
-    
+
        }
     }
   }
@@ -272,7 +272,7 @@ void FastChem<double_type>::createMoleculeLists()
     }
 
   }
-  
+
 
 }
 

@@ -37,7 +37,7 @@ bool FastChemSolver<double_type>::bisectionSolve(Element<double_type>& species, 
 {
   const unsigned int order = Aj.size() - 1;
 
-  
+
   auto bisection_function = [&] (const double_type &x)
     {
       double_type f_j = Aj[order]; //Horner scheme
@@ -63,7 +63,7 @@ bool FastChemSolver<double_type>::bisectionSolve(Element<double_type>& species, 
 
 
   for (unsigned int iter_step = 0; iter_step < nb_iterations; ++iter_step)
-  { 
+  {
     const double_type x_n = (x[1] - x[0]) * 0.5 + x[0];
 
     const double_type f_n = bisection_function(x_n);

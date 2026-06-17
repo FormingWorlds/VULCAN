@@ -71,7 +71,7 @@ bool Element<double_type>::checkChargeConservation(const std::vector< Molecule<d
     return true;
   }
 
-   
+
   bool charge_conserved = false;
 
   //sum up all positive and negative charges in the network

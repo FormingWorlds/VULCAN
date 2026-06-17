@@ -31,7 +31,7 @@ namespace fastchem {
 struct FastChemInput
 {
 
-  double temperature = 0.0; 
+  double temperature = 0.0;
   double pressure = 0.0;
 
   bool use_previous_solution = false;

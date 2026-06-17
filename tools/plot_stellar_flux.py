@@ -1,18 +1,18 @@
 import sys
 sys.path.insert(0, '../') # including the upper level of directory for the path of modules
 
-import numpy as np 
+import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.legend as lg
 import vulcan_cfg
 try: from PIL import Image
-except ImportError: 
+except ImportError:
     try: import Image
     except: vulcan_cfg.use_PIL = False
 import os, sys
 import pickle
 from phy_const import au, r_sun
-       
+
 plot_name = 'Stellar-flux-compare'
 #vul_data = 'output/HCO_new_H2O_HD189_Moses_nominalKzz.vul'
 #vul_data2 = 'output/test.vul'
@@ -26,7 +26,7 @@ plot_name = 'Stellar-flux-compare'
 sun = np.genfromtxt('../atm/stellar_flux/VPL_solar.txt', names=['lambda','flux'], dtype=None, skip_header=1)
 GJ436 = np.genfromtxt('../atm/stellar_flux/sflux-GJ436.txt', names=['lambda','flux'], dtype=None, skip_header=1)
 eri = np.genfromtxt('../atm/stellar_flux/h_hd22049_uvsum_1x_51620_etc.txt', names=['lambda','flux'], dtype=None, skip_header=1)
-              
+
 Gueymard_2013 = np.genfromtxt('sun_Gueymard.txt', names=['lambda','flux'], dtype=['float','float'], skip_header=0)
 Gueymard_2018 = np.genfromtxt('Gueymard_2018.txt', names=['lambda','flux'], dtype=['float','float'], skip_header=12)
 
@@ -66,9 +66,9 @@ r_sun = 6.957E10 # cm
 #plt.plot(moses_HD189['lambda'][::10],moses_HD189['flux'][::10]  ,label='HD189' )
 # plt.plot(data['variable']['bins'], data['variable']['aflux'][-1], c='g', label='old')
 # plt.plot(data2['variable']['bins'], data2['variable']['aflux'][-1], c='red')
-     
-plt.gca().set_yscale('log') 
-#plt.gca().invert_yaxis() 
+
+plt.gca().set_yscale('log')
+#plt.gca().invert_yaxis()
 plt.xlim((1,600.))
 plt.ylim(ymin = 20)
 #plt.ylim((1e6,1.1e18))
@@ -81,4 +81,3 @@ if vulcan_cfg.use_PIL == True:
     plot = Image.open('../plot/' + plot_name + '.png')
     plot.show()
 else: plt.show()
-

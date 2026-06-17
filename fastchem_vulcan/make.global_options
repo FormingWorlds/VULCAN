@@ -1,5 +1,5 @@
 
-D                    = 
+D                    =
 CXX                  = g++
 CC                   = g++
 SHLIBLD              = g++

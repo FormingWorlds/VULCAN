@@ -1,62 +1,60 @@
 # VULCAN
 
-Photochemical kinetics for exoplanetary atmospheres, a fast and easy-to-use python code.  This distribution of VULCAN contains a number of performance and usability improvements.
-
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
-<a href="https://github.com/FormingWorlds/VULCAN/actions/workflows/tests.yaml">
-    <img src="https://gist.githubusercontent.com/nichollsh/59f094e7d22cd6af9a1cb3ea665b4260/raw/covbadge.svg">
-</a>
+[![Tests](https://img.shields.io/github/actions/workflow/status/FormingWorlds/VULCAN/tests.yaml?branch=main&label=Tests)](https://github.com/FormingWorlds/VULCAN/actions/workflows/tests.yaml)
+[![Coverage](https://gist.githubusercontent.com/nichollsh/59f094e7d22cd6af9a1cb3ea665b4260/raw/covbadge.svg)](https://github.com/FormingWorlds/VULCAN/actions/workflows/tests.yaml)
+[![Docs](https://img.shields.io/website?url=https%3A%2F%2Fproteus-framework.org%2FVULCAN%2F&label=Docs&up_message=online&down_message=offline)](https://proteus-framework.org/VULCAN/)
 
-
-
-More information can be found on the [documentation](https://proteus-framework.org/VULCAN/) pages:
-
-* [installation guide](https://proteus-framework.org/VULCAN/How-to/installation.html)
-* [usage guide](https://proteus-framework.org/VULCAN/How-to/index.html)
-* [contributing guide](https://proteus-framework.org/VULCAN/Community/CONTRIBUTING.html)
-
-
-The theory papers of VULCAN can be found here:
-
-* [Tsai et al. 2021](https://arxiv.org/abs/2108.01790) (with photochemistry)
-* [Tsai et al. 2017](https://arxiv.org/abs/1607.00409) (without photochemistry).
-
+Photochemical and thermochemical kinetics for (exo)planetary atmospheres; a fast,
+open-source 1D chemical kinetics code. This distribution of VULCAN contains a number of
+performance and usability improvements, and is integrated into the
+[PROTEUS framework](https://proteus-framework.org/PROTEUS/).
 
 ![Running with realtime plotting](docs/assets/demo.gif)
 
-## Quick Demo
+Full documentation: [proteus-framework.org/VULCAN](https://proteus-framework.org/VULCAN/). When contributing to this repository, please consult the [contributing guide](https://proteus-framework.org/VULCAN/Community/CONTRIBUTING.html).
 
-Let's dive in and see chemical kinetics in action!
+Theory papers:
+* [Tsai et al. 2021](https://arxiv.org/abs/2108.01790) (with photochemistry)
+* [Tsai et al. 2017](https://arxiv.org/abs/1607.00409) (without photochemistry)
 
-First, go to the `fastchem_vulcan/` folder to compile FastChem by running
-```
-make
-```
+## Quick start
 
-After compilation has finished, go back to the main directory of VULCAN and run
-```
+```sh
+pip install -U -e .
+cd fastchem_vulcan && make && cd ..
 python run_vulcan.py
 ```
 
-You should see the default model starts running with real-time plotting.
-This will take about 10-15 minutes to complete depending on your comuputer.
+This installs VULCAN, compiles FastChem (used for equilibrium initialization), and runs
+the default model (the hot Jupiter HD 189733b) with live plotting. It takes a few
+minutes; results are written to `output/`.
 
-Now you may want to try a different T-P input, changing the elemental abundances or
-vertical mixing. All these settings are set in ```config.py```. For example, find and edit
+Settings live in `src/vulcan/config.py`. For example, weaker vertical mixing:
+
 ```python
-const_Kzz = 1.E7
+self.Kzz_prof  = 'const'
+self.const_Kzz = 1.e7   # cm^2/s
 ```
-and
+
+or a carbon-rich (C/O = 1) atmosphere:
+
 ```python
-C_H = 6.0618E-4
+self.use_solar = False
+self.O_H = 5.37e-4
+self.C_H = 5.37e-4
 ```
-for a weaker vertical mixing (K<sub>zz</sub>) and carbon rich (C/O=1) run. Set use_live_plot = False if you wish to switch off the real-time plotting (why whould you though?). More detailed instruction can be found in the following sections. Have fun!
 
-The object in this `config.py` file can be edited at runtime and passed around as a variable.
+Set `self.use_live_plot = False` to skip real-time plotting. Pass `-n` to skip
+regenerating the chemistry from the network (only valid if you haven't edited it).
 
-## Reading Output Files
-Run ```plot_vulcan.py``` within ```plot_py```
+## Plotting results
+
+```sh
+cd tools/
+python plot_vulcan.py <output.pkl> <species> <plot_name> [-h]
 ```
-python plot_vulcan.py [vulcan output] [species] [plot name] [-h (for plotting height)]
-```
-will read vulcan output (.vul files) can plot the species profiles. Species should be sepreated by commas without space. Plot is in pressure by diffcult and can be changed to height by adding "-h".
+
+Reads a pickled output (e.g. `output/example.pkl`) and plots mixing-ratio profiles for the
+given comma-separated species (no spaces). Plots against pressure by default, or height
+with `-h`.

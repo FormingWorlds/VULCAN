@@ -18,8 +18,8 @@ model_main_: $(o-files)
 ../$(OBJDIR)%.o : %.cpp
 	@echo "compiling: main --> $<"
 	@$(CXX) $(CXXFLAGS) $< -o $@
-	
-clean: 
+
+clean:
 	rm -f $(o-files) $(d-files)
-	
+
 -include $(d-files)

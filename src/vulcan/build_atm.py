@@ -1,3 +1,17 @@
+"""
+---
+
+Module for building the atmospheric structure and calculating the initial mixing ratios for VULCAN.
+
+Imports
+---
+- [`vulcan.config`](config.md): `Config` class for handling configuration settings.
+- [`vulcan.paths`](paths.md): Paths to various files and directories used in VULCAN.
+- [`vulcan.phy_const`](phy_const.md): Physical constants used in VULCAN.
+- `chem_funs`: `ni`, `spec_list`: number of species and reactions in the network, and the list of species.
+
+"""
+
 from __future__ import annotations
 
 import logging

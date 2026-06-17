@@ -1,4 +1,11 @@
-# Setup logger for VULCAN
+"""
+---
+
+Logger setup for VULCAN.
+
+---
+"""
+
 from __future__ import annotations
 
 import logging

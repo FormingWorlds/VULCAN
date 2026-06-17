@@ -64,7 +64,7 @@ void FastChem<double_type>::calculateElementDensities(Element<double_type>& spec
     }
 
   }
-  
+
   species.checkN(options.element_density_minlimit, gas_density);
 
   double_type n = calculateMoleculeDensities(species, gas_density);
@@ -80,7 +80,7 @@ template <class double_type>
 double_type FastChem<double_type>::calculateMoleculeDensities(Element<double_type>& species, const double_type gas_density)
 {
   double_type n_major = 0.0;
-  
+
   for (size_t ii=0; ii<species.major_molecules_inc.size(); ++ii)
   {
     const unsigned int i = species.major_molecules_inc[ii];
@@ -93,10 +93,10 @@ double_type FastChem<double_type>::calculateMoleculeDensities(Element<double_typ
 
       sum += molecules[i].stoichometric_vector[l] * std::log(elements[l].number_density);
     }
-    
+
     molecules[i].number_density = std::exp(sum + molecules[i].mass_action_constant);
     n_major += molecules[i].number_density * molecules[i].sigma;
-   
+
     molecules[i].checkN(options.molecule_density_minlimit, gas_density);
   }
 
@@ -111,7 +111,7 @@ double_type FastChem<double_type>::calculateMoleculeDensities(Element<double_typ
 template <class double_type>
 double FastChem<double_type>::totalElementDensity()
 {
-  
+
   double n_tot = 0.0;
 
   //first we count the elements locked in molecules and ions
@@ -129,7 +129,7 @@ double FastChem<double_type>::totalElementDensity()
   //then we add the free atoms
    for (auto & i : elements) n_tot += i.number_density;
 
-  
+
   return n_tot;
 }
 
@@ -139,6 +139,3 @@ template class FastChem<double>;
 template class FastChem<long double>;
 
 }
-
-
-

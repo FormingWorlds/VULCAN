@@ -56,25 +56,25 @@ bool FastChem<double_type>::solveFastchem(const double temperature_gas, const do
   for (iter_step=0; iter_step<max_iter; ++iter_step)
   {
     double_type n_maj = 0.0;
-   
+
     //calculate the element densities in their order
     for (auto it = element_calculation_order.begin(); it<element_calculation_order.end(); it++)
       calculateElementDensities(elements[*it], gas_density, use_backup_solver, n_maj);
 
-   
+
     for (auto & i : elements) i.calcMinorSpeciesDensities(molecules);
-  
-    
+
+
     if (e_ != FASTCHEM_UNKNOWN_SPECIES)  //only calculate electrons if they are present in the element list
       calculateElectronDensities(elements[e_], number_density_old[e_], gas_density);
- 
+
 
     //check if n_j_min are small enough, if not use backup solver
     for (auto & i : elements)
       if ( (i.number_density_min + i.number_density_maj > i.epsilon * gas_density) && use_backup_solver == false)
       {
         use_backup_solver = true;
-       
+
         if (options.verbose_level >= 4)
           std::cout << "Too large n_min and n_maj for species " << i.symbol << ". Switching to backup.  Iteration step: " << iter_step << "\n";
 
@@ -90,7 +90,7 @@ bool FastChem<double_type>::solveFastchem(const double temperature_gas, const do
       for (size_t i=0; i<nb_species; ++i)
         if (std::fabs((species[i]->number_density - number_density_old[i])) > options.accuracy*number_density_old[i]
              && species[i]->number_density/gas_density > 1.e-155)
-        { 
+        {
           converged = false;
           break;
         }
@@ -116,9 +116,9 @@ bool FastChem<double_type>::solveFastchem(const double temperature_gas, const do
     for (size_t i=0; i<nb_species; ++i)
       number_density_old[i] = species[i]->number_density;
   }
-  
+
   nb_iterations = iter_step;
- 
+
   return converged;
 }
 

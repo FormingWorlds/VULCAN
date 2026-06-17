@@ -1,4 +1,21 @@
 #!/usr/bin/env python3
+
+"""
+
+----
+
+Main module for running VULCAN.
+Contains the `run_vulcan` function, which executes the main VULCAN workflow, and the `run_cli` function, which serves as the entry point when running the script directly.
+
+Imports
+----
+- [`vulcan.config`](config.md): `Config` class for handling configuration settings.
+- [`vulcan.paths`](paths.md): Paths to various files and directories used in VULCAN.
+- [`vulcan.logs`](logs.md): Logger setup for VULCAN.
+- [`vulcan.make_chem_funs`](make_chem_funs.md): `make_all`, generates all chemical functions from the chemical network.
+
+"""
+
 from __future__ import annotations
 
 # Import system modules
@@ -168,7 +185,7 @@ def run_vulcan(vulcan_cfg: Config, make_network: bool = True):
 
 
 def run_cli():
-    """Entry point for the script when run directly"""
+    """Entry point for the script when run directly."""
 
     print('Starting VULCAN from command line')
 

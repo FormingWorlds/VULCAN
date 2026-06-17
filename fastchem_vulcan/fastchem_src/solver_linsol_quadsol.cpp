@@ -35,7 +35,7 @@ namespace fastchem {
 //Solver for an element that is not part of other species
 //See Eq. (2.32)
 template <class double_type>
-void FastChemSolver<double_type>::intertSol(Element<double_type>& species, std::vector< Element<double_type> >& elements, const std::vector< Molecule<double_type> >& molecules, 
+void FastChemSolver<double_type>::intertSol(Element<double_type>& species, std::vector< Element<double_type> >& elements, const std::vector< Molecule<double_type> >& molecules,
                                             const double_type gas_density)
 {
 
@@ -46,7 +46,7 @@ void FastChemSolver<double_type>::intertSol(Element<double_type>& species, std::
 
 //Analytic solution for linear equation, see Sect. 2.4.2 and Eq. (2.32)
 template <class double_type>
-void FastChemSolver<double_type>::linSol(Element<double_type>& species, std::vector< Element<double_type> >& elements, const std::vector< Molecule<double_type> >& molecules, 
+void FastChemSolver<double_type>::linSol(Element<double_type>& species, std::vector< Element<double_type> >& elements, const std::vector< Molecule<double_type> >& molecules,
                                          const double_type gas_density)
 {
   double_type scaling_factor = 0.0;
@@ -76,7 +76,7 @@ void FastChemSolver<double_type>::linSol(Element<double_type>& species, std::vec
 
 //Analytic solution for quadratic equation, see Sect. 2.4.2 and Eq. (2.32)
 template <class double_type>
-void FastChemSolver<double_type>::quadSol(Element<double_type>& species, std::vector< Element<double_type> >& elements, const std::vector< Molecule<double_type> >& molecules, 
+void FastChemSolver<double_type>::quadSol(Element<double_type>& species, std::vector< Element<double_type> >& elements, const std::vector< Molecule<double_type> >& molecules,
                                           const double_type gas_density)
 {
   double_type scaling_factor = 0.0;
@@ -103,17 +103,17 @@ void FastChemSolver<double_type>::quadSol(Element<double_type>& species, std::ve
     return;
   }
 
-  
+
   //calculation of coefficient A_j1, see Eq. (2.28)
   const double_type A1 = A1Coeff(species, elements, molecules) + std::exp(-scaling_factor);
 
   //calculation of coefficient A_j0, see Eq. (2.27)
   const double_type A0 = std::exp(-scaling_factor) * (species.number_density_maj + species.number_density_min - gas_density * species.epsilon);
-  
+
 
   //calculation of n_j, Eq. (2.32)
   const double_type Qj = -0.5 * (A1 + std::sqrt(A1*A1 - 4.*A2*A0));
-    
+
   species.number_density = A0/Qj;
 
 }
@@ -124,6 +124,3 @@ template class FastChemSolver<double>;
 template class FastChemSolver<long double>;
 
 }
-
-
-

@@ -18,8 +18,8 @@ fastchem_: $(o-files)
 ../$(OBJDIR)%.o : %.cpp
 	@echo "compiling: fastchem --> $<"
 	@$(CXX) $(CXXFLAGS) $< $(OBJ) $@
-	
-clean: 
+
+clean:
 	rm -f $(o-files) $(d-files)
 
 -include $(d-files)

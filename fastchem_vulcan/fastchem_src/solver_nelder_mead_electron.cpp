@@ -35,7 +35,7 @@ namespace fastchem {
 
 //Nelder-Mead downhill simplex method in one dimension for the electron density
 template <class double_type>
-bool FastChemSolver<double_type>::nelderMeadSolveElectron(Element<double_type>& species, std::vector< Element<double_type> >& elements, const std::vector< Molecule<double_type> >& molecules, 
+bool FastChemSolver<double_type>::nelderMeadSolveElectron(Element<double_type>& species, std::vector< Element<double_type> >& elements, const std::vector< Molecule<double_type> >& molecules,
                                                           const double_type initial_solution, const double gas_density)
 {
   const unsigned int N = 1; //dimension of Nelder-Mead method
@@ -56,7 +56,7 @@ bool FastChemSolver<double_type>::nelderMeadSolveElectron(Element<double_type>& 
   auto charge_conservation = [&] (const double_type &log_x)
     {
       const double_type x = std::exp(log_x);
-      
+
       //Anions are calculated with Horner's method
       double_type P_anion = Aj_anion[order_anion];
 
@@ -73,7 +73,7 @@ bool FastChemSolver<double_type>::nelderMeadSolveElectron(Element<double_type>& 
 
       //charge conservation
       const double_type Pj = - x - (x * P_anion + P_cation);
-  
+
 
       return Pj;
     };
@@ -113,7 +113,7 @@ bool FastChemSolver<double_type>::nelderMeadSolveElectron(Element<double_type>& 
 
     for(size_t i = 0; i < N + 1; ++i)
       vf[i] = std::fabs(charge_conservation(x[i]));
-	    
+
 
     x1 = 0; xn = 0; xnp1 = 0;
 
@@ -133,11 +133,11 @@ bool FastChemSolver<double_type>::nelderMeadSolveElectron(Element<double_type>& 
     //check if the function has a root in a delta region around xg
     const double_type delta = xg * options->accuracy*1e-4;
 
- 
+
     const double_type vf_epsilon_plus = charge_conservation(xg+delta);
     const double_type vf_epsilon_minus = charge_conservation(xg-delta);
 
-    
+
     //if the function changes sign, we have the solution
     if ((vf_epsilon_minus < 0 && vf_epsilon_plus > 0) || (vf_epsilon_minus > 0 && vf_epsilon_plus < 0)  )
     {
@@ -220,7 +220,7 @@ bool FastChemSolver<double_type>::nelderMeadSolveElectron(Element<double_type>& 
 
   species.number_density = std::exp(x[x1]);
 
-  
+
   if (!converged && options->verbose_level >= 3)
     std::cout << "Nelder-Mead iteration limit reached, result may not be optimal." << "\t" << x[x1] << "\n";
 

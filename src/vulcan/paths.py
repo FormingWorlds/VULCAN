@@ -1,3 +1,11 @@
+"""
+----
+
+Paths to various files and directories used in VULCAN.
+
+----
+"""
+
 from __future__ import annotations
 
 import os
