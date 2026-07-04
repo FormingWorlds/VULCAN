@@ -37,7 +37,7 @@ triggered. Pytest exit code 5 ("no tests collected") is treated as a
 successful zero count and the corresponding badge writes ``"message": "0"``.
 Any other non-zero exit is a hard failure. Collection only reflects tests
 whose modules import successfully, so the package must be installed (with
-its test extra) before this script runs.
+its ``develop`` extra) before this script runs.
 """
 
 from __future__ import annotations
