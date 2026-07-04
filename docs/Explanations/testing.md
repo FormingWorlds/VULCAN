@@ -1,10 +1,12 @@
 # Testing suite
 
+[![Coverage](https://gist.githubusercontent.com/nichollsh/59f094e7d22cd6af9a1cb3ea665b4260/raw/covbadge.svg)](https://github.com/FormingWorlds/VULCAN/actions/workflows/tests.yaml)
+[![Tests](https://img.shields.io/github/actions/workflow/status/FormingWorlds/VULCAN/tests.yaml?branch=main&label=Tests)](https://github.com/FormingWorlds/VULCAN/actions/workflows/tests.yaml)
 [![tests](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/FormingWorlds/VULCAN/badges/tests-total.json)](https://proteus-framework.org/testing)
 [![unit tests](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/FormingWorlds/VULCAN/badges/tests-unit.json)](https://proteus-framework.org/testing)
 [![integration tests](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/FormingWorlds/VULCAN/badges/tests-integration.json)](https://proteus-framework.org/testing)
 
-The badges above report the live test counts for VULCAN. They refresh automatically from the repository's `badges` branch whenever a push to `main` changes the tests, the `src/vulcan` package, `pyproject.toml`, or the badge tooling, and on manual dispatch, so the numbers on this page track the suite without manual updates.
+The badge row above shows, left to right, the fraction of the code base exercised by the test suite, the status of the `Tests` workflow on `main`, and the live counts of total, unit, and integration tests. The coverage and status badges track the `Tests` GitHub Actions workflow; the three count badges refresh from the repository's `badges` branch whenever a push to `main` changes the tests, the `src/vulcan` package, `pyproject.toml`, or the badge tooling, and on manual dispatch, so these counts track the suite without manual updates.
 
 Tests verify that the code keeps doing what was written. A passing suite confirms that a recent change has not perturbed locked behaviour; it is a regression net, not a proof of physical correctness, which is judged separately against data and published references.
 
