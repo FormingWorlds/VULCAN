@@ -30,6 +30,7 @@ nav:
         - Titanium and vanadium chemistry: Explanations/titanium_vanadium.md
         - Haze precursors: Explanations/haze_precursors.md
       - PROTEUS coupling: Explanations/proteus_coupling.md
+      - Testing suite: Explanations/testing.md
 
   - Reference:
       - Publications: Reference/bibliography.md
