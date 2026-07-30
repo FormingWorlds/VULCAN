@@ -1,5 +1,7 @@
 ---
 title: VULCAN
+hide:
+  - navigation
 ---
 
 # VULCAN
