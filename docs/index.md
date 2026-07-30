@@ -2,10 +2,10 @@
 
 <p class="subtitle">Photochemical and thermochemical kinetics for (exo)planetary atmospheres</p>
 
-[![Tests](https://img.shields.io/github/actions/workflow/status/FormingWorlds/VULCAN/tests.yaml?branch=main&label=Tests)](https://github.com/FormingWorlds/VULCAN/actions/workflows/tests.yaml)
-[![Coverage](https://gist.githubusercontent.com/nichollsh/59f094e7d22cd6af9a1cb3ea665b4260/raw/covbadge.svg)](https://github.com/FormingWorlds/VULCAN/actions/workflows/tests.yaml)
-[![Docs](https://img.shields.io/website?url=https%3A%2F%2Fproteus-framework.org%2FVULCAN%2F&label=Docs&up_message=online&down_message=offline)](https://proteus-framework.org/VULCAN/)
 [![License](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
+[![Docs](https://img.shields.io/github/actions/workflow/status/FormingWorlds/VULCAN/docs.yaml?branch=main&label=Docs)](https://proteus-framework.org/VULCAN/)
+[![Coverage](https://gist.githubusercontent.com/nichollsh/59f094e7d22cd6af9a1cb3ea665b4260/raw/covbadge.svg)](https://github.com/FormingWorlds/VULCAN/actions/workflows/tests.yaml)
+[![Unit Tests](https://img.shields.io/github/actions/workflow/status/FormingWorlds/VULCAN/tests.yaml?branch=main&label=Unit%20Tests)](https://github.com/FormingWorlds/VULCAN/actions/workflows/tests.yaml)
 
 **VULCAN** is an open-source 1D chemical kinetics code for planetary and exoplanetary
 atmospheres. It solves the coupled vertical continuity equations for every species, combining
