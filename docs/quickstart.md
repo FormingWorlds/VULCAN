@@ -1,4 +1,4 @@
-# Quick start
+# Getting started
 
 !!! note "Usage within the PROTEUS framework"
     VULCAN can be used on its own, but is also integrated into the PROTEUS framework for the
