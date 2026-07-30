@@ -1,9 +1,3 @@
----
-title: VULCAN
-hide:
-  - navigation
----
-
 # VULCAN
 
 <p class="subtitle">Photochemical and thermochemical kinetics for (exo)planetary atmospheres</p>

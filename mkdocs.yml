@@ -7,8 +7,8 @@ copyright: '© 2023-2026 <a href="https://formingworlds.space">Forming Worlds La
 
 nav:
   - Home:
-      - About: index.md
-      - Quick start: quickstart.md
+      - index.md
+      - Getting started: quickstart.md
 
   - How-to guides:
       - Installation: How-to/installation.md
@@ -80,6 +80,7 @@ theme:
   custom_dir: docs/overrides
   features:
     - navigation.tabs
+    - navigation.indexes
     - navigation.tabs.sticky
     - navigation.expand
     - content.code.copy
