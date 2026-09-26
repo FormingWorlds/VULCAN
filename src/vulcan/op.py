@@ -135,7 +135,7 @@ def safe_rm(fpath: str) -> bool:
                 return True
 
         else:
-            log.warning("Cannot remove unhandled path '%s'" % fpath)
+            log.warning(f"Cannot remove unhandled path '{fpath}'")
 
     return False
 
@@ -211,7 +211,7 @@ class ReadRate:
 
         with open(self.cfg.network) as f:
             all_lines = f.readlines()
-            for line_indx, line in enumerate(all_lines):
+            for line in all_lines:
                 # switch to 3-body and dissociation reations
                 if line.startswith('# 3-body'):
                     re_tri = True
@@ -543,7 +543,9 @@ class ReadRate:
 
         # for setting up the wavelength coverage
         threshold = {
-            label: row for label, row in zip(sp_label, lmd_data) if label in species
+            label: row
+            for label, row in zip(sp_label, lmd_data, strict=False)
+            if label in species
         }  # only include the species in the current network
         var.threshold = threshold
 
@@ -696,39 +698,31 @@ class ReadRate:
 
         # read_cross
         # creat a dict of cross section with key=sp and values=bins in data_var
-        var.cross = dict(
-            [(sp, np.zeros(var.nbin)) for sp in absp_sp]
-        )  # including photo_sp and ion_sp
+        var.cross = {sp: np.zeros(var.nbin) for sp in absp_sp}  # including photo_sp and ion_sp
 
         # read cross of disscoiation
-        var.cross_J = dict(
-            [
-                ((sp, i), np.zeros(var.nbin))
-                for sp in photo_sp
-                for i in range(1, var.n_branch[sp] + 1)
-            ]
-        )
-        var.cross_scat = dict([(sp, np.zeros(var.nbin)) for sp in self.cfg.scat_sp])
+        var.cross_J = {
+            (sp, i): np.zeros(var.nbin)
+            for sp in photo_sp
+            for i in range(1, var.n_branch[sp] + 1)
+        }
+        var.cross_scat = {sp: np.zeros(var.nbin) for sp in self.cfg.scat_sp}
 
         # for temperature-dependent cross sections
-        var.cross_T = dict([(sp, np.zeros((nz, var.nbin))) for sp in self.cfg.T_cross_sp])
-        var.cross_J_T = dict(
-            [
-                ((sp, i), np.zeros((nz, var.nbin)))
-                for sp in self.cfg.T_cross_sp
-                for i in range(1, var.n_branch[sp] + 1)
-            ]
-        )
+        var.cross_T = {sp: np.zeros((nz, var.nbin)) for sp in self.cfg.T_cross_sp}
+        var.cross_J_T = {
+            (sp, i): np.zeros((nz, var.nbin))
+            for sp in self.cfg.T_cross_sp
+            for i in range(1, var.n_branch[sp] + 1)
+        }
 
         # read cross of ionisation
         if self.cfg.use_ion:
-            var.cross_Jion = dict(
-                [
-                    ((sp, i), np.zeros(var.nbin))
-                    for sp in ion_sp
-                    for i in range(1, var.ion_branch[sp] + 1)
-                ]
-            )
+            var.cross_Jion = {
+                (sp, i): np.zeros(var.nbin)
+                for sp in ion_sp
+                for i in range(1, var.ion_branch[sp] + 1)
+            }
 
         for sp in (
             photo_sp
@@ -4124,9 +4118,9 @@ class ODESolver:
         n_branch = var.n_branch
 
         # reset to zeros every time
-        var.J_sp = dict(
-            [((sp, bn), np.zeros(nz)) for sp in var.photo_sp for bn in range(n_branch[sp] + 1)]
-        )
+        var.J_sp = {
+            (sp, bn): np.zeros(nz) for sp in var.photo_sp for bn in range(n_branch[sp] + 1)
+        }
 
         for sp in var.photo_sp:
             # shape: flux (nz,nbin) cross (nbin)
@@ -4217,9 +4211,9 @@ class ODESolver:
         n_branch = var.ion_branch
 
         # reset to zeros every time
-        var.Jion_sp = dict(
-            [((sp, bn), np.zeros(nz)) for sp in var.ion_sp for bn in range(n_branch[sp] + 1)]
-        )
+        var.Jion_sp = {
+            (sp, bn): np.zeros(nz) for sp in var.ion_sp for bn in range(n_branch[sp] + 1)
+        }
 
         for sp in var.ion_sp:
             # shape: flux (nz,nbin) cross (nbin)
@@ -4789,8 +4783,8 @@ class Output:
                 ax.set_ylim((atm.zco[0] / 1e5, atm.zco[-1] / 1e5))
                 ax.set_ylabel('Height [km]')
 
-        title = 'i = %5d steps     t = %.2e seconds' % (para.count, var.t)
-        title += '\n dy/dt = %.2e' % (var.longdydt)
+        title = f'i = {int(para.count):5d} steps     t = {var.t:.2e} seconds'
+        title += f'\n dy/dt = {var.longdydt:.2e}'
         ax.set_title(title)
         ax.set_xscale('log')
         ax.set_xlabel('Volume mixing ratio')

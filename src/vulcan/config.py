@@ -205,4 +205,4 @@ class Config:
         with open(fpath, 'w') as hdl:
             hdl.write('# Variables set in vulcan_cfg object \n')
             for attr, value in self.__dict__.items():
-                hdl.write('%-22s  %-s \n' % (attr, str(value)))
+                hdl.write(f'{attr:<22}  {value!s} \n')

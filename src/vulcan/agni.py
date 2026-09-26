@@ -67,7 +67,7 @@ def activate_julia(vulcan_cfg: Config):
     logpath = os.path.join(vulcan_cfg.output_dir, AGNI_LOGFILE_NAME)
     jl.AGNI.setup_logging(logpath, verbosity)
 
-    log.debug("AGNI will log to '%s'" % logpath)
+    log.debug(f"AGNI will log to '{logpath}'")
 
 
 def init_agni_atmos(vulcan_cfg: Config, atm: AtmData, var: Variables):
@@ -161,7 +161,7 @@ def init_agni_atmos(vulcan_cfg: Config, atm: AtmData, var: Variables):
     # Set temperature profile to initial guess
     tmp_top = 500.0
     tmp_top = min(tmp_top, vulcan_cfg.Tsurf_guess)
-    log.debug('Initialised log-linear (top = %.2f K)' % tmp_top)
+    log.debug(f'Initialised log-linear (top = {tmp_top:.2f} K)')
     jl.AGNI.setpt.loglinear_b(atmos, -0.5 * vulcan_cfg.Tsurf_guess)
     jl.AGNI.setpt.stratosphere_b(atmos, tmp_top)
 
@@ -193,7 +193,7 @@ def _solve_energy(
     # make attempts
     while not agni_success:
         attempts += 1
-        log.info('Attempt %d' % attempts)
+        log.info(f'Attempt {attempts}')
 
         # default parameters
         linesearch = 2
@@ -211,8 +211,8 @@ def _solve_energy(
 
         log.debug('Solver parameters:')
         log.debug(
-            '    ls_method=%d, easy_start=%s, dx_max=%.1f, ls_increase=%.2f'
-            % (linesearch, str(easy_start), dx_max, ls_increase)
+            f'    ls_method={int(linesearch)}, easy_start={easy_start}, '
+            f'dx_max={dx_max:.1f}, ls_increase={ls_increase:.2f}'
         )
 
         jl.AGNI.solver.ls_increase = float(ls_increase)
@@ -244,11 +244,11 @@ def _solve_energy(
         # Model status check
         if agni_success:
             # success
-            log.info('Attempt %d succeeded' % attempts)
+            log.info(f'Attempt {attempts} succeeded')
             break
         else:
             # failure
-            log.warning('Attempt %d failed' % attempts)
+            log.warning(f'Attempt {attempts} failed')
 
             # Max attempts
             if attempts >= 2:
