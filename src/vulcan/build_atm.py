@@ -214,10 +214,10 @@ class InitialAbun:
             while process.poll() is None:
                 check_io()
 
-        except subprocess.CalledProcessError:
+        except subprocess.CalledProcessError as e:
             raise RuntimeError(
                 f'FastChem cannot run properly. Try compiling it by running `make` inside {FASTCHEM_DIR}'
-            )
+            ) from e
 
     def ini_y(self, data_var, data_atm):
         # initial mixing ratios of the molecules
@@ -749,8 +749,8 @@ class Atm:
                     rho_p = data_atm.rho_p[sp]
                     r_p = data_atm.r_p[sp]
 
-                except (ValueError, KeyError):
-                    raise ValueError(sp + ' has not been prescribed size and density!')
+                except (ValueError, KeyError) as e:
+                    raise ValueError(sp + ' has not been prescribed size and density!') from e
 
                 # Calculating the setteling (terminal) velocity
                 gi = 0.5 * (data_atm.g + np.roll(data_atm.g, -1))

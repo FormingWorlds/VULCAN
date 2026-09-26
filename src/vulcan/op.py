@@ -560,8 +560,8 @@ class ReadRate:
                         skip_header=1,
                         names=['lambda', 'cross', 'disso', 'ion'],
                     )
-                except FileNotFoundError:
-                    raise RuntimeError('Missing the cross section from ' + sp)
+                except FileNotFoundError as e:
+                    raise RuntimeError('Missing the cross section from ' + sp) from e
                 if sp in ion_sp:
                     try:
                         ion_ratio_raw[sp] = np.genfromtxt(
@@ -571,8 +571,8 @@ class ReadRate:
                             skip_header=1,
                             names=True,
                         )
-                    except FileNotFoundError:
-                        raise RuntimeError('Missing the ion branching ratio from ' + sp)
+                    except FileNotFoundError as e:
+                        raise RuntimeError('Missing the ion branching ratio from ' + sp) from e
             else:
                 try:
                     cross_raw[sp] = np.genfromtxt(
@@ -582,8 +582,8 @@ class ReadRate:
                         skip_header=1,
                         names=['lambda', 'cross', 'disso'],
                     )
-                except FileNotFoundError:
-                    raise RuntimeError('Missing the cross section from ' + sp)
+                except FileNotFoundError as e:
+                    raise RuntimeError('Missing the cross section from ' + sp) from e
 
             # reading in the branching ratios
             # for i in range(1,var.n_branch[sp]+1): # branch index should start from 1
@@ -596,8 +596,8 @@ class ReadRate:
                         skip_header=1,
                         names=True,
                     )
-                except FileNotFoundError:
-                    raise RuntimeError('Missing the branching ratio from ' + sp)
+                except FileNotFoundError as e:
+                    raise RuntimeError('Missing the branching ratio from ' + sp) from e
 
             # reading in temperature dependent cross sections
             if sp in self.cfg.T_cross_sp:
@@ -640,8 +640,8 @@ class ReadRate:
                 # photolysis threshold
                 try:
                     diss_max = threshold[sp]
-                except (KeyError, IndexError):
-                    raise RuntimeError(sp + ' not in threshol.txt')
+                except (KeyError, IndexError) as e:
+                    raise RuntimeError(sp + ' not in threshol.txt') from e
 
             else:
                 sp_min, sp_max = cross_raw[sp]['lambda'][0], cross_raw[sp]['lambda'][-1]
@@ -652,8 +652,8 @@ class ReadRate:
                 try:
                     if threshold[sp] > diss_max:
                         diss_max = threshold[sp]
-                except (KeyError, IndexError):
-                    raise RuntimeError(sp + ' not in threshol.txt')
+                except (KeyError, IndexError) as e:
+                    raise RuntimeError(sp + ' not in threshol.txt') from e
 
         # constraining the bin_min and bin_max by the default values defined in store.py
         bin_min = max(bin_min, var.def_bin_min)
@@ -837,9 +837,7 @@ class ReadRate:
                                 inter_T = interpolate.interp1d(
                                     [Tlow, Thigh], [log_lowT, log_highT], axis=0
                                 )  # at wavelength ld, interpolating between Tlow and Thigh in log10
-                                if inter_T(Tz) == -100:
-                                    var.cross_T[sp][lev, n] == 0.0
-                                else:
+                                if inter_T(Tz) != -100:  # otherwise the entry stays zero
                                     var.cross_T[sp][lev, n] = 10 ** (inter_T(Tz))
 
                                 # update: inerpolation in log10 for cross sections and linearly between Tlow and Thigh
@@ -4741,7 +4739,7 @@ class Output:
                 sp_lab = sp
 
             if color_index == len(colors):  # when running out of colors
-                colors.append(tuple(np.random.rand(3)))
+                colors.append(tuple(np.random.default_rng().random(3)))
 
             if sp in gas_cols.keys():
                 color = gas_cols[sp]
