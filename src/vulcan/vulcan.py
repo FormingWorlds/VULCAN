@@ -67,7 +67,7 @@ def run_vulcan(vulcan_cfg: Config, make_network: bool = True):
     from . import build_atm, op, store
 
     ### read in the basic chemistry data
-    with open(paths.COM_FILE, 'r') as f:
+    with open(paths.COM_FILE) as f:
         columns = f.readline()  # reading in the first line
         num_ele = (
             len(columns.split()) - 2

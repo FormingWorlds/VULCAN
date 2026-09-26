@@ -140,7 +140,7 @@ def safe_rm(fpath: str) -> bool:
     return False
 
 
-class ReadRate(object):
+class ReadRate:
     """
     to read in rate constants from the network file and compute the reaction rates for the corresponding Tco and pco
     """
@@ -630,7 +630,7 @@ class ReadRate(object):
                 var.cross_T_sp_list[sp].append(300)
 
             if cross_raw[sp]['cross'][0] == 0 or cross_raw[sp]['cross'][-1] == 0:
-                raise IOError('Please remove the zeros in the cross file of ' + sp)
+                raise OSError('Please remove the zeros in the cross file of ' + sp)
 
             if n == 0:  # the first species
                 bin_min = cross_raw[sp]['lambda'][0]
@@ -658,14 +658,12 @@ class ReadRate(object):
         bin_max = min(bin_max, var.def_bin_max, diss_max)
         log.info(
             'Input stellar spectrum from '
-            + '{:.1f}'.format(var.def_bin_min)
+            + f'{var.def_bin_min:.1f}'
             + ' to '
-            + '{:.1f}'.format(var.def_bin_max)
+            + f'{var.def_bin_max:.1f}'
         )
-        log.debug('Photodissociation threshold: ' + '{:.1f}'.format(diss_max))
-        log.info(
-            'Using wavelength bins from ' + '{:.1f}'.format(bin_min) + ' to ' + str(bin_max)
-        )
+        log.debug('Photodissociation threshold: ' + f'{diss_max:.1f}')
+        log.info('Using wavelength bins from ' + f'{bin_min:.1f}' + ' to ' + str(bin_max))
 
         var.dbin1 = self.cfg.dbin1
         var.dbin2 = self.cfg.dbin2
@@ -1027,7 +1025,7 @@ class ReadRate(object):
                 var.cross_scat[sp][n] = inter_scat(ld)
 
 
-class Integration(object):
+class Integration:
     """
     time-stepping until the stopping criteria (steady-state) is satisfied
     #all the operators required in the continuity equation: dn/dt + dphi/dz = P - L
@@ -1177,9 +1175,7 @@ class Integration(object):
                                         log.debug(
                                             sp
                                             + ' is now fixed from '
-                                            + '{:.2f}'.format(
-                                                atm.pco[atm.conden_min_lev[sp]] / 1e6
-                                            )
+                                            + f'{atm.pco[atm.conden_min_lev[sp]] / 1e6:.2f}'
                                             + ' bar.'
                                         )
                                     else:
@@ -1403,7 +1399,7 @@ class Integration(object):
         ):
             log.info('Integration successful with ' + str(para.count) + ' steps')
             log.info('long dy, long dydt = ' + str(var.longdy) + ', ' + str(var.longdydt))
-            log.debug('Actinic flux change: ' + '{:.2E}'.format(var.aflux_change))
+            log.debug('Actinic flux change: ' + f'{var.aflux_change:.2E}')
             self.output.print_end_msg(var, para)
             para.end_case = 1
             return True
@@ -1833,7 +1829,7 @@ class Integration(object):
         return var
 
 
-class ODESolver(object):
+class ODESolver:
     def __init__(self, vulcan_cfg: Config):  # do I always need to update var, atm, para ?
 
         self.cfg = vulcan_cfg
@@ -1937,11 +1933,9 @@ class ODESolver(object):
 
         tmp0 = A[0] * y[0] + B[0] * y[1]
         tmp1 = np.ndarray.flatten(
-            (
-                np.vstack(A[1 : nz - 1]) * y[1 : (nz - 1)]
-                + np.vstack(B[1 : nz - 1]) * y[1 + 1 : (nz - 1) + 1]
-                + np.vstack(C[1 : nz - 1]) * y[1 - 1 : (nz - 1) - 1]
-            )
+            np.vstack(A[1 : nz - 1]) * y[1 : (nz - 1)]
+            + np.vstack(B[1 : nz - 1]) * y[1 + 1 : (nz - 1) + 1]
+            + np.vstack(C[1 : nz - 1]) * y[1 - 1 : (nz - 1) - 1]
         )
         tmp2 = A[nz - 1] * y[nz - 1] + C[nz - 1] * y[nz - 2]
         diff = np.append(np.append(tmp0, tmp1), tmp2)
@@ -2147,11 +2141,9 @@ class ODESolver(object):
 
         tmp0 = (A[0] + Ai[0]) * y[0] + (B[0] + Bi[0]) * y[1]  # shape of ni-long 1D array
         tmp1 = np.ndarray.flatten(
-            (
-                np.vstack(A[1 : nz - 1]) * y[1 : (nz - 1)]
-                + np.vstack(B[1 : nz - 1]) * y[1 + 1 : (nz - 1) + 1]
-                + np.vstack(C[1 : nz - 1]) * y[1 - 1 : (nz - 1) - 1]
-            )
+            np.vstack(A[1 : nz - 1]) * y[1 : (nz - 1)]
+            + np.vstack(B[1 : nz - 1]) * y[1 + 1 : (nz - 1) + 1]
+            + np.vstack(C[1 : nz - 1]) * y[1 - 1 : (nz - 1) - 1]
         )
         tmp1 += np.ndarray.flatten(
             Ai[1 : nz - 1] * y[1 : (nz - 1)]
@@ -2404,11 +2396,9 @@ class ODESolver(object):
 
         tmp0 = (A[0] + Ai[0]) * y[0] + (B[0] + Bi[0]) * y[1]  # shape of ni-long 1D array
         tmp1 = np.ndarray.flatten(
-            (
-                np.vstack(A[1 : nz - 1]) * y[1 : (nz - 1)]
-                + np.vstack(B[1 : nz - 1]) * y[1 + 1 : (nz - 1) + 1]
-                + np.vstack(C[1 : nz - 1]) * y[1 - 1 : (nz - 1) - 1]
-            )
+            np.vstack(A[1 : nz - 1]) * y[1 : (nz - 1)]
+            + np.vstack(B[1 : nz - 1]) * y[1 + 1 : (nz - 1) + 1]
+            + np.vstack(C[1 : nz - 1]) * y[1 - 1 : (nz - 1) - 1]
         )
         tmp1 += np.ndarray.flatten(
             Ai[1 : nz - 1] * y[1 : (nz - 1)]
@@ -2592,11 +2582,9 @@ class ODESolver(object):
 
         tmp0 = (A[0] + Ai[0]) * y[0] + (B[0] + Bi[0]) * y[1]  # shape of ni-long 1D array
         tmp1 = np.ndarray.flatten(
-            (
-                np.vstack(A[1 : nz - 1]) * y[1 : (nz - 1)]
-                + np.vstack(B[1 : nz - 1]) * y[1 + 1 : (nz - 1) + 1]
-                + np.vstack(C[1 : nz - 1]) * y[1 - 1 : (nz - 1) - 1]
-            )
+            np.vstack(A[1 : nz - 1]) * y[1 : (nz - 1)]
+            + np.vstack(B[1 : nz - 1]) * y[1 + 1 : (nz - 1) + 1]
+            + np.vstack(C[1 : nz - 1]) * y[1 - 1 : (nz - 1) - 1]
         )
         tmp1 += np.ndarray.flatten(
             Ai[1 : nz - 1] * y[1 : (nz - 1)]
@@ -3907,7 +3895,7 @@ class ODESolver(object):
         nega_i = np.where(data_var.y < 0)
         log.warning(
             'Negative y at time '
-            + str('{:.2e}'.format(data_var.t))
+            + str(f'{data_var.t:.2e}')
             + ' and step: '
             + str(data_para.count)
         )
@@ -4305,7 +4293,7 @@ class Ros2(ODESolver):
         ab = np.zeros((2 * bw + 1, nb * nn))
 
         # first 2 columns
-        for i in range(0, 2 * nb):
+        for i in range(2 * nb):
             ab[-(2 * nb + i) :, i] = a[0 : 2 * nb + i, i]
 
         # middle
@@ -4611,7 +4599,7 @@ class Ros2(ODESolver):
         return var
 
 
-class Output(object):
+class Output:
     def __init__(self, vulcan_cfg: Config):
 
         self.cfg = vulcan_cfg
@@ -4636,7 +4624,7 @@ class Output(object):
         indx_max = np.nanargmax(para.where_varies_most)
         log.info(
             'Elapsed time: '
-            + '{:.2e}'.format(var.t)
+            + f'{var.t:.2e}'
             + ' || Step number: '
             + str(para.count)
             + '/'
@@ -4644,11 +4632,11 @@ class Output(object):
         )
         log.info(
             'longdy = '
-            + '{:.2e}'.format(var.longdy)
+            + f'{var.longdy:.2e}'
             + '      || longdy/dt = '
-            + '{:.2e}'.format(var.longdydt)
+            + f'{var.longdydt:.2e}'
             + '  || dt = '
-            + '{:.2e}'.format(var.dt)
+            + f'{var.dt:.2e}'
         )
         log.info('from nz = ' + str(int(indx_max / ni)) + ' and ' + species[indx_max % ni])
         log.info(spacer)
@@ -4850,7 +4838,7 @@ class Output(object):
 
         images.append((line1, line2))
 
-        plt.title(str(para.count) + ' steps and ' + str('{:.2e}'.format(var.t)) + ' s')
+        plt.title(str(para.count) + ' steps and ' + str(f'{var.t:.2e}') + ' s')
         plt.gca().set_xscale('log')
         plt.gca().set_yscale('log')
         plt.gca().invert_yaxis()

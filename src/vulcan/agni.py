@@ -220,8 +220,8 @@ def _solve_energy(
         # Try solving temperature profile
         agni_success = jl.AGNI.solver.solve_energy_b(
             atmos,
-            sol_type=int(3),
-            method=int(1),
+            sol_type=3,
+            method=1,
             chem=False,
             conduct=False,
             convect=True,

@@ -35,7 +35,7 @@ from .chem_funs import spec_list as species
 log = logging.getLogger('fwl.' + __name__)
 
 ### read in the basic chemistry data
-with open(COM_FILE, 'r') as f:
+with open(COM_FILE) as f:
     columns = f.readline()  # reading in the first line
     num_ele = (
         len(columns.split()) - 2
@@ -47,7 +47,7 @@ compo = np.genfromtxt(COM_FILE, names=True, dtype=type_list)
 compo_row = list(compo['species'])
 
 
-class InitialAbun(object):
+class InitialAbun:
     """
     Calculating the appropriate initial mixing ratios with the assigned elemental abundance
     """
@@ -114,7 +114,7 @@ class InitialAbun(object):
                 os.path.join(FASTCHEM_DIR, 'input', 'parameters.dat'),
             )
 
-        with open(solar_ele, 'r') as f:
+        with open(solar_ele) as f:
             new_str = ''
             ele_list = list(self.cfg.atom_list)
             ele_list.remove('H')
@@ -143,7 +143,7 @@ class InitialAbun(object):
 
             else:  # using costomized elemental abundances
                 log.info('Initializing with the customized elemental abundance:')
-                log.info('{:4}'.format('H') + str('1.'))
+                log.info('{:4}'.format('H') + '1.')
                 for line in f.readlines():
                     li = line.split()
                     sp = li[0].strip()
@@ -152,8 +152,8 @@ class InitialAbun(object):
                         # read-in vulcan_cfg.sp_H
                         sp_abun = getattr(self.cfg, sp + '_H')
                         fc_abun = 12.0 + np.log10(sp_abun)
-                        line = sp + '\t' + '{0:.4f}'.format(fc_abun) + '\n'
-                        log.info('{:4}'.format(sp) + '{0:.4E}'.format(sp_abun))
+                        line = sp + '\t' + f'{fc_abun:.4f}' + '\n'
+                        log.info(f'{sp:4}' + f'{sp_abun:.4E}')
 
                     elif sp in fc_list:  # other elements included in fastchem but not in VULCAN
                         sol_ratio = li[1].strip()
@@ -168,7 +168,7 @@ class InitialAbun(object):
                             )
 
                         new_ratio = float(sol_ratio) + np.log10(met_scale)
-                        line = sp + '\t' + '{0:.4f}'.format(new_ratio) + '\n'
+                        line = sp + '\t' + f'{new_ratio:.4f}' + '\n'
 
                     new_str += line
 
@@ -184,9 +184,7 @@ class InitialAbun(object):
         with open(os.path.join(vulcan_TP_dir, 'vulcan_TP.dat'), 'w') as f:
             ost = '#p (bar)    T (K)\n'
             for n, p in enumerate(data_atm.pco):  # p in bar in fast_chem
-                ost += (
-                    '{:.3e}'.format(p / 1.0e6) + '\t' + '{:.1f}'.format(data_atm.Tco[n]) + '\n'
-                )
+                ost += f'{p / 1.0e6:.3e}' + '\t' + f'{data_atm.Tco[n]:.1f}' + '\n'
             ost = ost[:-1]
             f.write(ost)
 
@@ -322,7 +320,7 @@ class InitialAbun(object):
                     y_ini[i, species.index('He')] = gas_tot[i] - np.sum(y_ini[i, :])
 
                 else:
-                    raise IOError(
+                    raise OSError(
                         'Initial mixing ratios unknown. Check the setting in vulcan_cfg.py.'
                     )
 
@@ -414,7 +412,7 @@ class InitialAbun(object):
         return data_var
 
 
-class Atm(object):
+class Atm:
     def __init__(self, vulcan_cfg: Config):
         self.cfg = vulcan_cfg
         self.gs = vulcan_cfg.gs  # gravity
@@ -573,7 +571,7 @@ class Atm(object):
         elif self.Kzz_prof == 'file':
             pass  # already defined within atm_type = 'file
         else:
-            raise IOError(
+            raise OSError(
                 '"Kzz_prof" (the type of Kzz profile) cannot be recongized.\nPlease assign it as "file" or "const" or "JM16" in vulcan_cfg.'
             )
 
@@ -590,7 +588,7 @@ class Atm(object):
             )
             data_atm.vz = inter_vz(data_atm.pico[1:-1])
         else:
-            raise IOError(
+            raise OSError(
                 '"vz_prof" cannot be recongized.\nPlease assign it as "file" or "const" in vulcan_cfg.'
             )
 
@@ -844,7 +842,7 @@ class Atm(object):
             + str(self.cfg.dbin_12trans)
             + ' nm)'
             + ' and conserving '
-            + '{:.2f}'.format(100 * sum_bin / sum_orgin)
+            + f'{100 * sum_bin / sum_orgin:.2f}'
             + ' %'
             + ' energy.'
         )
@@ -936,7 +934,7 @@ class Atm(object):
                 atm.alpha[species.index('Ar')] = 0.17
 
         else:
-            raise IOError('\n Unknow atm_base!')
+            raise OSError('\n Unknow atm_base!')
 
         for i in range(len(species)):
             # input should be float or in the form of nz-long 1D array
@@ -994,7 +992,7 @@ class Atm(object):
 
         for sp in self.cfg.condense_sp:
             if sp not in sat_sp_list:
-                raise IOError(
+                raise OSError(
                     'No saturation vapor data for '
                     + sp
                     + '. Check the sp_sat function in build_atm.py'

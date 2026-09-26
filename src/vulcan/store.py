@@ -23,7 +23,7 @@ from vulcan.config import Config
 from .chem_funs import ni, spec_list  # number of species and reactions in the network
 
 
-class Variables(object):
+class Variables:
     """
     store the essential variables for calculation
     """
@@ -167,7 +167,7 @@ class Variables(object):
         self.v_ratio = np.ones(nz)
 
 
-class AtmData(object):
+class AtmData:
     """
     store the data of atmospheric structure
     """
@@ -238,7 +238,7 @@ class AtmData(object):
                 self.rho_p[sp] = vulcan_cfg.rho_p[sp]
 
 
-class Parameters(object):
+class Parameters:
     """
     store the overall parameters for numerical method and counters
     """

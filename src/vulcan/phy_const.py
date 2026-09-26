@@ -8,7 +8,6 @@ Values taken from the [astropy package](http://docs.astropy.org/en/stable/index.
 ----
 """
 
-
 from __future__ import annotations
 
 kb = 1.38064852e-16  # Boltzmann constant (erg K^-1)

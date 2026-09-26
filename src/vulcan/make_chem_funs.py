@@ -24,6 +24,7 @@ from .paths import CHEM_FUNS_FILE, COM_FILE, GIBBS_FILE, THERMO_DIR
 
 log = logging.getLogger('fwl.' + __name__)
 
+
 def read_network(vulcan_cfg: Config):
 
     Rf, Rindx = {}, {}
@@ -43,7 +44,7 @@ def read_network(vulcan_cfg: Config):
     new_network = ''
     photo_re_indx = 0  # The index of first photodissoication reaction
 
-    with open(vulcan_cfg.network, 'r') as f:
+    with open(vulcan_cfg.network) as f:
         for line in f.readlines():
             # switch to 3-body and dissociation reations
             if line.startswith('# 3-body'):
@@ -669,7 +670,7 @@ def make_Gibbs(re_table, gibbs_text, ofname):
             rate_exp = rate_exp[0:-1]  # Delete the last '*'
             rate_dict[j + 1] = rate_exp
 
-    with open(GIBBS_FILE, 'r') as g:
+    with open(GIBBS_FILE) as g:
         for line in g:
             gstr += line
 
