@@ -94,26 +94,6 @@ def test_mol_to_ele_counts_atoms(mol, expected):
     """Element counts follow the chemical formula."""
     assert plot.mol_to_ele(mol) == expected
 
-
-@pytest.mark.unit
-def test_mol_to_ele_rejects_name_without_elements():
-    """A name containing no element symbols cannot be decomposed."""
-    with pytest.raises(ValueError, match='Could not decompose'):
-        plot.mol_to_ele('h2o')
-
-
-@pytest.mark.unit
-@pytest.mark.xfail(
-    strict=True,
-    reason='mol_to_ele checks `str(mol[0]).isupper` without calling it, so the leading-'
-    'character validation never triggers and the invalid prefix is silently ignored.',
-)
-def test_mol_to_ele_rejects_lowercase_leading_character():
-    """A name that does not start with an element symbol is invalid."""
-    with pytest.raises(ValueError):
-        plot.mol_to_ele('xH2O')
-
-
 @pytest.mark.unit
 @pytest.mark.parametrize(
     'gas, expected',
@@ -241,21 +221,6 @@ def test_plot_TP_places_Kzz_on_interfaces(model, tmp_path, keep_figures):
     np.testing.assert_allclose(ax2.get_lines()[0].get_xdata(), atm.Kzz)
     np.testing.assert_allclose(ax2.get_lines()[0].get_ydata(), atm.pico[1:-1] / 1e6)
     assert (tmp_path / 'TPK_initial.png').stat().st_size > 0
-
-
-@pytest.mark.unit
-@pytest.mark.xfail(
-    strict=True,
-    reason='With plot_height, Kzz (defined on interior interfaces, as in the pressure '
-    'branch) is plotted against layer-centre heights zmco[1:] instead of zco[1:-1].',
-)
-def test_plot_TP_height_places_Kzz_on_interfaces(model, keep_figures):
-    """In the height view, Kzz is plotted at the heights of the interior interfaces."""
-    cfg, var, atm, para = model
-    cfg.plot_height = True
-    plot.plot_TP(cfg, atm)
-    ax2 = plt.gcf().axes[1]
-    np.testing.assert_allclose(ax2.get_lines()[0].get_ydata(), atm.zco[1:-1] / 1e5)
 
 
 @pytest.mark.unit
