@@ -25,6 +25,7 @@ import scipy
 import scipy.optimize as sop
 from scipy import interpolate
 
+from vulcan import plot
 from vulcan.config import Config
 from vulcan.paths import COM_FILE, FASTCHEM_DIR
 from vulcan.phy_const import Navo, au, kb, r_sun
@@ -763,7 +764,7 @@ class Atm(object):
 
         # plot T-P profile
         if self.cfg.plot_TP:
-            output.plot_TP(data_atm)
+            plot.plot_TP(self.cfg, data_atm)
 
         # print warning when T exceeds the valid range of Gibbs free energy (NASA polynomials)
         if np.any(np.logical_or(data_atm.Tco < 200, data_atm.Tco > 6000)):

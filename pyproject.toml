@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 # https://packaging.python.org/en/latest/specifications/declaring-project-metadata/
 [project]
 name = "fwl-vulcan"
-version = "26.05.12"
+version = "26.10.14"
 description = "Photochemical kinetics for exoplanetary atmospheres, a fast and easy-to-use python code."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -34,6 +34,7 @@ classifiers = [
 dependencies = [
     "juliacall",
     "matplotlib",
+    "netCDF4",
     "numpy>=2.0.0",
     "pandas",
     "scipy",
@@ -156,7 +157,7 @@ exclude_lines = [
 directory = "htmlcov"
 [tool.bumpversion]
 # https://callowayproject.github.io/bump-my-version/howtos/calver/
-current_version = "26.05.12"
+current_version = "26.10.14"
 parse = """(?x)                      # Verbose mode
     (?P<release>                     # The release part
         (?:[1-9][0-9])\\.            # YY.

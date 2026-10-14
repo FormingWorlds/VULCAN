@@ -55,6 +55,6 @@ cd tools/
 python plot_vulcan.py <output.pkl> <species> <plot_name> [-h]
 ```
 
-Reads a pickled output (e.g. `output/example.pkl`) and plots mixing-ratio profiles for the
+Reads a pickled output (e.g. `output/example.pkl`, written when `save_type` includes `'pickle'`) and plots mixing-ratio profiles for the
 given comma-separated species (no spaces). Plots against pressure by default, or height
 with `-h`.

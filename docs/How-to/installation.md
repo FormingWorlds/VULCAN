@@ -116,8 +116,8 @@ This will:
 - generate `chem_funs.py` from the default chemical network, and
 - run the default model (the HD 189733b setup defined in `config.py`).
 
-If it succeeds, results are written to the `output/` folder (the pickled output
-`output/example.pkl` and diagnostic plots under `output/plot/`).
+If it succeeds, results are written to the `output/` folder (the NetCDF output
+`output/example.nc` and diagnostic plots under `output/plot/`).
 
 !!! tip "Skip network regeneration"
     Building `chem_funs.py` is only necessary when the network changes. Pass `-n` to reuse the existing file and start faster:

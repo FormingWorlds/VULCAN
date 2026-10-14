@@ -53,7 +53,7 @@ class Config:
         self.log_level = 'INFO'
         self.output_dir = VULCAN_DIR + 'output/'
         self.plot_dir = self.output_dir + 'plot/'
-        self.out_name = 'example.pkl'
+        self.out_name = 'example'  # file stem; the extension is set by save_type
         self.clean_output = True
 
         # ====== Setting up the elemental abundance ======
@@ -184,6 +184,7 @@ class Config:
 
         # ====== Setting up for output and plotting ======
         self.plot_dpi = 130
+        self.plot_fmt = 'png'
         self.plot_TP = True
         self.use_live_plot = True  # plot vmr profiles, during run
         self.use_live_flux = False  # plot fluxes, during run
@@ -195,8 +196,8 @@ class Config:
         self.y_time_freq = 1  #  storing data for every 'y_time_freq' step
         self.plot_spec = ['H2', 'H', 'H2O', 'CH4', 'CO', 'CO2', 'C2H2']
 
-        # output:
-        self.output_humanread = False
+        # output: 'netcdf', 'pickle', 'plain' (human-readable text), or a list of these
+        self.save_type = ['pickle', 'netcdf', 'plain']
         self.save_evolution = False  # save the evolution of chemistry (y_time and t_time) for every save_evo_frq step
         self.save_evo_frq = 10
 
