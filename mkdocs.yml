@@ -48,7 +48,7 @@ nav:
           - vulcan.paths: Reference/api/paths.md
           - vulcan.phy_const: Reference/api/phy_const.md
           - vulcan.store: Reference/api/store.md
-          - vulcan.netcdf_out: Reference/api/netcdf_out.md
+          - vulcan.netcdf: Reference/api/netcdf.md
           - vulcan.logs: Reference/api/logs.md
 
   - FastChem: fastchem.md

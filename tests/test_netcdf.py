@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import getpass
 from types import SimpleNamespace
 
 import numpy as np
@@ -7,7 +8,7 @@ import pytest
 
 nc = pytest.importorskip('netCDF4')
 
-from vulcan.netcdf_out import FILL, compute_reaction_rates, write_netcdf  # noqa: E402
+from vulcan.netcdf import FILL, compute_reaction_rates, write_netcdf  # noqa: E402
 
 # Synthetic network: 2A + M <-> B + M, and photolysis B -> C (reverse switched off)
 SPECIES = ['A', 'B', 'C']
@@ -22,7 +23,7 @@ NZ = 4
 NBIN = 5
 
 
-def _state(use_photo=True, save_evolution=False):
+def _state(use_photo=True):
     """Build minimal var, atm, para and cfg containers for a 4-layer atmosphere."""
     rng = np.random.default_rng(42)
     pco = np.logspace(6, 2, NZ)
@@ -60,8 +61,6 @@ def _state(use_photo=True, save_evolution=False):
         dflux_u=np.zeros((NZ + 1, NBIN)),
         dflux_d=np.zeros((NZ + 1, NBIN)),
         tau=np.zeros((NZ + 1, NBIN)),
-        t_time=np.array([0.0, 1.0, 2.0]),
-        y_time=np.stack([y, y, y]),
     )
     atm = SimpleNamespace(
         pco=pco,
@@ -84,8 +83,6 @@ def _state(use_photo=True, save_evolution=False):
         atom_list=['H', 'O'],
         network='synthetic',
         use_photo=use_photo,
-        save_evolution=save_evolution,
-        save_evo_frq=10,
         Rp=7e9,
         gs=2140.0,
         rocky=False,
@@ -136,7 +133,7 @@ def test_reaction_rates_reproduce_net_chemical_tendency():
 
 @pytest.mark.unit
 def test_write_netcdf_roundtrip(tmp_path):
-    var, atm, para, cfg = _state(use_photo=True, save_evolution=True)
+    var, atm, para, cfg = _state(use_photo=True)
     fpath = tmp_path / 'out.nc'
     write_netcdf(str(fpath), var, atm, para, cfg, SPECIES, NR, RE_WM_DICT)
 
@@ -145,7 +142,6 @@ def test_write_netcdf_roundtrip(tmp_path):
         assert ds.dimensions['level'].size == NZ + 1
         assert ds.dimensions['reaction'].size == NR
         assert ds.dimensions['wavelength'].size == NBIN
-        assert ds.dimensions['time'].size == 3
 
         assert list(ds['species'][:]) == SPECIES
         assert ds['reaction_equation'][0] == 'A + A + M -> B + M'
@@ -156,18 +152,35 @@ def test_write_netcdf_roundtrip(tmp_path):
             'photolysis',
             'photolysis',
         ]
-        np.testing.assert_array_equal(ds['reaction_is_reverse'][:], [0, 1, 0, 1])
+        np.testing.assert_array_equal(ds['reaction_is_reverse'][:], [b'n', b'y', b'n', b'y'])
         np.testing.assert_array_equal(ds['reaction_order'][:], [3, 2, 1, 1])
 
-        np.testing.assert_allclose(ds['number_density'][:], var.y)
-        np.testing.assert_allclose(ds['mixing_ratio'][:].sum(axis=1), 1.0, rtol=1e-12)
+        np.testing.assert_allclose(ds['N_gas'][:], var.y)
+        np.testing.assert_allclose(ds['N_gas_ini'][:], var.y_ini)
+        np.testing.assert_allclose(ds['x_gas'][:], var.ymix)
+        np.testing.assert_allclose(ds['x_gas'][:].sum(axis=1), 1.0, rtol=1e-12)
+        np.testing.assert_allclose(ds['tmp'][:], atm.Tco)
+        np.testing.assert_allclose(ds['pl'][:], atm.pico)
+        np.testing.assert_allclose(ds['zl'][:], atm.zco)
         np.testing.assert_allclose(ds['rate_coefficient'][:, 2], var.k[3])
         np.testing.assert_allclose(
             ds['reaction_rate'][:],
             compute_reaction_rates(var.k, var.y, atm.M, RE_WM_DICT, SPECIES, NR),
         )
-        assert ds['pressure'].units == 'dyn cm-2'
-        assert ds['actinic_flux'].units == 'photons cm-2 s-1 nm-1'
+        assert ds['p'].units == 'dyn cm-2'
+        np.testing.assert_allclose(ds['p'][:], atm.pco)
+
+        # radiation fields
+        np.testing.assert_allclose(ds['wavelength'][:], var.bins)
+        np.testing.assert_allclose(ds['ba_ACTINIC'][:], var.aflux)
+        for name, data in (
+            ('ba_D_DIRECT', var.sflux),
+            ('ba_U_DIFFUSE', var.dflux_u),
+            ('ba_D_DIFFUSE', var.dflux_d),
+            ('optdepth', var.tau),
+        ):
+            assert ds[name].dimensions == ('level', 'wavelength')
+            np.testing.assert_allclose(ds[name][:], data)
 
         # Kzz is defined only on interior interfaces
         kzz = ds['Kzz'][:]
@@ -176,23 +189,25 @@ def test_write_netcdf_roundtrip(tmp_path):
 
         assert ds.termination == 'converged to steady state'
         assert ds.steps == 1234
-        assert ds.rocky == 0
+        assert ds.rocky == 'n'
+        assert ds.use_photo == 'y'
         assert 'wall_time_s' not in ds.ncattrs()
-        assert '"network": "synthetic"' in ds.config
+        assert ds.network == 'synthetic'
+        assert ds.atom_list == 'H,O'
+        assert ds.username == getpass.getuser()
+        assert ds.hostname
 
 
 @pytest.mark.unit
-def test_write_netcdf_without_photo_or_evolution(tmp_path):
-    var, atm, para, cfg = _state(use_photo=False, save_evolution=False)
+def test_write_netcdf_without_photo(tmp_path):
+    var, atm, para, cfg = _state(use_photo=False)
     fpath = tmp_path / 'out.nc'
     write_netcdf(str(fpath), var, atm, para, cfg, SPECIES, NR, RE_WM_DICT)
 
     with nc.Dataset(fpath) as ds:
         assert 'wavelength' not in ds.dimensions
-        assert 'actinic_flux' not in ds.variables
-        assert 'time' not in ds.dimensions
-        assert ds['Kzz']._FillValue == FILL
-
+        for name in ('ba_ACTINIC', 'ba_D_DIRECT', 'ba_U_DIFFUSE', 'ba_D_DIFFUSE', 'optdepth'):
+            assert name not in ds.variables
 
 def _output_stub(save_type, out_name='example', output_humanread=None):
     op = pytest.importorskip('vulcan.op', reason='needs a generated chem_funs.py')
@@ -223,3 +238,29 @@ def test_out_path_replaces_known_extension(out_name):
     out = _output_stub('netcdf', out_name=out_name)
     assert out._out_path('.nc') == '/x/out/vulcan.nc'
     assert out._out_path('.pkl') == '/x/out/vulcan.pkl'
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize('compress', [True, False])
+def test_write_netcdf_compress_keyword(tmp_path, compress):
+    var, atm, para, cfg = _state(use_photo=True)
+    fpath = tmp_path / 'out.nc'
+    write_netcdf(str(fpath), var, atm, para, cfg, SPECIES, NR, RE_WM_DICT, compress=compress)
+
+    with nc.Dataset(fpath) as ds:
+        assert ds['reaction_rate'].filters()['zlib'] is compress
+        assert ds['rate_coefficient'].filters()['zlib'] is compress
+        np.testing.assert_allclose(ds['rate_coefficient'][:, 2], var.k[3])
+
+
+@pytest.mark.unit
+def test_write_netcdf_booleans_as_yn_chars(tmp_path):
+    var, atm, para, cfg = _state(use_photo=True)
+    fpath = tmp_path / 'out.nc'
+    write_netcdf(str(fpath), var, atm, para, cfg, SPECIES, NR, RE_WM_DICT)
+
+    with nc.Dataset(fpath) as ds:
+        assert ds.rocky == 'n'
+        assert ds.use_photo == 'y'
+        assert ds['reaction_is_reverse'].dtype == np.dtype('S1')
+        np.testing.assert_array_equal(ds['reaction_is_reverse'][:], [b'n', b'y', b'n', b'y'])

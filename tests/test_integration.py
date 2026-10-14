@@ -65,12 +65,12 @@ def check_netcdf_consistency(nc_file, pkl_file):
 
     with nc.Dataset(nc_file) as ds:
         species = list(ds['species'][:])
-        y = np.asarray(ds['number_density'][:])
-        ymix = np.asarray(ds['mixing_ratio'][:])
+        y = np.asarray(ds['N_gas'][:])
+        ymix = np.asarray(ds['x_gas'][:])
         M = np.asarray(ds['third_body_density'][:])
         k_arr = np.asarray(ds['rate_coefficient'][:])
         rates = np.asarray(ds['reaction_rate'][:])
-        Tco = np.asarray(ds['temperature'][:])
+        Tco = np.asarray(ds['tmp'][:])
 
     assert species == pkl['variable']['species']
     np.testing.assert_array_equal(ymix, pkl['variable']['ymix'])

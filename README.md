@@ -8,7 +8,7 @@
 Photochemical and thermochemical kinetics for (exo)planetary atmospheres; a fast,
 open-source 1D chemical kinetics code. This distribution of VULCAN contains a number of
 performance and usability improvements, and is integrated into the
-[PROTEUS framework](https://proteus-framework.org/PROTEUS/).
+[PROTEUS framework](https://proteus-framework.org/).
 
 ![Running with realtime plotting](docs/assets/demo.gif)
 
@@ -28,9 +28,11 @@ python run_vulcan.py
 
 This installs VULCAN, compiles FastChem (used for equilibrium initialization), and runs
 the default model (the hot Jupiter HD 189733b) with live plotting. It takes a few
-minutes; results are written to `output/`.
+minutes; results are written to `output/` as NetCDF, Pickle, and Plain Text files.
 
-Settings live in `src/vulcan/config.py`. For example, weaker vertical mixing:
+Settings for running VULCAN via the terminal are defined by `src/vulcan/config.py`.
+
+For example, weaker vertical mixing:
 
 ```python
 self.Kzz_prof  = 'const'
@@ -45,8 +47,7 @@ self.O_H = 5.37e-4
 self.C_H = 5.37e-4
 ```
 
-Set `self.use_live_plot = False` to skip real-time plotting. Pass `-n` to skip
-regenerating the chemistry from the network (only valid if you haven't edited it).
+Pass `-n` to skip regenerating the chemistry from the network (only valid if you haven't edited it).
 
 ## Plotting results
 
@@ -55,6 +56,4 @@ cd tools/
 python plot_vulcan.py <output.pkl> <species> <plot_name> [-h]
 ```
 
-Reads a pickled output (e.g. `output/example.pkl`, written when `save_type` includes `'pickle'`) and plots mixing-ratio profiles for the
-given comma-separated species (no spaces). Plots against pressure by default, or height
-with `-h`.
+Reads a pickled output (e.g. `output/example.pkl`, written when `save_type` includes `'pickle'`) and plots mixing-ratio profiles for the given comma-separated species (no spaces). Plots against pressure by default, or height with `-h`.

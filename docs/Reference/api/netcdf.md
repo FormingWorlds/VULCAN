@@ -1,8 +1,8 @@
 ---
-title: vulcan.netcdf_out
+title: vulcan.netcdf
 ---
 
-::: vulcan.netcdf_out
+::: vulcan.netcdf
     options:
       members:
         - write_netcdf

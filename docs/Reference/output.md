@@ -10,7 +10,8 @@ with `save_type` in `config.py`, and the file name with `out_name`:
 | `'plain'` | `<out_name>.var`, `.atm`, `.par` | Human-readable text dumps (`str()` of each field). Not intended for parsing. |
 
 `save_type` may also be a list, e.g. `['netcdf', 'pickle']`, to write several formats from
-one run. The configuration is always dumped to `vulcan_cfg.txt` as well.
+one run. The configuration is always dumped to `vulcan_cfg.txt` as well. The time evolution
+saved with `save_evolution = True` is only written to the pickle and plain-text outputs.
 
 ## NetCDF file
 
@@ -20,7 +21,7 @@ The file can be read with any NetCDF library, for example:
 import xarray as xr
 
 ds = xr.open_dataset('output/example.nc')
-ds.mixing_ratio.sel(species='CH4')
+ds.x_gas.sel(species='CH4')
 ```
 
 or with `netCDF4.Dataset('output/example.nc')`.
@@ -39,22 +40,19 @@ the atmosphere** (highest pressure).
 | `reaction` | number of reactions `nr`, forward and reverse | always |
 | `atom` | `len(atom_list)` | always |
 | `wavelength` | number of spectral bins | `use_photo = True` |
-| `time` | number of stored steps | `save_evolution = True` |
 
 ### Atmospheric structure
 
 | Variable | Dimensions | Units | Description |
 |---|---|---|---|
-| `pressure` | layer | dyn cm-2 | Pressure at layer centres. |
-| `pressure_level` | level | dyn cm-2 | Pressure at interfaces. |
-| `temperature` | layer | K | Temperature. |
-| `altitude` | layer | cm | Altitude at layer centres. |
-| `altitude_level` | level | cm | Altitude at interfaces. Zero at the 1 bar level for gas giants, at the surface if `rocky`. |
+| `p` | layer | dyn cm-2 | Pressure at layer centres. |
+| `pl` | level | dyn cm-2 | Pressure at interfaces. |
+| `tmp` | layer | K | Temperature at layer centres. |
+| `z` | layer | cm | Altitude at layer centres. |
+| `zl` | level | cm | Altitude at interfaces. Zero at the 1 bar level for gas giants, at the surface if `rocky`. |
 | `Kzz` | level | cm2 s-1 | Eddy diffusion coefficient. Defined on interior interfaces only; the two boundary levels are fill values. |
 | `vz` | level | cm s-1 | Vertical advection velocity, as `Kzz`. |
 | `mean_molecular_weight` | layer | g mol-1 | Mean molecular weight. |
-| `gravity` | layer | cm s-2 | Gravitational acceleration. |
-| `scale_height` | layer | cm | Pressure scale height. |
 | `number_density_total` | layer | cm-3 | Total number density. |
 | `third_body_density` | layer | cm-3 | Third-body density M used in the rate equations. |
 
@@ -64,11 +62,9 @@ the atmosphere** (highest pressure).
 |---|---|---|---|
 | `species` | species | | Species names (strings). |
 | `molecular_mass` | species | g mol-1 | Molar mass of each species. |
-| `number_density` | layer, species | cm-3 | Final number densities. |
-| `mixing_ratio` | layer, species | 1 | Final volume mixing ratios. |
-| `number_density_initial` | layer, species | cm-3 | Initial number densities. |
-| `time` | time | s | Model time of stored steps (`save_evolution` only). |
-| `number_density_evolution` | time, layer, species | cm-3 | Number densities every `save_evo_frq` steps (`save_evolution` only). |
+| `N_gas` | layer, species | cm-3 | Final number densities. |
+| `x_gas` | layer, species | 1 | Final volume mixing ratios. |
+| `N_gas_ini` | layer, species | cm-3 | Initial number densities. |
 
 ### Reactions
 
@@ -80,7 +76,7 @@ reactions, and each even ID is the reverse of the reaction before it.
 | `reaction_id` | reaction | | Reaction index. |
 | `reaction_equation` | reaction | | Equation string, e.g. `H + H + M -> H2 + M`, written explicitly for reverse reactions too. |
 | `reaction_type` | reaction | | `thermal`, `photolysis`, `photoionisation` or `condensation`. Reverse reactions inherit the type of their forward reaction. |
-| `reaction_is_reverse` | reaction | | 1 for reverse reactions, else 0. |
+| `reaction_is_reverse` | reaction | | Character `'y'` for reverse reactions, else `'n'`. |
 | `reaction_order` | reaction | | Number of reactants including M. |
 | `rate_coefficient` | layer, reaction | s-1, cm3 s-1 or cm6 s-1 | Rate coefficient k, with units set by `reaction_order` (1, 2 or 3). Photolysis coefficients include `f_diurnal`. Removed and unused reverse reactions are zero. |
 | `reaction_rate` | layer, reaction | cm-3 s-1 | Rate k × Π(reactant number densities), with M taken from `third_body_density`. |
@@ -94,12 +90,11 @@ source term that VULCAN integrates.
 | Variable | Dimensions | Units | Description |
 |---|---|---|---|
 | `wavelength` | wavelength | nm | Spectral grid (non-uniform: `dbin1` below `dbin_12trans`, `dbin2` above). |
-| `actinic_flux` | layer, wavelength | photons cm-2 s-1 nm-1 | Actinic flux at layer centres. |
-| `stellar_flux_toa` | wavelength | erg cm-2 s-1 nm-1 | Stellar flux at the top of the atmosphere. |
-| `direct_flux` | level, wavelength | erg cm-2 s-1 nm-1 | Attenuated direct beam, not multiplied by cos(zenith angle). |
-| `diffuse_flux_up` | level, wavelength | erg cm-2 s-1 nm-1 | Upward diffuse flux. |
-| `diffuse_flux_down` | level, wavelength | erg cm-2 s-1 nm-1 | Downward diffuse flux. |
-| `optical_depth` | level, wavelength | 1 | Vertical optical depth from the top of the atmosphere. |
+| `ba_actinic` | layer, wavelength | photons cm-2 s-1 nm-1 | Actinic flux at layer centres. |
+| `ba_D_SW` | level, wavelength | erg cm-2 s-1 nm-1 | Attenuated direct stellar beam, not multiplied by cos(zenith angle). |
+| `ba_U_LW` | level, wavelength | erg cm-2 s-1 nm-1 | Upward diffuse (scattered) flux. |
+| `ba_D_LW` | level, wavelength | erg cm-2 s-1 nm-1 | Downward diffuse (scattered) flux. |
+| `optdepth` | level, wavelength | 1 | Vertical optical depth from the top of the atmosphere. |
 
 ### Element conservation
 
@@ -115,14 +110,18 @@ source term that VULCAN integrates.
 
 | Attribute | Description |
 |---|---|
+| `title` | Short description of the file. |
 | `vulcan_version`, `date_created` | Code version and UTC creation time. |
+| `hostname`, `username` | Machine and user that wrote the file. |
 | `network`, `atom_list` | Chemical network file and elements. |
 | `end_case`, `termination` | How the run ended: 1 converged, 2 `runtime` limit, 3 `count_max` limit. |
 | `steps`, `model_time_s`, `dt_s` | Number of steps, final model time and step size. |
 | `longdy`, `longdydt` | Final values of the convergence measures. |
 | `wall_time_s` | Wall-clock run time. |
-| `Rp`, `gs`, `r_star`, `orbit_radius`, `sl_angle`, `f_diurnal`, `rocky`, `use_photo`, ... | Selected configuration values (booleans as 0/1). |
-| `config` | The full configuration at the end of the run, as a JSON string. |
+| `Rp`, `gs`, `r_star`, `orbit_radius`, `sl_angle`, `f_diurnal`, `nz`, `P_b`, `P_t` | Planet, star and grid configuration values, in the units of `Config`. |
+| `rocky`, `use_photo`, `use_ion`, `use_condense`, `use_moldiff` | Configuration switches, stored as the characters `'y'` or `'n'`. |
+
+The full configuration is written separately to `vulcan_cfg.txt`.
 
 !!! note "Consistency of rate coefficients"
     Photolysis rate coefficients are only updated every `final_update_photo_frq` steps, so

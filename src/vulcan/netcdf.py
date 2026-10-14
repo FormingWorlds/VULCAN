@@ -7,6 +7,7 @@ All quantities are stored in the CGS units used internally by VULCAN. Index 0 al
 
 from __future__ import annotations
 
+import getpass
 import logging
 import os
 import time
@@ -112,16 +113,21 @@ def _put_str(ds, name, dims, data, long_name):
     return v
 
 
+def _yn(value):
+    """Represent a boolean as the character 'y' or 'n'."""
+    return 'y' if value else 'n'
+
+
 def _attr(value):
     """Convert a value into something storable as a netCDF attribute."""
     if isinstance(value, (bool, np.bool_)):
-        return int(value)
+        return _yn(value)
     if isinstance(value, (int, float, str, np.integer, np.floating)):
         return value
     return str(value)
 
 
-def write_netcdf(fpath, var, atm, para, cfg, species, nr, re_wM_dict):
+def write_netcdf(fpath, var, atm, para, cfg, species, nr, re_wM_dict, compress=True):
     """
     Write the final state of a VULCAN run to a NetCDF4 file.
 
@@ -139,6 +145,8 @@ def write_netcdf(fpath, var, atm, para, cfg, species, nr, re_wM_dict):
         Number of reactions (chem_funs.nr).
     re_wM_dict : dict
         Reactants and products of each reaction, including 'M' (chem_funs.re_wM_dict).
+    compress : bool
+        Apply zlib compression to the large 2D arrays.
     """
     from vulcan import __version__
 
@@ -153,7 +161,7 @@ def write_netcdf(fpath, var, atm, para, cfg, species, nr, re_wM_dict):
         ds.vulcan_version = __version__
         ds.date_created = str(datetime.now(timezone.utc).isoformat(timespec='seconds'))
         ds.hostname = str(os.uname()[1])
-        ds.username = str(os.getlogin())
+        ds.username = str(getpass.getuser())
         ds.network = str(cfg.network)
         ds.atom_list = ','.join(atoms)
 
@@ -239,7 +247,7 @@ def write_netcdf(fpath, var, atm, para, cfg, species, nr, re_wM_dict):
             var.y,
             'cm-3',
             'number density',
-            compress=True,
+            compress=compress,
         )
         _put(
             ds,
@@ -248,7 +256,7 @@ def write_netcdf(fpath, var, atm, para, cfg, species, nr, re_wM_dict):
             var.ymix,
             '1',
             'volume mixing ratio',
-            compress=True,
+            compress=compress,
         )
         _put(
             ds,
@@ -257,7 +265,7 @@ def write_netcdf(fpath, var, atm, para, cfg, species, nr, re_wM_dict):
             var.y_ini,
             'cm-3',
             'initial number density',
-            compress=True,
+            compress=compress,
         )
 
         # ---------------- Reactions ----------------
@@ -272,9 +280,9 @@ def write_netcdf(fpath, var, atm, para, cfg, species, nr, re_wM_dict):
         _put_str(ds, 'reaction_equation', ('reaction',), equations, 'reaction equation')
         _put_str(ds, 'reaction_type', ('reaction',), _reaction_types(var, nr), 'reaction type')
 
-        v = ds.createVariable('reaction_is_reverse', 'i1', ('reaction',))
-        v.long_name = '1 if this is the reverse of reaction_id - 1, else 0'
-        v[:] = (ids % 2 == 0).astype(np.int8)
+        v = ds.createVariable('reaction_is_reverse', 'S1', ('reaction',))
+        v.long_name = "'y' if this is the reverse of reaction_id - 1, else 'n'"
+        v[:] = np.array([_yn(i % 2 == 0) for i in ids], dtype='S1')
 
         v = ds.createVariable('reaction_order', 'i4', ('reaction',))
         v.long_name = 'number of reactants including M; sets the units of rate_coefficient'
@@ -288,7 +296,7 @@ def write_netcdf(fpath, var, atm, para, cfg, species, nr, re_wM_dict):
             k_arr,
             'cm^(3*(reaction_order-1)) s-1',
             'rate coefficient (s-1, cm3 s-1 or cm6 s-1 for reaction_order 1, 2 or 3)',
-            compress=True,
+            compress=compress,
         )
         _put(
             ds,
@@ -297,7 +305,7 @@ def write_netcdf(fpath, var, atm, para, cfg, species, nr, re_wM_dict):
             compute_reaction_rates(var.k, var.y, atm.M, re_wM_dict, species, nr),
             'cm-3 s-1',
             'reaction rate, k times the product of reactant number densities',
-            compress=True,
+            compress=compress,
         )
 
         # ---------------- Element conservation ----------------
@@ -342,39 +350,39 @@ def write_netcdf(fpath, var, atm, para, cfg, species, nr, re_wM_dict):
             _put(ds, 'wavelength', ('wavelength',), var.bins, 'nm', 'wavelength')
             _put(
                 ds,
-                'ba_actinic',
+                'ba_ACTINIC',
                 ('layer', 'wavelength'),
                 var.aflux,
                 'photons cm-2 s-1 nm-1',
                 'actinic flux at layer centres',
-                compress=True,
+                compress=compress,
             )
             _put(
                 ds,
-                'ba_D_SW',
+                'ba_D_DIRECT',
                 ('level', 'wavelength'),
                 var.sflux,
                 'erg cm-2 s-1 nm-1',
                 'direct stellar beam at interfaces, not multiplied by cos(zenith angle)',
-                compress=True,
+                compress=compress,
             )
             _put(
                 ds,
-                'ba_U_LW',
+                'ba_U_DIFFUSE',
                 ('level', 'wavelength'),
                 var.dflux_u,
                 'erg cm-2 s-1 nm-1',
                 'upward diffuse flux at interfaces',
-                compress=True,
+                compress=compress,
             )
             _put(
                 ds,
-                'ba_D_LW',
+                'ba_D_DIFFUSE',
                 ('level', 'wavelength'),
                 var.dflux_d,
                 'erg cm-2 s-1 nm-1',
                 'downward diffuse flux at interfaces',
-                compress=True,
+                compress=compress,
             )
             _put(
                 ds,
@@ -383,5 +391,5 @@ def write_netcdf(fpath, var, atm, para, cfg, species, nr, re_wM_dict):
                 var.tau,
                 '1',
                 'vertical optical depth at interfaces, measured from the top',
-                compress=True,
+                compress=compress,
             )

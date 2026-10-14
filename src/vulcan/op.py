@@ -4707,7 +4707,7 @@ class Output(object):
 
         if 'netcdf' in self.save_types:
             # self-describing NetCDF4 file
-            from vulcan.netcdf_out import write_netcdf
+            from vulcan.netcdf import write_netcdf
 
             write_netcdf(
                 self._out_path('.nc'),
