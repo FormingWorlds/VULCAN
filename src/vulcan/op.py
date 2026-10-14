@@ -31,6 +31,7 @@ import numpy as np
 import scipy
 from scipy import interpolate
 
+from vulcan import plot
 from vulcan.build_atm import compo, compo_row
 from vulcan.config import Config
 from vulcan.paths import CROSS_DIR
@@ -42,59 +43,18 @@ from vulcan.phy_const import (  # hc is used to convert to the actinic flux
     spacer,
 )
 
-from .chem_funs import Gibbs, chemdf, ni, nr  # number of species and reactions in the network
+from .chem_funs import (  # number of species and reactions in the network
+    Gibbs,
+    chemdf,
+    ni,
+    nr,
+    re_wM_dict,
+)
 from .chem_funs import neg_symjac as neg_achemjac
 from .chem_funs import spec_list as species
 from .chem_funs import symjac as achemjac
 
 log = logging.getLogger('fwl.' + __name__)
-
-PLT_FMT = 'png'  # the format for saving plots, e.g. png, pdf
-
-gas_cols = {
-    'H2O': '#027FB1',
-    'CO2': '#D24901',
-    'H2': '#008C01',
-    'CH4': '#C720DD',
-    'CO': '#D1AC02',
-    'N2': '#870036',
-    'S2': '#FF8FA1',
-    'SO2': '#00008B',
-    'H2S': '#2eff71',
-    'NH3': '#675200',
-}
-
-tex_labels = {
-    'H': 'H',
-    'H2': 'H$_2$',
-    'O': 'O',
-    'OH': 'OH',
-    'H2O': 'H$_2$O',
-    'CH': 'CH',
-    'C': 'C',
-    'CH2': 'CH$_2$',
-    'CH3': 'CH$_3$',
-    'CH4': 'CH$_4$',
-    'HCO': 'HCO',
-    'H2CO': 'H$_2$CO',
-    'C4H2': 'C$_4$H$_2$',
-    'C2': 'C$_2$',
-    'C2H2': 'C$_2$H$_2$',
-    'C2H3': 'C$_2$H$_3$',
-    'C2H': 'C$_2$H',
-    'CO': 'CO',
-    'CO2': 'CO$_2$',
-    'He': 'He',
-    'O2': 'O$_2$',
-    'CH3OH': 'CH$_3$OH',
-    'C2H4': 'C$_2$H$_4$',
-    'C2H5': 'C$_2$H$_5$',
-    'C2H6': 'C$_2$H$_6$',
-    'CH3O': 'CH$_3$O',
-    'CH2OH': 'CH$_2$OH',
-    'NH3': 'NH$_3$',
-    'H2S': 'H$_2$S',
-}
 
 
 def safe_rm(fpath: str) -> bool:
@@ -846,7 +806,7 @@ class ReadRate(object):
                                     [Tlow, Thigh], [log_lowT, log_highT], axis=0
                                 )  # at wavelength ld, interpolating between Tlow and Thigh in log10
                                 if inter_T(Tz) == -100:
-                                    var.cross_T[sp][lev, n] == 0.0
+                                    var.cross_T[sp][lev, n] = 0.0
                                 else:
                                     var.cross_T[sp][lev, n] = 10 ** (inter_T(Tz))
 
@@ -1235,15 +1195,8 @@ class Integration(object):
                 self.output.print_prog(var, para)
 
             # make plots
-            if (
-                self.cfg.use_live_flux
-                and self.cfg.use_photo
-                and (para.count % self.cfg.live_plot_frq == 0)
-            ):
-                self.output.plot_flux_update(var, atm, para)
-
             if self.cfg.use_live_plot and (para.count % self.cfg.live_plot_frq == 0):
-                self.output.plot_update(var, atm, para)
+                plot.plot_update(self.cfg, species, var, atm, para)
 
         return atmos
 
@@ -4612,25 +4565,67 @@ class Ros2(ODESolver):
 
 
 class Output(object):
+    SAVE_TYPES = ('netcdf', 'pickle', 'plain')
+    EXTENSIONS = {'netcdf': ['.nc'], 'pickle': ['.pkl'], 'plain': ['.var', '.atm', '.par']}
+
     def __init__(self, vulcan_cfg: Config):
 
         self.cfg = vulcan_cfg
-        output_dir = self.cfg.output_dir + '/'
-        out_name = self.cfg.out_name
+        self.save_types = self._save_types()
 
         if self.cfg.clean_output:
             safe_rm(self.cfg.output_dir)
 
-        if not os.path.exists(output_dir):
-            os.makedirs(output_dir)
+        if not os.path.exists(self.cfg.output_dir):
+            os.makedirs(self.cfg.output_dir)
 
         if not os.path.exists(self.cfg.plot_dir):
             os.makedirs(self.cfg.plot_dir)
 
-        outfile = output_dir + out_name
-        if os.path.isfile(outfile):
-            log.warning('Output file already exists. Removing.')
-            safe_rm(outfile)
+        for save_type in self.save_types:
+            for ext in self.EXTENSIONS[save_type]:
+                outfile = self._out_path(ext)
+                if os.path.isfile(outfile):
+                    log.warning(f'Output file {outfile} already exists. Removing.')
+                    safe_rm(outfile)
+
+    def _save_types(self):
+        """Return the list of output formats requested by cfg.save_type."""
+
+        # get from config
+        save_type = self.cfg.save_type
+
+        # just one, as a string
+        if isinstance(save_type, str):
+            save_type = [save_type]
+
+        # otherwise, assume it's a list of strings
+        types = []
+        for st in save_type:
+            st = str(st).lower()
+            if st not in self.SAVE_TYPES:  # validate
+                raise ValueError(
+                    f"Invalid save_type '{st}'; options are {', '.join(self.SAVE_TYPES)}"
+                )
+            if st not in types:
+                types.append(st)
+
+        # deprecated option, replaced by save_type='plain'
+        if getattr(self.cfg, 'output_humanread', False):
+            log.warning("output_humanread is deprecated; use save_type='plain' instead")
+            if 'plain' not in types:
+                types.append('plain')
+
+        # return types of output requested
+        return types
+
+    def _out_path(self, ext):
+        """Path of an output file, from out_name with any known extension replaced."""
+        stem = self.cfg.out_name
+        for known in ('.pkl', '.nc'):
+            if stem.endswith(known):
+                stem = stem[: -len(known)]
+        return os.path.join(self.cfg.output_dir, stem + ext)
 
     def print_prog(self, var, para):
         indx_max = np.nanargmax(para.where_varies_most)
@@ -4664,13 +4659,12 @@ class Output(object):
         log.info('------ Live long and prosper \\V/ ------')
 
     def save_out(self, var, atm, para):
-        output_dir, out_name = self.cfg.output_dir, self.cfg.out_name
-        output_file = output_dir + out_name
+        output_dir = self.cfg.output_dir
 
         if not os.path.exists(output_dir):
             log.debug('The output directory assigned in vulcan_cfg.py does not exist.')
             log.debug(f'Directory {output_dir} created.')
-            os.mkdir(output_dir)
+            os.makedirs(output_dir)
 
         # convert lists into numpy arrays
         for key in var.var_evol_save:
@@ -4679,14 +4673,19 @@ class Output(object):
 
         # plotting
         if self.cfg.use_plot_evo:
-            self.plot_evo(var, atm)
+            plot.plot_evo(self.cfg, species, var, atm)
         if self.cfg.use_plot_end:
-            self.plot_update(
-                var, atm, para, fpath=os.path.join(self.cfg.plot_dir, f'mix.{PLT_FMT}')
+            plot.plot_update(
+                self.cfg,
+                species,
+                var,
+                atm,
+                para,
+                fpath=os.path.join(self.cfg.plot_dir, f'mix.{self.cfg.plot_fmt}'),
             )
         plt.close('all')
 
-        # making the save dict
+        # making the save dict (for pickle and plain)
         var_save = {'species': species, 'nr': nr}
 
         for key in var.var_save:
@@ -4699,255 +4698,41 @@ class Output(object):
                 setattr(var, key, as_nparray)
                 var_save[key] = getattr(var, key)
 
-        if self.cfg.output_humanread:
+        if 'netcdf' in self.save_types:
+            # self-describing NetCDF4 file
+            from vulcan.netcdf import write_netcdf
+
+            write_netcdf(
+                self._out_path('.nc'),
+                var,
+                atm,
+                para,
+                self.cfg,
+                species=species,
+                nr=nr,
+                re_wM_dict=re_wM_dict,
+            )
+
+        if 'plain' in self.save_types:
             # human-readable form, less efficient
-            with open(output_file + '.var', 'w') as outfile:
-                for var in var_save.keys():
-                    outfile.write(f'# {var} \n')
-                    outfile.write(str(var_save[var]) + '\n')
+            for ext, data in (('.var', var_save), ('.atm', vars(atm)), ('.par', vars(para))):
+                fpath = self._out_path(ext)
+                log.info(f'Writing plain output to {fpath}')
+                with open(fpath, 'w') as outfile:
+                    for key in data.keys():
+                        outfile.write(f'# {key} \n')
+                        outfile.write(str(data[key]) + '\n')
 
-            with open(output_file + '.atm', 'w') as outfile:
-                for var in vars(atm).keys():
-                    outfile.write(f'# {var} \n')
-                    outfile.write(str(vars(atm)[var]) + '\n')
-
-            with open(output_file + '.par', 'w') as outfile:
-                for var in vars(para).keys():
-                    outfile.write(f'# {var} \n')
-                    outfile.write(str(vars(para)[var]) + '\n')
-        else:
+        if 'pickle' in self.save_types:
             # pickled form, less safe
             from pickle import dump
 
-            with open(output_file, 'wb') as outfile:
+            fpath = self._out_path('.pkl')
+            log.info(f'Writing pickle output to {fpath}')
+
+            with open(fpath, 'wb') as outfile:
                 dump(
                     {'variable': var_save, 'atm': vars(atm), 'parameter': vars(para)},
                     outfile,
                     protocol=4,
                 )
-
-    def plot_update(self, var, atm, para, fpath=None):
-
-        log.debug('Plotting mixing ratios')
-
-        colors = [
-            'b',
-            'r',
-            'c',
-            'm',
-            'y',
-            'k',
-            'orange',
-            'pink',
-            'grey',
-            'darkred',
-            'darkblue',
-            'salmon',
-            'chocolate',
-            'mediumspringgreen',
-            'steelblue',
-            'plum',
-            'hotpink',
-        ]
-
-        fig, ax = plt.subplots(1, 1, figsize=(8, 6))
-        color_index = 0
-        for sp in self.cfg.plot_spec:
-            if sp in tex_labels:
-                sp_lab = tex_labels[sp]
-            else:
-                sp_lab = sp
-
-            if color_index == len(colors):  # when running out of colors
-                colors.append(tuple(np.random.rand(3)))
-
-            if sp in gas_cols.keys():
-                color = gas_cols[sp]
-            else:
-                color = colors[color_index]
-                color_index += 1
-
-            if not self.cfg.plot_height:
-                (line,) = ax.plot(
-                    var.ymix[:, species.index(sp)], atm.pco / 1.0e6, color=color, label=sp_lab
-                )
-                if self.cfg.use_condense and sp in self.cfg.condense_sp:
-                    ax.plot(
-                        atm.sat_mix[sp],
-                        atm.pco / 1.0e6,
-                        color=color,
-                        label=sp_lab + ' sat',
-                        ls='--',
-                    )
-
-                ax.set_yscale('log')
-                ax.invert_yaxis()
-                ax.set_ylabel('Pressure [bar]')
-                ax.set_ylim((self.cfg.P_b / 1.0e6, self.cfg.P_t / 1.0e6))
-
-            else:  # plotting with height
-                (line,) = ax.plot(
-                    var.ymix[:, species.index(sp)], atm.zmco / 1.0e5, color=color, label=sp_lab
-                )
-                if self.cfg.use_condense and sp in self.cfg.condense_sp:
-                    ax.plot(
-                        atm.sat_mix[sp],
-                        atm.zco[1:] / 1.0e5,
-                        color=color,
-                        label=sp_lab + ' sat',
-                        ls='--',
-                    )
-
-                ax.set_ylim((atm.zco[0] / 1e5, atm.zco[-1] / 1e5))
-                ax.set_ylabel('Height [km]')
-
-        title = 'i = %5d steps     t = %.2e seconds' % (para.count, var.t)
-        title += '\n dy/dt = %.2e' % (var.longdydt)
-        ax.set_title(title)
-        ax.set_xscale('log')
-        ax.set_xlabel('Volume mixing ratio')
-        ax.set_xlim(1e-16, 1.2)
-        ax.legend(fontsize=10, labelspacing=0.2, loc='upper left', bbox_to_anchor=(1.0, 1.0))
-
-        # temperature profile
-        axt = ax.twiny()
-        axt.set_xlabel('Temperature [K]')
-        if self.cfg.plot_height:
-            axt_yarr = atm.zmco / 1.0e5
-        else:
-            axt_yarr = atm.pco / 1.0e6
-        axt.plot(atm.Tco, axt_yarr, color='k', lw=0.5, ls='dotted')
-
-        if fpath is None:
-            save_fpath = os.path.join(self.cfg.plot_dir, f'_recent.{PLT_FMT}')
-            copy_fpath = os.path.join(self.cfg.plot_dir, f'{para.pic_count:05d}.{PLT_FMT}')
-        else:
-            save_fpath = fpath
-            copy_fpath = None
-
-        log.debug(f'Plotting to {save_fpath}')
-        fig.savefig(save_fpath, dpi=self.cfg.plot_dpi, bbox_inches='tight')
-
-        if copy_fpath:
-            shutil.copyfile(save_fpath, copy_fpath)
-
-        para.pic_count += 1
-
-    def plot_flux_update(self, var, atm, para):
-
-        images = []
-        plt.ion()
-
-        # fig.add_subplot(121) fig.add_subplot(122)
-
-        (line1,) = plt.plot(np.sum(var.dflux_u, axis=1), atm.pico / 1.0e6, label='up flux')
-        (line2,) = plt.plot(
-            np.sum(var.dflux_d, axis=1), atm.pico / 1.0e6, label='down flux', ls='--', lw=1.2
-        )
-        (line3,) = plt.plot(
-            np.sum(var.sflux, axis=1), atm.pico / 1.0e6, label='stellar flux', ls=':', lw=1.5
-        )
-
-        images.append((line1, line2))
-
-        plt.title(str(para.count) + ' steps and ' + str('{:.2e}'.format(var.t)) + ' s')
-        plt.gca().set_xscale('log')
-        plt.gca().set_yscale('log')
-        plt.gca().invert_yaxis()
-        plt.xlim(xmin=1.0e-8)
-        plt.ylim((atm.pico[0] / 1.0e6, atm.pico[-1] / 1.0e6))
-        plt.legend(frameon=0, prop={'size': 14}, loc=3)
-        plt.xlabel('Diffusive flux')
-        plt.ylabel('Pressure (bar)')
-        plt.show(block=0)
-        plt.pause(0.1)
-        if self.cfg.use_flux_movie:
-            plt.savefig('plot/movie/flux-' + str(para.count) + '.jpg', dpi=self.cfg.plot_dpi)
-
-        plt.close('all')
-
-    def plot_evo(self, var, atm, plot_j=-1, plot_ymin=1e-16, dn=1):
-        """
-        Plot the evolution of mixing ratios over time.
-
-        Arguments
-        ------------
-        - var: variable object containing the time evolution data
-        - atm: atmosphere object containing the atmospheric properties
-        - plot_j: index of the atmospheric layer to plot (default: -1)
-        - plot_ymin: minimum y-axis value for the plot (default: 1e-16)
-        - dn: data point interval for plotting (default: 1, meaning plot all points)
-        """
-
-        plot_spec = self.cfg.plot_spec
-        plot_dir = self.cfg.plot_dir
-        fig, ax = plt.subplots(1, 1, figsize=(8, 6))
-
-        ymix_time = np.array(var.y_time / atm.n_0[:, np.newaxis])
-
-        for i, sp in enumerate(self.cfg.plot_spec):
-            col = gas_cols.get(sp, plt.cm.rainbow(float(i) / len(plot_spec)))
-            lbl = tex_labels.get(sp, sp)
-            ax.plot(
-                var.t_time[::dn], ymix_time[::dn, plot_j, species.index(sp)], c=col, label=lbl
-            )
-
-        ax.set_xscale('log')
-        ax.set_yscale('log')
-        ax.set_xlabel('Time [s]')
-        ax.set_ylabel('Volume mixing ratios')
-        ax.set_ylim((plot_ymin, 1.2))
-        ax.legend(fontsize=10, labelspacing=0.2, loc='upper left', bbox_to_anchor=(1.0, 1.0))
-        fig.savefig(plot_dir + f'evo.{PLT_FMT}', dpi=self.cfg.plot_dpi)
-        plt.close('all')
-
-    def plot_evo_inter(self, var, atm, plot_j=-1, plot_ymin=1e-16, dn=1):
-        """
-        plot the evolution when the code is interrupted
-        """
-        var.t_time = np.array(var.t_time)
-        ymix_time = np.array(var.y_time / atm.n_0[:, np.newaxis])
-
-        plot_spec = self.cfg.plot_spec
-        plot_dir = self.cfg.plot_dir
-        plt.figure('evolution')
-
-        for i, sp in enumerate(self.cfg.plot_spec):
-            plt.plot(
-                var.t_time[::dn],
-                ymix_time[::dn, plot_j, species.index(sp)],
-                c=plt.cm.rainbow(float(i) / len(plot_spec)),
-                label=sp,
-            )
-
-        plt.gca().set_xscale('log')
-        plt.gca().set_yscale('log')
-        plt.xlabel('time')
-        plt.ylabel('mixing ratios')
-        plt.ylim((plot_ymin, 1.0))
-        plt.legend(frameon=0, prop={'size': 14}, loc='best')
-        plt.savefig(plot_dir + f'evo.{PLT_FMT}', dpi=self.cfg.plot_dpi)
-
-    def plot_TP(self, atm):
-        plot_dir = self.cfg.plot_dir
-        # plt.figure('TPK')
-        fig, ax1 = plt.subplots()
-        ax2 = ax1.twiny()  # ax1 and ax2 share y-axis
-
-        if not self.cfg.plot_height:
-            ax1.semilogy(atm.Tco, atm.pco / 1.0e6, c='black')
-            ax2.loglog(atm.Kzz, atm.pico[1:-1] / 1.0e6, c='k', ls='--')
-            plt.gca().invert_yaxis()
-            plt.ylim((self.cfg.P_b / 1.0e6, self.cfg.P_t / 1.0e6))
-            ax1.set_ylabel('Pressure (bar)')
-
-        else:  # plotting with height
-            ax1.plot(atm.Tco, atm.zmco / 1.0e5, c='black')
-            ax2.semilogx(atm.Kzz, atm.zmco[1:] / 1.0e5, c='k', ls='--')
-            ax1.set_ylabel('Height (km)')
-
-        # plt.xlabel("Temperature (K)")
-        ax1.set_xlabel('Temperature (K)')
-        ax2.set_xlabel(r'K$_{zz}$ (cm$^2$s$^{-1}$)')
-
-        fig.savefig(plot_dir + f'TPK_initial.{PLT_FMT}', dpi=self.cfg.plot_dpi)

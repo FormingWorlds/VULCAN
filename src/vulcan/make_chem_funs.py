@@ -24,6 +24,7 @@ from .paths import CHEM_FUNS_FILE, COM_FILE, GIBBS_FILE, THERMO_DIR
 
 log = logging.getLogger('fwl.' + __name__)
 
+
 def read_network(vulcan_cfg: Config):
 
     Rf, Rindx = {}, {}

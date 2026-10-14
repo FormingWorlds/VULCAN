@@ -53,7 +53,7 @@ class Config:
         self.log_level = 'INFO'
         self.output_dir = VULCAN_DIR + 'output/'
         self.plot_dir = self.output_dir + 'plot/'
-        self.out_name = 'example.pkl'
+        self.out_name = 'example'  # file stem; the extension is set by save_type
         self.clean_output = True
 
         # ====== Setting up the elemental abundance ======
@@ -128,8 +128,10 @@ class Config:
         self.non_gas_sp = []
         self.r_p = {'H2O_l_s': 5e-3}  # particle radius in cm (1e-4 = 1 micron)
         self.rho_p = {'H2O_l_s': 1}  # particle density in g cm^-3
-        self.fix_species = []  # fixed the condensable species after condensation-evapoation EQ has reached
-        self.fix_species_time = 0  # after this time to fix the condensable species
+        self.fix_species = []  # condensable species to fix after stop_conden_time
+        self.fix_species_from_coldtrap_lev = (
+            False  # fix only below the cold trap, else whole column
+        )
         self.humidity = 1.0
 
         # ====== coupling to AGNI ======
@@ -148,7 +150,6 @@ class Config:
         self.conv_step = 500
 
         # ====== Setting up numerical parameters for the ODE solver ======
-        self.ode_solver = 'Ros2'  # case sensitive
         self.trun_min = 1e2
         self.runtime = 1e22
         self.use_print_prog = True
@@ -177,26 +178,24 @@ class Config:
 
         # ====== Setting up numerical parameters for Ros2 ODE solver ======
         self.rtol = 0.25  # relative tolerence for adjusting the stepsize
-        self.post_conden_rtol = 0.1  # switched to this value after fix_species_time
+        self.post_conden_rtol = 0.1  # switched to this value after stop_conden_time
         self.rtol_min = 0.02
         self.rtol_max = 2.5
         self.use_adapt_rtol = True
 
         # ====== Setting up for output and plotting ======
         self.plot_dpi = 130
+        self.plot_fmt = 'png'
         self.plot_TP = True
         self.use_live_plot = True  # plot vmr profiles, during run
-        self.use_live_flux = False  # plot fluxes, during run
         self.use_plot_end = True  # plot vmr profiles, at end
         self.use_plot_evo = True  # plot vmr versus time, at end
-        self.use_flux_movie = False
         self.plot_height = False
         self.live_plot_frq = 50
-        self.y_time_freq = 1  #  storing data for every 'y_time_freq' step
         self.plot_spec = ['H2', 'H', 'H2O', 'CH4', 'CO', 'CO2', 'C2H2']
 
-        # output:
-        self.output_humanread = False
+        # output: 'netcdf', 'pickle', 'plain' (human-readable text), or a list of these
+        self.save_type = ['pickle', 'netcdf', 'plain']
         self.save_evolution = False  # save the evolution of chemistry (y_time and t_time) for every save_evo_frq step
         self.save_evo_frq = 10
 
