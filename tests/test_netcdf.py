@@ -8,7 +8,7 @@ import pytest
 
 nc = pytest.importorskip('netCDF4')
 
-from vulcan.netcdf import FILL, compute_reaction_rates, write_netcdf  # noqa: E402
+from vulcan.netcdf import compute_reaction_rates, write_netcdf  # noqa: E402
 
 # Synthetic network: 2A + M <-> B + M, and photolysis B -> C (reverse switched off)
 SPECIES = ['A', 'B', 'C']
@@ -208,6 +208,7 @@ def test_write_netcdf_without_photo(tmp_path):
         assert 'wavelength' not in ds.dimensions
         for name in ('ba_ACTINIC', 'ba_D_DIRECT', 'ba_U_DIFFUSE', 'ba_D_DIFFUSE', 'optdepth'):
             assert name not in ds.variables
+
 
 def _output_stub(save_type, out_name='example', output_humanread=None):
     op = pytest.importorskip('vulcan.op', reason='needs a generated chem_funs.py')

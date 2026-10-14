@@ -20,7 +20,7 @@ def mol_to_ele(mol: str):
     """
 
     # Validate
-    if not str(mol[0]).isupper:
+    if not str(mol[0]).isupper():
         raise ValueError(f"Molecule name '{mol}' is invalid")
 
     # Get atoms
@@ -320,45 +320,12 @@ def plot_update(cfg, species, var, atm, para, fpath=None):
 
     log.debug(f'Plotting to {save_fpath}')
     fig.savefig(save_fpath, dpi=cfg.plot_dpi, bbox_inches='tight')
+    plt.close('all')
 
     if copy_fpath:
         shutil.copyfile(save_fpath, copy_fpath)
 
     para.pic_count += 1
-
-
-def plot_flux_update(cfg, var, atm, para):
-
-    images = []
-    plt.ion()
-
-    # fig.add_subplot(121) fig.add_subplot(122)
-
-    (line1,) = plt.plot(np.sum(var.dflux_u, axis=1), atm.pico / 1.0e6, label='up flux')
-    (line2,) = plt.plot(
-        np.sum(var.dflux_d, axis=1), atm.pico / 1.0e6, label='down flux', ls='--', lw=1.2
-    )
-    (line3,) = plt.plot(
-        np.sum(var.sflux, axis=1), atm.pico / 1.0e6, label='stellar flux', ls=':', lw=1.5
-    )
-
-    images.append((line1, line2))
-
-    plt.title(str(para.count) + ' steps and ' + str('{:.2e}'.format(var.t)) + ' s')
-    plt.gca().set_xscale('log')
-    plt.gca().set_yscale('log')
-    plt.gca().invert_yaxis()
-    plt.xlim(xmin=1.0e-8)
-    plt.ylim((atm.pico[0] / 1.0e6, atm.pico[-1] / 1.0e6))
-    plt.legend(frameon=0, prop={'size': 14}, loc=3)
-    plt.xlabel('Diffusive flux')
-    plt.ylabel('Pressure (bar)')
-    plt.show(block=0)
-    plt.pause(0.1)
-    if cfg.use_flux_movie:
-        plt.savefig('plot/movie/flux-' + str(para.count) + '.jpg', dpi=cfg.plot_dpi)
-
-    plt.close('all')
 
 
 def plot_evo(cfg, species, var, atm, plot_j=-1, plot_ymin=1e-16, dn=1):
@@ -423,6 +390,7 @@ def plot_evo_inter(cfg, species, var, atm, plot_j=-1, plot_ymin=1e-16, dn=1):
     plt.ylim((plot_ymin, 1.0))
     plt.legend(frameon=0, prop={'size': 14}, loc='best')
     plt.savefig(plot_dir + f'evo.{cfg.plot_fmt}', dpi=cfg.plot_dpi)
+    plt.close('all')
 
 
 def plot_TP(cfg, atm):
@@ -448,3 +416,4 @@ def plot_TP(cfg, atm):
     ax2.set_xlabel(r'K$_{zz}$ (cm$^2$s$^{-1}$)')
 
     fig.savefig(plot_dir + f'TPK_initial.{cfg.plot_fmt}', dpi=cfg.plot_dpi)
+    plt.close('all')

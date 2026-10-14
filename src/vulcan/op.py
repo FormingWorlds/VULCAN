@@ -1195,13 +1195,6 @@ class Integration(object):
                 self.output.print_prog(var, para)
 
             # make plots
-            if (
-                self.cfg.use_live_flux
-                and self.cfg.use_photo
-                and (para.count % self.cfg.live_plot_frq == 0)
-            ):
-                plot.plot_flux_update(self.cfg, var, atm, para)
-
             if self.cfg.use_live_plot and (para.count % self.cfg.live_plot_frq == 0):
                 plot.plot_update(self.cfg, species, var, atm, para)
 
