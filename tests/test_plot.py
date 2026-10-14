@@ -94,6 +94,7 @@ def test_mol_to_ele_counts_atoms(mol, expected):
     """Element counts follow the chemical formula."""
     assert plot.mol_to_ele(mol) == expected
 
+
 @pytest.mark.unit
 @pytest.mark.parametrize(
     'gas, expected',

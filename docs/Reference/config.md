@@ -150,7 +150,8 @@ are the shipped configuration, which describes the hot Jupiter **HD 189733b**.
 | `rho_p` | `{'H2O_l_s': 1}` | Particle density (g cm$^{-3}$) per condensate. |
 | `humidity` | `1.0` | Relative-humidity multiplier on the H$_2$O saturation. |
 | `start_conden_time`, `stop_conden_time` | `0.0`, `1e5` | Simulation times (s) bracketing the condensation/fixing phase. |
-| `fix_species`, `fix_species_time` | `[]`, `0` | Species to hold fixed after condensation equilibrium, and when. |
+| `fix_species` | `[]` | Condensable species to hold fixed once `stop_conden_time` is reached. |
+| `fix_species_from_coldtrap_lev` | `False` | If `True`, hold `fix_species` fixed only below their cold-trap level; otherwise fix the whole column. |
 
 ---
 
@@ -188,7 +189,6 @@ are the shipped configuration, which describes the hot Jupiter **HD 189733b**.
 
 | Parameter | Default | Description |
 |---|---|---|
-| `ode_solver` | `'Ros2'` | Integration scheme (second-order Rosenbrock). |
 | `dttry` | `1e-6` | Initial time step (s). |
 | `dt_min`, `dt_max` | `1e-8`, `1e18` | Bounds on the time step (s). |
 | `dt_var_min`, `dt_var_max` | `0.5`, `2.0` | Per-step shrink/grow factors. |
@@ -223,13 +223,10 @@ are the shipped configuration, which describes the hot Jupiter **HD 189733b**.
 | `use_print_delta` | `False` | Print the largest truncation error each progress step. |
 | `plot_TP` | `True` | Plot the T-P/$K_{zz}$ profile at startup. |
 | `use_live_plot`, `live_plot_frq` | `True`, `50` | Live mixing-ratio plotting and its step interval. |
-| `use_live_flux` | `False` | Live flux plotting. |
 | `use_plot_end`, `use_plot_evo` | `True`, `True` | Plot final profiles / time evolution at the end. |
-| `use_flux_movie` | `False` | Save flux frames for a movie. |
 | `plot_height` | `False` | Plot against height instead of pressure. |
 | `plot_spec` | `['H2','H','H2O','CH4','CO','CO2','C2H2']` | Species to plot. |
 | `plot_dpi` | `130` | Figure resolution. |
-| `y_time_freq` | `1` | Step interval for storing time-series data. |
 
 !!! warning "`clean_output` on networked filesystems"
     On NFS home directories (e.g. HPC clusters), `clean_output = True` can fail with

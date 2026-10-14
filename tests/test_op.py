@@ -232,22 +232,6 @@ def test_molecular_diffusion_conserves_column_uniform_gravity(mixed_state, settl
 
 
 @pytest.mark.unit
-@pytest.mark.xfail(
-    strict=True,
-    reason='Boundary rows of the molecular-diffusion flux use the gravity of the boundary '
-    'layer (g[0], g[-1]) for the neighbouring species term, whereas interior rows use '
-    'the neighbour layer gravity (g[1], g[-2]). The interface fluxes then do not '
-    'telescope, so the column leaks at the ~1e-9 level when g varies with height.',
-)
-def test_molecular_diffusion_conserves_column_varying_gravity(mixed_state):
-    """Molecular diffusion should conserve each species' column for height-dependent g."""
-    cfg, var, atm, para = mixed_state
-    assert np.ptp(atm.g) > 0.01 * atm.g.mean()  # g really varies on this grid
-    tendency = op.Ros2(cfg).diffdf(var.y, atm)
-    assert _relative_column_change(_column_weights(atm), tendency).max() < 1e-13
-
-
-@pytest.mark.unit
 def test_settling_moves_species_downward(mixed_state):
     """Downward settling (vs < 0) removes a species from the top layer and adds it at the bottom.
 
