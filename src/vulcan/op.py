@@ -846,7 +846,7 @@ class ReadRate(object):
                                     [Tlow, Thigh], [log_lowT, log_highT], axis=0
                                 )  # at wavelength ld, interpolating between Tlow and Thigh in log10
                                 if inter_T(Tz) == -100:
-                                    var.cross_T[sp][lev, n] == 0.0
+                                    var.cross_T[sp][lev, n] = 0.0
                                 else:
                                     var.cross_T[sp][lev, n] = 10 ** (inter_T(Tz))
 
