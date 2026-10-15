@@ -24,6 +24,7 @@ from vulcan import Config, chem_funs, run_vulcan
 from vulcan.chem_funs import spec_list
 from vulcan.phy_const import au, r_sun
 
+
 def _config(out_dir, **overrides):
     """Default config writing only a pickle to out_dir, with plotting off."""
     cfg = Config()
@@ -220,4 +221,3 @@ def test_unknown_setup_option_raises(tmp_path, setting, error):
     cfg = _config(tmp_path, **{**BAD_RUN, **setting})
     with pytest.raises(error):
         run_vulcan(cfg, make_network=False)
-
