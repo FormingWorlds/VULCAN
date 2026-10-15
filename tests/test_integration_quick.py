@@ -55,7 +55,9 @@ def _element_totals(y):
     from vulcan.build_atm import compo, compo_row
 
     return {
-        el: sum(compo[compo_row.index(sp)][el] * y[:, i] for i, sp in enumerate(spec_list)).sum()
+        el: sum(
+            compo[compo_row.index(sp)][el] * y[:, i] for i, sp in enumerate(spec_list)
+        ).sum()
         for el in ELEMENTS
     }
 
@@ -286,12 +288,10 @@ def test_short_isothermal_run_completes(tmp_path):
 @pytest.mark.integration
 @pytest.mark.parametrize('tiso', [0.0, -100.0])
 def test_non_positive_temperature_raises(tmp_path, tiso):
-    """A temperature <= 0 K must stop the run instead of producing output.
-
-    Currently caught only when the resulting NaN rate coefficients reach the linear solver.
-    """
+    """A temperature <= 0 K is rejected when the atmosphere is built, before any rate
+    coefficient is evaluated (so no NaN arithmetic, and no output)."""
     cfg = _config(tmp_path, atm_type='isothermal', Tiso=tiso, **BAD_RUN)
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match='Temperature must be finite and positive'):
         run_vulcan(cfg, make_network=False)
     assert not (tmp_path / 'example.pkl').exists()
 
