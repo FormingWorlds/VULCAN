@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-__version__ = '26.10.14'
+__version__ = '26.10.16'
 
 from .config import Config
 from .vulcan import run_vulcan

@@ -1803,6 +1803,16 @@ class ODESolver(object):
             [self.cfg.use_fix_sp_bot[sp] for sp in self.cfg.use_fix_sp_bot.keys()]
         )
 
+    @staticmethod
+    def sub_interior(dfdy, offset, val):
+        """
+        dfdy[r, r + offset] -= val for every row r of the interior layers 1..nz-2.
+        val has shape (nz-2, 1) (the same for every species) or (nz-2, ni).
+        """
+        nlev = val.shape[0]
+        rows = np.arange(ni, (nlev + 1) * ni)
+        dfdy[rows, rows + offset] -= np.broadcast_to(val, (nlev, ni)).ravel()
+
     def diffdf_no_mol(self, y, atm):
         """
         function of eddy diffusion without molecular diffusion, with zero-flux boundary conditions and non-uniform grids (dzi)
@@ -1852,41 +1862,42 @@ class ODESolver(object):
         C[-1] += ((vz[-1] > 0) * vz[-1]) / dzi[-1]
         # vertical adection
 
-        for j in range(1, nz - 1):
-            dz_ave = 0.5 * (dzi[j - 1] + dzi[j])
-            A[j] = (
-                -2.0
-                / (dzi[j - 1] + dzi[j])
-                * (
-                    Kzz[j] / dzi[j] * (ysum[j + 1] + ysum[j]) / 2.0
-                    + Kzz[j - 1] / dzi[j - 1] * (ysum[j] + ysum[j - 1]) / 2.0
-                )
-                / ysum[j]
+        # interior layers j = 1..nz-2 at once; suffix _m: j-1, _p: j+1
+        j, j_m, j_p = slice(1, nz - 1), slice(0, nz - 2), slice(2, nz)
+        dz_ave = 0.5 * (dzi[j_m] + dzi[j])
+        A[j] = (
+            -2.0
+            / (dzi[j_m] + dzi[j])
+            * (
+                Kzz[j] / dzi[j] * (ysum[j_p] + ysum[j]) / 2.0
+                + Kzz[j_m] / dzi[j_m] * (ysum[j] + ysum[j_m]) / 2.0
             )
-            B[j] = (
-                2.0
-                / (dzi[j - 1] + dzi[j])
-                * Kzz[j]
-                / dzi[j]
-                * (ysum[j + 1] + ysum[j])
-                / 2.0
-                / ysum[j + 1]
-            )
-            C[j] = (
-                2.0
-                / (dzi[j - 1] + dzi[j])
-                * Kzz[j - 1]
-                / dzi[j - 1]
-                * (ysum[j] + ysum[j - 1])
-                / 2.0
-                / ysum[j - 1]
-            )
+            / ysum[j]
+        )
+        B[j] = (
+            2.0
+            / (dzi[j_m] + dzi[j])
+            * Kzz[j]
+            / dzi[j]
+            * (ysum[j_p] + ysum[j])
+            / 2.0
+            / ysum[j_p]
+        )
+        C[j] = (
+            2.0
+            / (dzi[j_m] + dzi[j])
+            * Kzz[j_m]
+            / dzi[j_m]
+            * (ysum[j] + ysum[j_m])
+            / 2.0
+            / ysum[j_m]
+        )
 
-            # vertical adection
-            A[j] += -((vz[j] > 0) * vz[j] - (vz[j - 1] < 0) * vz[j - 1]) / dz_ave
-            B[j] += -((vz[j] < 0) * vz[j]) / dz_ave
-            C[j] += ((vz[j - 1] > 0) * vz[j - 1]) / dz_ave
-            # vertical adection
+        # vertical adection
+        A[j] += -((vz[j] > 0) * vz[j] - (vz[j_m] < 0) * vz[j_m]) / dz_ave
+        B[j] += -((vz[j] < 0) * vz[j]) / dz_ave
+        C[j] += ((vz[j_m] > 0) * vz[j_m]) / dz_ave
+        # vertical adection
 
         tmp0 = A[0] * y[0] + B[0] * y[1]
         tmp1 = np.ndarray.flatten(
@@ -2010,93 +2021,84 @@ class ODESolver(object):
             + alpha / Ti[-1] * (Tco[-1] - Tco[-2]) / dzi[-1]
         )
 
-        for j in range(1, nz - 1):
-            dz_ave = 0.5 * (dzi[j - 1] + dzi[j])
-            A[j] = (
-                -1.0
-                / dz_ave
-                * (
-                    Kzz[j] / dzi[j] * (ysum[j + 1] + ysum[j]) / 2.0
-                    + Kzz[j - 1] / dzi[j - 1] * (ysum[j] + ysum[j - 1]) / 2.0
-                )
-                / ysum[j]
+        # interior layers j = 1..nz-2 at once; suffix _m: j-1, _p: j+1
+        j, j_m, j_p = slice(1, nz - 1), slice(0, nz - 2), slice(2, nz)
+        dz_ave = 0.5 * (dzi[j_m] + dzi[j])
+        A[j] = (
+            -1.0
+            / dz_ave
+            * (
+                Kzz[j] / dzi[j] * (ysum[j_p] + ysum[j]) / 2.0
+                + Kzz[j_m] / dzi[j_m] * (ysum[j] + ysum[j_m]) / 2.0
             )
-            B[j] = 1.0 / dz_ave * Kzz[j] / dzi[j] * (ysum[j + 1] + ysum[j]) / 2.0 / ysum[j + 1]
-            C[j] = (
-                1.0
-                / dz_ave
-                * Kzz[j - 1]
-                / dzi[j - 1]
-                * (ysum[j] + ysum[j - 1])
-                / 2.0
-                / ysum[j - 1]
-            )
+            / ysum[j]
+        )
+        B[j] = 1.0 / dz_ave * Kzz[j] / dzi[j] * (ysum[j_p] + ysum[j]) / 2.0 / ysum[j_p]
+        C[j] = 1.0 / dz_ave * Kzz[j_m] / dzi[j_m] * (ysum[j] + ysum[j_m]) / 2.0 / ysum[j_m]
 
-            # vertical adection
-            A[j] += -((vz[j] > 0) * vz[j] - (vz[j - 1] < 0) * vz[j - 1]) / dz_ave
-            B[j] += -((vz[j] < 0) * vz[j]) / dz_ave
-            C[j] += ((vz[j - 1] > 0) * vz[j - 1]) / dz_ave
-            # vertical adection
+        # vertical adection
+        A[j] += -((vz[j] > 0) * vz[j] - (vz[j_m] < 0) * vz[j_m]) / dz_ave
+        B[j] += -((vz[j] < 0) * vz[j]) / dz_ave
+        C[j] += ((vz[j_m] > 0) * vz[j_m]) / dz_ave
+        # vertical adection
 
-            # Ai in the shape of nz*ni and Ai[j] in the shape of ni
-            Ai[j] = (
-                -1.0
-                / dz_ave
-                * (
-                    Dzz[j] / dzi[j] * (ysum[j + 1] + ysum[j]) / 2.0
-                    + Dzz[j - 1] / dzi[j - 1] * (ysum[j] + ysum[j - 1]) / 2.0
-                )
-                / ysum[j]
-            )
-            Bi[j] = 1.0 / dz_ave * Dzz[j] / dzi[j] * (ysum[j + 1] + ysum[j]) / 2.0 / ysum[j + 1]
-            Ci[j] = (
-                1.0
-                / dz_ave
-                * Dzz[j - 1]
-                / dzi[j - 1]
-                * (ysum[j] + ysum[j - 1])
-                / 2.0
-                / ysum[j - 1]
-            )
+        # per-layer quantities as columns, broadcasting over species
+        dz_c, dzi_c, ysum_c = dz_ave[:, None], dzi[:, None], ysum[:, None]
+        Hpi_c, Ti_c, g_c, Tco_c = Hpi[:, None], Ti[:, None], g[:, None], Tco[:, None]
 
-            Ai[j] += (
-                1.0
-                / (2.0 * dz_ave)
+        # Ai in the shape of nz*ni and Ai[j] in the shape of (nz-2)*ni
+        Ai[j] = (
+            -1.0
+            / dz_c
+            * (
+                Dzz[j] / dzi_c[j] * (ysum_c[j_p] + ysum_c[j]) / 2.0
+                + Dzz[j_m] / dzi_c[j_m] * (ysum_c[j] + ysum_c[j_m]) / 2.0
+            )
+            / ysum_c[j]
+        )
+        Bi[j] = 1.0 / dz_c * Dzz[j] / dzi_c[j] * (ysum_c[j_p] + ysum_c[j]) / 2.0 / ysum_c[j_p]
+        Ci[j] = (
+            1.0 / dz_c * Dzz[j_m] / dzi_c[j_m] * (ysum_c[j] + ysum_c[j_m]) / 2.0 / ysum_c[j_m]
+        )
+
+        Ai[j] += (
+            1.0
+            / (2.0 * dz_c)
+            * (
+                Dzz[j]
                 * (
-                    Dzz[j]
-                    * (
-                        -1.0 / Hpi[j]
-                        + ms * g[j] / (Navo * kb * Ti[j])
-                        + alpha / Ti[j] * (Tco[j + 1] - Tco[j]) / dzi[j]
-                    )
-                    - Dzz[j - 1]
-                    * (
-                        -1.0 / Hpi[j - 1]
-                        + ms * g[j] / (Navo * kb * Ti[j - 1])
-                        + alpha / Ti[j - 1] * (Tco[j] - Tco[j - 1]) / dzi[j - 1]
-                    )
+                    -1.0 / Hpi_c[j]
+                    + ms * g_c[j] / (Navo * kb * Ti_c[j])
+                    + alpha / Ti_c[j] * (Tco_c[j_p] - Tco_c[j]) / dzi_c[j]
                 )
-            )  # /ysum[j]
-            Bi[j] += (
-                1.0
-                / (2.0 * dz_ave)
-                * Dzz[j]
+                - Dzz[j_m]
                 * (
-                    -1.0 / Hpi[j]
-                    + ms * g[j + 1] / (Navo * kb * Ti[j])
-                    + alpha / Ti[j] * (Tco[j + 1] - Tco[j]) / dzi[j]
+                    -1.0 / Hpi_c[j_m]
+                    + ms * g_c[j] / (Navo * kb * Ti_c[j_m])
+                    + alpha / Ti_c[j_m] * (Tco_c[j] - Tco_c[j_m]) / dzi_c[j_m]
                 )
             )
-            Ci[j] += (
-                -1.0
-                / (2.0 * dz_ave)
-                * Dzz[j - 1]
-                * (
-                    -1.0 / Hpi[j - 1]
-                    + ms * g[j - 1] / (Navo * kb * Ti[j - 1])
-                    + alpha / Ti[j - 1] * (Tco[j] - Tco[j - 1]) / dzi[j - 1]
-                )
+        )  # /ysum[j]
+        Bi[j] += (
+            1.0
+            / (2.0 * dz_c)
+            * Dzz[j]
+            * (
+                -1.0 / Hpi_c[j]
+                + ms * g_c[j_p] / (Navo * kb * Ti_c[j])
+                + alpha / Ti_c[j] * (Tco_c[j_p] - Tco_c[j]) / dzi_c[j]
             )
+        )
+        Ci[j] += (
+            -1.0
+            / (2.0 * dz_c)
+            * Dzz[j_m]
+            * (
+                -1.0 / Hpi_c[j_m]
+                + ms * g_c[j_m] / (Navo * kb * Ti_c[j_m])
+                + alpha / Ti_c[j_m] * (Tco_c[j] - Tco_c[j_m]) / dzi_c[j_m]
+            )
+        )
 
         tmp0 = (A[0] + Ai[0]) * y[0] + (B[0] + Bi[0]) * y[1]  # shape of ni-long 1D array
         tmp1 = np.ndarray.flatten(
@@ -2261,99 +2263,90 @@ class ODESolver(object):
             + ((vs[-1] > 0) * vs[-1]) / dzi[-1]
         )
 
-        for j in range(1, nz - 1):
-            dz_ave = 0.5 * (dzi[j - 1] + dzi[j])
-            A[j] = (
-                -1.0
-                / dz_ave
-                * (
-                    Kzz[j] / dzi[j] * (ysum[j + 1] + ysum[j]) / 2.0
-                    + Kzz[j - 1] / dzi[j - 1] * (ysum[j] + ysum[j - 1]) / 2.0
-                )
-                / ysum[j]
+        # interior layers j = 1..nz-2 at once; suffix _m: j-1, _p: j+1
+        j, j_m, j_p = slice(1, nz - 1), slice(0, nz - 2), slice(2, nz)
+        dz_ave = 0.5 * (dzi[j_m] + dzi[j])
+        A[j] = (
+            -1.0
+            / dz_ave
+            * (
+                Kzz[j] / dzi[j] * (ysum[j_p] + ysum[j]) / 2.0
+                + Kzz[j_m] / dzi[j_m] * (ysum[j] + ysum[j_m]) / 2.0
             )
-            B[j] = 1.0 / dz_ave * Kzz[j] / dzi[j] * (ysum[j + 1] + ysum[j]) / 2.0 / ysum[j + 1]
-            C[j] = (
-                1.0
-                / dz_ave
-                * Kzz[j - 1]
-                / dzi[j - 1]
-                * (ysum[j] + ysum[j - 1])
-                / 2.0
-                / ysum[j - 1]
-            )
+            / ysum[j]
+        )
+        B[j] = 1.0 / dz_ave * Kzz[j] / dzi[j] * (ysum[j_p] + ysum[j]) / 2.0 / ysum[j_p]
+        C[j] = 1.0 / dz_ave * Kzz[j_m] / dzi[j_m] * (ysum[j] + ysum[j_m]) / 2.0 / ysum[j_m]
 
-            # vertical adection
-            A[j] += -((vz[j] > 0) * vz[j] - (vz[j - 1] < 0) * vz[j - 1]) / dz_ave
-            B[j] += -((vz[j] < 0) * vz[j]) / dz_ave
-            C[j] += ((vz[j - 1] > 0) * vz[j - 1]) / dz_ave
-            # vertical adection
+        # vertical adection
+        A[j] += -((vz[j] > 0) * vz[j] - (vz[j_m] < 0) * vz[j_m]) / dz_ave
+        B[j] += -((vz[j] < 0) * vz[j]) / dz_ave
+        C[j] += ((vz[j_m] > 0) * vz[j_m]) / dz_ave
+        # vertical adection
 
-            # Ai in the shape of nz*ni and Ai[j] in the shape of ni
-            # Including the settling velocity of the particles
-            Ai[j] = (
-                -1.0
-                / dz_ave
-                * (
-                    Dzz[j] / dzi[j] * (ysum[j + 1] + ysum[j]) / 2.0
-                    + Dzz[j - 1] / dzi[j - 1] * (ysum[j] + ysum[j - 1]) / 2.0
-                )
-                / ysum[j]
-                - ((vs[j] > 0) * vs[j] - (vs[j - 1] < 0) * vs[j - 1]) / dz_ave
-            )
-            Bi[j] = (
-                1.0 / dz_ave * Dzz[j] / dzi[j] * (ysum[j + 1] + ysum[j]) / 2.0 / ysum[j + 1]
-                - ((vs[j] < 0) * vs[j]) / dz_ave
-            )
-            Ci[j] = (
-                1.0
-                / dz_ave
-                * Dzz[j - 1]
-                / dzi[j - 1]
-                * (ysum[j] + ysum[j - 1])
-                / 2.0
-                / ysum[j - 1]
-                + ((vs[j - 1] > 0) * vs[j - 1]) / dz_ave
-            )
+        # per-layer quantities as columns, broadcasting over species
+        dz_c, dzi_c, ysum_c = dz_ave[:, None], dzi[:, None], ysum[:, None]
+        Hpi_c, Ti_c, g_c, Tco_c = Hpi[:, None], Ti[:, None], g[:, None], Tco[:, None]
 
-            Ai[j] += (
-                1.0
-                / (2.0 * dz_ave)
+        # Ai in the shape of nz*ni and Ai[j] in the shape of (nz-2)*ni
+        # Including the settling velocity of the particles
+        Ai[j] = (
+            -1.0
+            / dz_c
+            * (
+                Dzz[j] / dzi_c[j] * (ysum_c[j_p] + ysum_c[j]) / 2.0
+                + Dzz[j_m] / dzi_c[j_m] * (ysum_c[j] + ysum_c[j_m]) / 2.0
+            )
+            / ysum_c[j]
+            - ((vs[j] > 0) * vs[j] - (vs[j_m] < 0) * vs[j_m]) / dz_c
+        )
+        Bi[j] = (
+            1.0 / dz_c * Dzz[j] / dzi_c[j] * (ysum_c[j_p] + ysum_c[j]) / 2.0 / ysum_c[j_p]
+            - ((vs[j] < 0) * vs[j]) / dz_c
+        )
+        Ci[j] = (
+            1.0 / dz_c * Dzz[j_m] / dzi_c[j_m] * (ysum_c[j] + ysum_c[j_m]) / 2.0 / ysum_c[j_m]
+            + ((vs[j_m] > 0) * vs[j_m]) / dz_c
+        )
+
+        Ai[j] += (
+            1.0
+            / (2.0 * dz_c)
+            * (
+                Dzz[j]
                 * (
-                    Dzz[j]
-                    * (
-                        -1.0 / Hpi[j]
-                        + ms * g[j] / (Navo * kb * Ti[j])
-                        + alpha / Ti[j] * (Tco[j + 1] - Tco[j]) / dzi[j]
-                    )
-                    - Dzz[j - 1]
-                    * (
-                        -1.0 / Hpi[j - 1]
-                        + ms * g[j] / (Navo * kb * Ti[j - 1])
-                        + alpha / Ti[j - 1] * (Tco[j] - Tco[j - 1]) / dzi[j - 1]
-                    )
+                    -1.0 / Hpi_c[j]
+                    + ms * g_c[j] / (Navo * kb * Ti_c[j])
+                    + alpha / Ti_c[j] * (Tco_c[j_p] - Tco_c[j]) / dzi_c[j]
                 )
-            )  # /ysum[j]
-            Bi[j] += (
-                1.0
-                / (2.0 * dz_ave)
-                * Dzz[j]
+                - Dzz[j_m]
                 * (
-                    -1.0 / Hpi[j]
-                    + ms * g[j + 1] / (Navo * kb * Ti[j])
-                    + alpha / Ti[j] * (Tco[j + 1] - Tco[j]) / dzi[j]
+                    -1.0 / Hpi_c[j_m]
+                    + ms * g_c[j] / (Navo * kb * Ti_c[j_m])
+                    + alpha / Ti_c[j_m] * (Tco_c[j] - Tco_c[j_m]) / dzi_c[j_m]
                 )
             )
-            Ci[j] += (
-                -1.0
-                / (2.0 * dz_ave)
-                * Dzz[j - 1]
-                * (
-                    -1.0 / Hpi[j - 1]
-                    + ms * g[j - 1] / (Navo * kb * Ti[j - 1])
-                    + alpha / Ti[j - 1] * (Tco[j] - Tco[j - 1]) / dzi[j - 1]
-                )
+        )  # /ysum[j]
+        Bi[j] += (
+            1.0
+            / (2.0 * dz_c)
+            * Dzz[j]
+            * (
+                -1.0 / Hpi_c[j]
+                + ms * g_c[j_p] / (Navo * kb * Ti_c[j])
+                + alpha / Ti_c[j] * (Tco_c[j_p] - Tco_c[j]) / dzi_c[j]
             )
+        )
+        Ci[j] += (
+            -1.0
+            / (2.0 * dz_c)
+            * Dzz[j_m]
+            * (
+                -1.0 / Hpi_c[j_m]
+                + ms * g_c[j_m] / (Navo * kb * Ti_c[j_m])
+                + alpha / Ti_c[j_m] * (Tco_c[j] - Tco_c[j_m]) / dzi_c[j_m]
+            )
+        )
 
         tmp0 = (A[0] + Ai[0]) * y[0] + (B[0] + Bi[0]) * y[1]  # shape of ni-long 1D array
         tmp1 = np.ndarray.flatten(
@@ -2768,63 +2761,96 @@ class ODESolver(object):
         for j in range(nz):
             j_indx.append(np.arange(j * ni, j * ni + ni))
 
-        for j in range(1, nz - 1):
-            # excluding the buttom and the top cell
-            # at j level consists of ni species
-            dz_ave = 0.5 * (dzi[j - 1] + dzi[j])
-            dfdy[j_indx[j], j_indx[j]] -= (
-                -1.0
-                / dz_ave
-                * (
-                    Kzz[j] / dzi[j] * (ysum[j + 1] + ysum[j]) / 2.0
-                    + Kzz[j - 1] / dzi[j - 1] * (ysum[j - 1] + ysum[j]) / 2.0
-                )
-                / ysum[j]
-                - ((vz[j] > 0) * vz[j] - (vz[j - 1] < 0) * vz[j - 1]) / dz_ave
-            )
-            dfdy[j_indx[j], j_indx[j + 1]] -= (
-                1.0 / dz_ave * (Kzz[j] / dzi[j] * (ysum[j + 1] + ysum[j]) / (2.0 * ysum[j + 1]))
-                - ((vz[j] < 0) * vz[j]) / dz_ave
-            )
-            dfdy[j_indx[j], j_indx[j - 1]] -= (
-                1.0
-                / dz_ave
-                * (Kzz[j - 1] / dzi[j - 1] * (ysum[j - 1] + ysum[j]) / (2.0 * ysum[j - 1]))
-                + ((vz[j - 1] > 0) * vz[j - 1]) / dz_ave
-            )
+        # interior layers j = 1..nz-2 at once; suffix _m: j-1, _p: j+1. Per-layer
+        # quantities are columns that broadcast over species
+        j, j_m, j_p = slice(1, nz - 1), slice(0, nz - 2), slice(2, nz)
+        dz_c = (0.5 * (dzi[j_m] + dzi[j]))[:, None]
+        dzi_c, ysum_c, Kzz_c, vz_c = dzi[:, None], ysum[:, None], Kzz[:, None], vz[:, None]
+        Hpi_c, Ti_c, g_c, Tco_c = Hpi[:, None], Ti[:, None], g[:, None], Tco[:, None]
 
-            # [j_indx[j], j_indx[j]] has size ni*ni
-            dfdy[j_indx[j], j_indx[j]] -= -1.0 / dz_ave * (
-                Dzz[j] / dzi[j] * (ysum[j + 1] + ysum[j]) / 2.0
-                + Dzz[j - 1] / dzi[j - 1] * (ysum[j - 1] + ysum[j]) / 2.0
-            ) / ysum[j] + 1.0 / (2.0 * dz_ave) * (
+        self.sub_interior(
+            dfdy,
+            0,
+            -1.0
+            / dz_c
+            * (
+                Kzz_c[j] / dzi_c[j] * (ysum_c[j_p] + ysum_c[j]) / 2.0
+                + Kzz_c[j_m] / dzi_c[j_m] * (ysum_c[j_m] + ysum_c[j]) / 2.0
+            )
+            / ysum_c[j]
+            - ((vz_c[j] > 0) * vz_c[j] - (vz_c[j_m] < 0) * vz_c[j_m]) / dz_c,
+        )
+        self.sub_interior(
+            dfdy,
+            ni,
+            1.0 / dz_c * (Kzz_c[j] / dzi_c[j] * (ysum_c[j_p] + ysum_c[j]) / (2.0 * ysum_c[j_p]))
+            - ((vz_c[j] < 0) * vz_c[j]) / dz_c,
+        )
+        self.sub_interior(
+            dfdy,
+            -ni,
+            1.0
+            / dz_c
+            * (Kzz_c[j_m] / dzi_c[j_m] * (ysum_c[j_m] + ysum_c[j]) / (2.0 * ysum_c[j_m]))
+            + ((vz_c[j_m] > 0) * vz_c[j_m]) / dz_c,
+        )
+
+        # [j_indx[j], j_indx[j]] has size ni*ni
+        self.sub_interior(
+            dfdy,
+            0,
+            -1.0
+            / dz_c
+            * (
+                Dzz[j] / dzi_c[j] * (ysum_c[j_p] + ysum_c[j]) / 2.0
+                + Dzz[j_m] / dzi_c[j_m] * (ysum_c[j_m] + ysum_c[j]) / 2.0
+            )
+            / ysum_c[j]
+            + 1.0
+            / (2.0 * dz_c)
+            * (
                 Dzz[j]
                 * (
-                    -1.0 / Hpi[j]
-                    + ms * g[j] / (Navo * kb * Ti[j])
-                    + alpha / Ti[j] * (Tco[j + 1] - Tco[j]) / dzi[j]
+                    -1.0 / Hpi_c[j]
+                    + ms * g_c[j] / (Navo * kb * Ti_c[j])
+                    + alpha / Ti_c[j] * (Tco_c[j_p] - Tco_c[j]) / dzi_c[j]
                 )
-                - Dzz[j - 1]
+                - Dzz[j_m]
                 * (
-                    -1.0 / Hpi[j - 1]
-                    + ms * g[j] / (Navo * kb * Ti[j - 1])
-                    + alpha / Ti[j - 1] * (Tco[j] - Tco[j - 1]) / dzi[j - 1]
+                    -1.0 / Hpi_c[j_m]
+                    + ms * g_c[j] / (Navo * kb * Ti_c[j_m])
+                    + alpha / Ti_c[j_m] * (Tco_c[j] - Tco_c[j_m]) / dzi_c[j_m]
                 )
-            )
-            dfdy[j_indx[j], j_indx[j + 1]] -= 1.0 / dz_ave * (
-                Dzz[j] / dzi[j] * (ysum[j + 1] + ysum[j]) / (2.0 * ysum[j + 1])
-            ) + 1.0 / (2.0 * dz_ave) * Dzz[j] * (
-                -1.0 / Hpi[j]
-                + ms * g[j + 1] / (Navo * kb * Ti[j])
-                + alpha / Ti[j] * (Tco[j + 1] - Tco[j]) / dzi[j]
-            )
-            dfdy[j_indx[j], j_indx[j - 1]] -= 1.0 / dz_ave * (
-                Dzz[j - 1] / dzi[j - 1] * (ysum[j - 1] + ysum[j]) / (2.0 * ysum[j - 1])
-            ) - 1.0 / (2.0 * dz_ave) * Dzz[j - 1] * (
-                -1.0 / Hpi[j - 1]
-                + ms * g[j - 1] / (Navo * kb * Ti[j - 1])
-                + alpha / Ti[j - 1] * (Tco[j] - Tco[j - 1]) / dzi[j - 1]
-            )
+            ),
+        )
+        self.sub_interior(
+            dfdy,
+            ni,
+            1.0 / dz_c * (Dzz[j] / dzi_c[j] * (ysum_c[j_p] + ysum_c[j]) / (2.0 * ysum_c[j_p]))
+            + 1.0
+            / (2.0 * dz_c)
+            * Dzz[j]
+            * (
+                -1.0 / Hpi_c[j]
+                + ms * g_c[j_p] / (Navo * kb * Ti_c[j])
+                + alpha / Ti_c[j] * (Tco_c[j_p] - Tco_c[j]) / dzi_c[j]
+            ),
+        )
+        self.sub_interior(
+            dfdy,
+            -ni,
+            1.0
+            / dz_c
+            * (Dzz[j_m] / dzi_c[j_m] * (ysum_c[j_m] + ysum_c[j]) / (2.0 * ysum_c[j_m]))
+            - 1.0
+            / (2.0 * dz_c)
+            * Dzz[j_m]
+            * (
+                -1.0 / Hpi_c[j_m]
+                + ms * g_c[j_m] / (Navo * kb * Ti_c[j_m])
+                + alpha / Ti_c[j_m] * (Tco_c[j] - Tco_c[j_m]) / dzi_c[j_m]
+            ),
+        )
 
         dfdy[j_indx[0], j_indx[0]] -= (
             -1.0 / (dzi[0]) * (Kzz[0] / dzi[0]) * (ysum[1] + ysum[0]) / (2.0 * ysum[0])
@@ -3073,30 +3099,38 @@ class ODESolver(object):
         for j in range(nz):
             j_indx.append(np.arange(j * ni, j * ni + ni))
 
-        for j in range(1, nz - 1):
-            # excluding the buttom and the top cell
-            # at j level consists of ni species
-            dz_ave = 0.5 * (dzi[j - 1] + dzi[j])
-            dfdy[j_indx[j], j_indx[j]] -= (
-                -1.0
-                / dz_ave
-                * (
-                    Kzz[j] / dzi[j] * (ysum[j + 1] + ysum[j]) / 2.0
-                    + Kzz[j - 1] / dzi[j - 1] * (ysum[j - 1] + ysum[j]) / 2.0
-                )
-                / ysum[j]
-                - ((vz[j] > 0) * vz[j] - (vz[j - 1] < 0) * vz[j - 1]) / dz_ave
+        # interior layers j = 1..nz-2 at once; suffix _m: j-1, _p: j+1. Per-layer
+        # quantities are columns that broadcast over species
+        j, j_m, j_p = slice(1, nz - 1), slice(0, nz - 2), slice(2, nz)
+        dz_c = (0.5 * (dzi[j_m] + dzi[j]))[:, None]
+        dzi_c, ysum_c, Kzz_c, vz_c = dzi[:, None], ysum[:, None], Kzz[:, None], vz[:, None]
+
+        self.sub_interior(
+            dfdy,
+            0,
+            -1.0
+            / dz_c
+            * (
+                Kzz_c[j] / dzi_c[j] * (ysum_c[j_p] + ysum_c[j]) / 2.0
+                + Kzz_c[j_m] / dzi_c[j_m] * (ysum_c[j_m] + ysum_c[j]) / 2.0
             )
-            dfdy[j_indx[j], j_indx[j + 1]] -= (
-                1.0 / dz_ave * (Kzz[j] / dzi[j] * (ysum[j + 1] + ysum[j]) / (2.0 * ysum[j + 1]))
-                - ((vz[j] < 0) * vz[j]) / dz_ave
-            )
-            dfdy[j_indx[j], j_indx[j - 1]] -= (
-                1.0
-                / dz_ave
-                * (Kzz[j - 1] / dzi[j - 1] * (ysum[j - 1] + ysum[j]) / (2.0 * ysum[j - 1]))
-                + ((vz[j - 1] > 0) * vz[j - 1]) / dz_ave
-            )
+            / ysum_c[j]
+            - ((vz_c[j] > 0) * vz_c[j] - (vz_c[j_m] < 0) * vz_c[j_m]) / dz_c,
+        )
+        self.sub_interior(
+            dfdy,
+            ni,
+            1.0 / dz_c * (Kzz_c[j] / dzi_c[j] * (ysum_c[j_p] + ysum_c[j]) / (2.0 * ysum_c[j_p]))
+            - ((vz_c[j] < 0) * vz_c[j]) / dz_c,
+        )
+        self.sub_interior(
+            dfdy,
+            -ni,
+            1.0
+            / dz_c
+            * (Kzz_c[j_m] / dzi_c[j_m] * (ysum_c[j_m] + ysum_c[j]) / (2.0 * ysum_c[j_m]))
+            + ((vz_c[j_m] > 0) * vz_c[j_m]) / dz_c,
+        )
 
         dfdy[j_indx[0], j_indx[0]] -= (
             -1.0 / (dzi[0]) * (Kzz[0] / dzi[0]) * (ysum[1] + ysum[0]) / (2.0 * ysum[0])
@@ -3416,84 +3450,99 @@ class ODESolver(object):
         for j in range(nz):
             j_indx.append(np.arange(j * ni, j * ni + ni))
 
-        for j in range(1, nz - 1):
-            # excluding the buttom and the top cell
-            # at j level consists of ni species
-            dz_ave = 0.5 * (dzi[j - 1] + dzi[j])
-            dfdy[j_indx[j], j_indx[j]] -= (
-                -1.0
-                / dz_ave
-                * (
-                    Kzz[j] / dzi[j] * (ysum[j + 1] + ysum[j]) / 2.0
-                    + Kzz[j - 1] / dzi[j - 1] * (ysum[j - 1] + ysum[j]) / 2.0
-                )
-                / ysum[j]
-                - ((vz[j] > 0) * vz[j] - (vz[j - 1] < 0) * vz[j - 1]) / dz_ave
-            )
-            dfdy[j_indx[j], j_indx[j + 1]] -= (
-                1.0 / dz_ave * (Kzz[j] / dzi[j] * (ysum[j + 1] + ysum[j]) / (2.0 * ysum[j + 1]))
-                - ((vz[j] < 0) * vz[j]) / dz_ave
-            )
-            dfdy[j_indx[j], j_indx[j - 1]] -= (
-                1.0
-                / dz_ave
-                * (Kzz[j - 1] / dzi[j - 1] * (ysum[j - 1] + ysum[j]) / (2.0 * ysum[j - 1]))
-                + ((vz[j - 1] > 0) * vz[j - 1]) / dz_ave
-            )
+        # interior layers j = 1..nz-2 at once; suffix _m: j-1, _p: j+1. Per-layer
+        # quantities are columns that broadcast over species
+        j, j_m, j_p = slice(1, nz - 1), slice(0, nz - 2), slice(2, nz)
+        dz_c = (0.5 * (dzi[j_m] + dzi[j]))[:, None]
+        dzi_c, ysum_c, Kzz_c, vz_c = dzi[:, None], ysum[:, None], Kzz[:, None], vz[:, None]
+        Hpi_c, Ti_c, g_c, Tco_c = Hpi[:, None], Ti[:, None], g[:, None], Tco[:, None]
 
-            # [j_indx[j], j_indx[j]] has size ni*ni
-            dfdy[j_indx[j], j_indx[j]] -= (
-                -1.0
-                / dz_ave
-                * (
-                    Dzz[j] / dzi[j] * (ysum[j + 1] + ysum[j]) / 2.0
-                    + Dzz[j - 1] / dzi[j - 1] * (ysum[j - 1] + ysum[j]) / 2.0
-                )
-                / ysum[j]
-                + 1.0
-                / (2.0 * dz_ave)
-                * (
-                    Dzz[j]
-                    * (
-                        -1.0 / Hpi[j]
-                        + ms * g[j] / (Navo * kb * Ti[j])
-                        + alpha / Ti[j] * (Tco[j + 1] - Tco[j]) / dzi[j]
-                    )
-                    - Dzz[j - 1]
-                    * (
-                        -1.0 / Hpi[j - 1]
-                        + ms * g[j] / (Navo * kb * Ti[j - 1])
-                        + alpha / Ti[j - 1] * (Tco[j] - Tco[j - 1]) / dzi[j - 1]
-                    )
-                )
-                - ((vs[j] > 0) * vs[j] - (vs[j - 1] < 0) * vs[j - 1]) / dz_ave
+        self.sub_interior(
+            dfdy,
+            0,
+            -1.0
+            / dz_c
+            * (
+                Kzz_c[j] / dzi_c[j] * (ysum_c[j_p] + ysum_c[j]) / 2.0
+                + Kzz_c[j_m] / dzi_c[j_m] * (ysum_c[j_m] + ysum_c[j]) / 2.0
             )
-            dfdy[j_indx[j], j_indx[j + 1]] -= (
-                1.0 / dz_ave * (Dzz[j] / dzi[j] * (ysum[j + 1] + ysum[j]) / (2.0 * ysum[j + 1]))
-                + 1.0
-                / (2.0 * dz_ave)
-                * Dzz[j]
-                * (
-                    -1.0 / Hpi[j]
-                    + ms * g[j + 1] / (Navo * kb * Ti[j])
-                    + alpha / Ti[j] * (Tco[j + 1] - Tco[j]) / dzi[j]
-                )
-                - ((vs[j] < 0) * vs[j]) / dz_ave
+            / ysum_c[j]
+            - ((vz_c[j] > 0) * vz_c[j] - (vz_c[j_m] < 0) * vz_c[j_m]) / dz_c,
+        )
+        self.sub_interior(
+            dfdy,
+            ni,
+            1.0 / dz_c * (Kzz_c[j] / dzi_c[j] * (ysum_c[j_p] + ysum_c[j]) / (2.0 * ysum_c[j_p]))
+            - ((vz_c[j] < 0) * vz_c[j]) / dz_c,
+        )
+        self.sub_interior(
+            dfdy,
+            -ni,
+            1.0
+            / dz_c
+            * (Kzz_c[j_m] / dzi_c[j_m] * (ysum_c[j_m] + ysum_c[j]) / (2.0 * ysum_c[j_m]))
+            + ((vz_c[j_m] > 0) * vz_c[j_m]) / dz_c,
+        )
+
+        # [j_indx[j], j_indx[j]] has size ni*ni
+        self.sub_interior(
+            dfdy,
+            0,
+            -1.0
+            / dz_c
+            * (
+                Dzz[j] / dzi_c[j] * (ysum_c[j_p] + ysum_c[j]) / 2.0
+                + Dzz[j_m] / dzi_c[j_m] * (ysum_c[j_m] + ysum_c[j]) / 2.0
             )
-            dfdy[j_indx[j], j_indx[j - 1]] -= (
-                1.0
-                / dz_ave
-                * (Dzz[j - 1] / dzi[j - 1] * (ysum[j - 1] + ysum[j]) / (2.0 * ysum[j - 1]))
-                - 1.0
-                / (2.0 * dz_ave)
-                * Dzz[j - 1]
+            / ysum_c[j]
+            + 1.0
+            / (2.0 * dz_c)
+            * (
+                Dzz[j]
                 * (
-                    -1.0 / Hpi[j - 1]
-                    + ms * g[j - 1] / (Navo * kb * Ti[j - 1])
-                    + alpha / Ti[j - 1] * (Tco[j] - Tco[j - 1]) / dzi[j - 1]
+                    -1.0 / Hpi_c[j]
+                    + ms * g_c[j] / (Navo * kb * Ti_c[j])
+                    + alpha / Ti_c[j] * (Tco_c[j_p] - Tco_c[j]) / dzi_c[j]
                 )
-                + ((vs[j - 1] > 0) * vs[j - 1]) / dz_ave
+                - Dzz[j_m]
+                * (
+                    -1.0 / Hpi_c[j_m]
+                    + ms * g_c[j] / (Navo * kb * Ti_c[j_m])
+                    + alpha / Ti_c[j_m] * (Tco_c[j] - Tco_c[j_m]) / dzi_c[j_m]
+                )
             )
+            - ((vs[j] > 0) * vs[j] - (vs[j_m] < 0) * vs[j_m]) / dz_c,
+        )
+        self.sub_interior(
+            dfdy,
+            ni,
+            1.0 / dz_c * (Dzz[j] / dzi_c[j] * (ysum_c[j_p] + ysum_c[j]) / (2.0 * ysum_c[j_p]))
+            + 1.0
+            / (2.0 * dz_c)
+            * Dzz[j]
+            * (
+                -1.0 / Hpi_c[j]
+                + ms * g_c[j_p] / (Navo * kb * Ti_c[j])
+                + alpha / Ti_c[j] * (Tco_c[j_p] - Tco_c[j]) / dzi_c[j]
+            )
+            - ((vs[j] < 0) * vs[j]) / dz_c,
+        )
+        self.sub_interior(
+            dfdy,
+            -ni,
+            1.0
+            / dz_c
+            * (Dzz[j_m] / dzi_c[j_m] * (ysum_c[j_m] + ysum_c[j]) / (2.0 * ysum_c[j_m]))
+            - 1.0
+            / (2.0 * dz_c)
+            * Dzz[j_m]
+            * (
+                -1.0 / Hpi_c[j_m]
+                + ms * g_c[j_m] / (Navo * kb * Ti_c[j_m])
+                + alpha / Ti_c[j_m] * (Tco_c[j] - Tco_c[j_m]) / dzi_c[j_m]
+            )
+            + ((vs[j_m] > 0) * vs[j_m]) / dz_c,
+        )
 
         dfdy[j_indx[0], j_indx[0]] -= (
             -1.0 / (dzi[0]) * (Kzz[0] / dzi[0]) * (ysum[1] + ysum[0]) / (2.0 * ysum[0])
@@ -4244,32 +4293,47 @@ class Ros2(ODESolver):
         # ODESolver.__init__(self)
         super().__init__(vulcan_cfg)
 
-    def store_bandM(self, a, nb, nn):
+    @staticmethod
+    def band_lu(a, nb):
         """
-        store block-tridiagonal matrix(bandwidth=1) into diagonal ordered form
-        (http://docs.scipy.org/doc/scipy/reference/generated/scipy.linalg.solve_banded.html)
-        a : square block-tridiagonal matirx
-        nb: size of the block matrix (number of species)
-        nn: number of the block matrices (number of layers)
+        LU-factorise the block-tridiagonal matrix a in LAPACK band storage.
+        a : square block-tridiagonal matrix of nb x nb blocks (nb = number of species)
+
+        Chemistry couples the nb species within a layer (|row - col| <= nb - 1), and
+        transport couples each species only to itself in the adjacent layers
+        (|row - col| = nb), so both the lower and the upper bandwidth are exactly nb.
+        The factors are computed once and reused for both Rosenbrock stages.
         """
+        n = a.shape[0]
+        # dgbtrf stores a[i, j] at ab[2*nb + i - j, j]; the top nb rows hold the fill-in
+        # from row interchanges
+        ab = np.zeros((3 * nb + 1, n))
+        for d in range(-nb, nb + 1):  # d = column - row
+            if d >= 0:
+                ab[2 * nb - d, d:] = np.diagonal(a, d)
+            else:
+                ab[2 * nb - d, : n + d] = np.diagonal(a, d)
+        if not np.all(np.isfinite(ab)):
+            raise ValueError('array must not contain infs or NaNs')
 
-        # band width (treat block-banded as banded matrix)
-        bw = 2 * nb - 1
-        ab = np.zeros((2 * bw + 1, nb * nn))
+        lub, piv, info = scipy.linalg.lapack.dgbtrf(ab, nb, nb, overwrite_ab=1)
+        if info > 0:
+            raise np.linalg.LinAlgError('singular matrix')
+        if info < 0:
+            raise ValueError('illegal value in %d-th argument of internal gbtrf' % -info)
+        return lub, piv, nb
 
-        # first 2 columns
-        for i in range(0, 2 * nb):
-            ab[-(2 * nb + i) :, i] = a[0 : 2 * nb + i, i]
-
-        # middle
-        for i in range(2 * nb, nn * nb - 2 * nb):
-            ab[:, i] = a[(i - 2 * nb + 1) : (i - 2 * nb + 1) + (2 * bw + 1), i]
-
-        # last 2 columns
-        for ne, i in enumerate(range(nn * nb - 2 * nb, nn * nb)):
-            ab[: (2 * bw + 1 - ne), i] = a[-(2 * bw + 1 - ne) :, i]
-
-        return (ab, bw)
+    @staticmethod
+    def band_solve(lu, b):
+        """
+        Solve a x = b with the factors returned by band_lu.
+        """
+        lub, piv, nb = lu
+        b = np.asarray_chkfinite(b)
+        x, info = scipy.linalg.lapack.dgbtrs(lub, nb, nb, b, piv)
+        if info < 0:
+            raise ValueError('illegal value in %d-th argument of internal gbtrs' % -info)
+        return x
 
     def solver(self, var, atm, para):
         """
@@ -4331,8 +4395,8 @@ class Ros2(ODESolver):
             lhs[atm.fix_e_indx, :] = 0
             lhs[atm.fix_e_indx, atm.fix_e_indx] = 1.0 / (r * h)
 
-        lhs_b, bw = self.store_bandM(lhs, ni, nz)
-        k1_flat = scipy.linalg.solve_banded((bw, bw), lhs_b, df)
+        lhs_lu = self.band_lu(lhs, ni)
+        k1_flat = self.band_solve(lhs_lu, df)
         k1 = k1_flat.reshape(y.shape)
 
         yk2 = y + k1 / r
@@ -4347,7 +4411,7 @@ class Ros2(ODESolver):
             df[atm.fix_e_indx] = 0
 
         rhs = df - 2.0 / (r * h) * k1_flat
-        k2 = scipy.linalg.solve_banded((bw, bw), lhs_b, rhs)
+        k2 = self.band_solve(lhs_lu, rhs)
         k2 = k2.reshape(y.shape)
 
         sol = y + 3.0 / (2.0 * r) * k1 + 1 / (2.0 * r) * k2
@@ -4466,8 +4530,8 @@ class Ros2(ODESolver):
         df = chemdf(y, M, k).flatten() + diffdf(y, atm).flatten()
         lhs = jac_tot(var, atm)
 
-        lhs_b, bw = self.store_bandM(lhs, ni, nz)
-        k1_flat = scipy.linalg.solve_banded((bw, bw), lhs_b, df)
+        lhs_lu = self.band_lu(lhs, ni)
+        k1_flat = self.band_solve(lhs_lu, df)
 
         k1 = k1_flat.reshape(y.shape)
 
@@ -4475,7 +4539,7 @@ class Ros2(ODESolver):
         df = chemdf(yk2, M, k).flatten() + diffdf(yk2, atm).flatten()
 
         rhs = df - 2.0 / (r * h) * k1_flat
-        k2 = scipy.linalg.solve_banded((bw, bw), lhs_b, rhs)
+        k2 = self.band_solve(lhs_lu, rhs)
         k2 = k2.reshape(y.shape)
 
         sol = y + 3.0 / (2.0 * r) * k1 + 1 / (2.0 * r) * k2

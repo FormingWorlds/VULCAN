@@ -288,6 +288,60 @@ def test_transport_jacobian_matches_rhs(mixed_state, rhs_name, lhs_name, flags):
 
 
 # ---------------------------------------------------------------------------
+# Banded linear solver
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+def test_solver_matrix_bandwidth_is_number_of_species(state):
+    """The Rosenbrock matrix with chemistry and transport has bandwidth exactly ni.
+
+    Chemistry couples species within a layer (|row - col| < ni) and transport couples each
+    species only to itself in the adjacent layers (|row - col| = ni). band_lu relies on
+    this: any entry further from the diagonal would be silently dropped.
+    """
+    cfg, var, atm, para = state
+    var.dt = 1.0e3
+    lhs = op.Ros2(cfg).lhs_jac_tot(var, atm)
+    rows, cols = np.nonzero(lhs)
+    offset = np.abs(rows - cols)
+    assert offset.max() == ni
+
+
+@pytest.mark.unit
+def test_band_solve_matches_dense_solve(mixed_state):
+    """One band LU factorisation solves the system for several right-hand sides.
+
+    Reference: numpy.linalg.solve on the dense matrix. Chemistry is off, so the matrix is
+    the well-conditioned transport operator plus I/(r dt).
+    """
+    cfg, var, atm, para = mixed_state
+    lhs = op.Ros2(cfg).lhs_jac_tot(var, atm)
+    rng = np.random.default_rng(2)
+    lu = op.Ros2.band_lu(lhs, ni)
+    for _ in range(2):
+        b = rng.uniform(-1.0, 1.0, NZ * ni)
+        expected = np.linalg.solve(lhs, b)
+        # well-conditioned algebra: machine-precision tolerance
+        np.testing.assert_allclose(op.Ros2.band_solve(lu, b), expected, rtol=1e-12, atol=0)
+
+
+@pytest.mark.unit
+def test_band_lu_rejects_singular_and_non_finite_matrices():
+    """band_lu raises like scipy.linalg.solve_banded for singular or non-finite input."""
+    nb, nlev = 3, 4
+    a = np.eye(nb * nlev)
+    a[5, 5] = 0.0  # zero row and column: exactly singular
+    with pytest.raises(np.linalg.LinAlgError):
+        op.Ros2.band_lu(a, nb)
+
+    a = np.eye(nb * nlev)
+    a[2, 3] = np.nan
+    with pytest.raises(ValueError):
+        op.Ros2.band_lu(a, nb)
+
+
+# ---------------------------------------------------------------------------
 # Rosenbrock time step
 # ---------------------------------------------------------------------------
 
