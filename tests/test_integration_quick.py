@@ -1,12 +1,13 @@
 """Quick end-to-end tests of `run_vulcan` on coarse grids.
 
 Each run goes through the whole pipeline (grid, initial abundances, rates, photochemistry,
-Ros2 integration to convergence, output) on 10-20 layers, taking a few seconds. All runs
-start from well-mixed abundances (ini_mix = 'const_mix'), so FastChem is not needed. The
+Ros2 integration to convergence, output) on 10-20 layers, taking a few seconds. The
 assertions are physical properties of the converged state, checked against references that
 do not come from VULCAN's kinetics:
 
-- detailed balance of every reversible reaction at thermochemical equilibrium;
+- thermochemical equilibrium from FastChem, an independent Gibbs-minimisation code with its
+  own thermodynamic data (VULCAN's reverse rates use NASA9 polynomials);
+- detailed balance of every reversible reaction at equilibrium;
 - geometric dilution of the stellar spectrum, (R_star / a)^2, at the top of the atmosphere.
 
 The default CHO network is used throughout, since `chem_funs.py` is generated once per
@@ -23,6 +24,8 @@ import pytest
 from vulcan import Config, chem_funs, run_vulcan
 from vulcan.chem_funs import spec_list
 from vulcan.phy_const import au, r_sun
+
+ELEMENTS = ('H', 'O', 'C', 'He')
 
 
 def _config(out_dir, **overrides):
@@ -47,12 +50,23 @@ def _run(cfg):
         return pickle.load(hdl)
 
 
+def _element_totals(y):
+    """Number of atoms of each element in the column (sum over layers), from composition data."""
+    from vulcan.build_atm import compo, compo_row
+
+    return {
+        el: sum(compo[compo_row.index(sp)][el] * y[:, i] for i, sp in enumerate(spec_list)).sum()
+        for el in ELEMENTS
+    }
+
+
 # ---------------------------------------------------------------------------
 # Thermochemical equilibrium: hot isothermal column, no photochemistry, no transport
 # ---------------------------------------------------------------------------
 
-# 1500 K between 100 and 0.1 bar, starting from CH4 and H2O with no CO: the kinetics must
-# convert much of the carbon to CO at low pressure, a large change in composition.
+# 1500 K between 100 and 0.1 bar: CH4 dominates carbon at the bottom and CO at the top, so
+# the equilibrium varies strongly with pressure. FastChem's other elements (N, S, ...) are
+# scaled to negligible abundance so the element budget matches the CHO network.
 EQ_SETTINGS = dict(
     nz=10,
     atm_type='isothermal',
@@ -64,19 +78,91 @@ EQ_SETTINGS = dict(
     Kzz_prof='const',
     const_Kzz=0.0,  # no transport: each layer relaxes to its own local equilibrium
     diff_esc=[],
-    ini_mix='const_mix',
-    const_mix={'CH4': 2.5e-4, 'H2O': 5.0e-4, 'He': 0.16, 'H2': 1.0 - 0.16 - 7.5e-4},
+    use_solar=False,
+    C_H=2.5e-4,
+    O_H=5.0e-4,
+    fastchem_met_scale=1e-10,
 )
 
 
+def _fastchem_equilibrium(out_dir):
+    """FastChem equilibrium mixing ratios on the EQ_SETTINGS grid, shape (nz, ni)."""
+    from vulcan import build_atm, store
+
+    cfg = _config(out_dir, ini_mix='eq', **EQ_SETTINGS)
+    var, atm = store.Variables(cfg), store.AtmData(cfg)
+    make_atm = build_atm.Atm(cfg)
+    atm = make_atm.f_pico(atm)
+    atm = make_atm.load_TPK(atm)
+    var = build_atm.InitialAbun(cfg).ini_y(var, atm)
+    return var.y / atm.n_0[:, None]
+
+
+def _well_mixed_start(x_eq):
+    """H2, He, H2O, CH4 mixture with the same element ratios as the equilibrium x_eq.
+
+    Built per H atom: CH4 holds all carbon, H2O all oxygen, and H2 the remaining hydrogen.
+    CO, the main carbon carrier at the top of the equilibrium column, starts at zero.
+    """
+    el = _element_totals(x_eq[:1])
+    c_h, o_h, he_h = el['C'] / el['H'], el['O'] / el['H'], el['He'] / el['H']
+    h2 = (1.0 - 4.0 * c_h - 2.0 * o_h) / 2.0
+    total = c_h + o_h + he_h + h2
+    return {'CH4': c_h / total, 'H2O': o_h / total, 'He': he_h / total, 'H2': h2 / total}
+
+
 @pytest.fixture(scope='module')
-def equilibrium_run(tmp_path_factory):
-    """Run from the well-mixed start to convergence."""
-    return _run(_config(tmp_path_factory.mktemp('vulcan_eq'), **EQ_SETTINGS))
+def equilibrium_runs(tmp_path_factory):
+    """FastChem reference plus two runs, one started at it and one from a well-mixed state."""
+    tmp = tmp_path_factory.mktemp('vulcan_eq')
+    x_eq = _fastchem_equilibrium(tmp / 'ref')
+    const_mix = _well_mixed_start(x_eq)
+    from_eq = _run(_config(tmp / 'from_eq', ini_mix='eq', **EQ_SETTINGS))
+    from_mix = _run(
+        _config(tmp / 'from_mix', ini_mix='const_mix', const_mix=const_mix, **EQ_SETTINGS)
+    )
+    return x_eq, const_mix, from_eq, from_mix
+
+
+def _assert_matches_equilibrium(run, x_eq):
+    assert run['parameter']['end_case'] == 1  # converged, not stopped by a limit
+    x = run['variable']['ymix']
+    # species and layers with a well-defined equilibrium abundance; trace species far below
+    # this are not converged (VULCAN's own check ignores mixing ratios < mtol_conv = 1e-20)
+    mask = x_eq > 1e-10
+    assert len(set(np.nonzero(mask)[1])) >= 10  # non-vacuous: many species compared
+    # rtol: the steady-state criterion allows ~1% residual drift (yconv_cri = 0.01); the two
+    # codes' thermodynamic data differ by much less (~4e-4 seen at 1500 K)
+    np.testing.assert_allclose(x[mask], x_eq[mask], rtol=1e-2)
 
 
 @pytest.mark.integration
-def test_equilibrium_satisfies_detailed_balance(equilibrium_run):
+def test_fastchem_equilibrium_is_a_fixed_point_of_the_kinetics(equilibrium_runs):
+    """Started at FastChem's equilibrium, the forward and reverse kinetics leave it unchanged.
+
+    Reverse rates are forward rates divided by equilibrium constants from VULCAN's NASA9
+    Gibbs energies; a wrong equilibrium constant would drive the column away from FastChem.
+    """
+    x_eq, _, from_eq, _ = equilibrium_runs
+    _assert_matches_equilibrium(from_eq, x_eq)
+
+
+@pytest.mark.integration
+def test_kinetics_relax_to_fastchem_equilibrium(equilibrium_runs):
+    """From a well-mixed CH4/H2O start with no CO, the kinetics reach FastChem's equilibrium.
+
+    This exercises the full Ros2 integration through a large change in composition: CO goes
+    from zero to the dominant carbon carrier at 0.1 bar.
+    """
+    x_eq, const_mix, _, from_mix = equilibrium_runs
+    i_co = spec_list.index('CO')
+    assert 'CO' not in const_mix
+    assert x_eq[-1, i_co] > 0.5 * _element_totals(x_eq[-1:])['C']  # CO dominant at the top
+    _assert_matches_equilibrium(from_mix, x_eq)
+
+
+@pytest.mark.integration
+def test_equilibrium_satisfies_detailed_balance(equilibrium_runs):
     """At thermochemical equilibrium each reversible reaction is individually balanced.
 
     A steady state only requires the net tendency of each species to vanish; equilibrium
@@ -84,8 +170,7 @@ def test_equilibrium_satisfies_detailed_balance(equilibrium_run):
     from the stored k and number densities as k * prod(reactant densities), with M the total
     density, independently of the generated chemdf.
     """
-    run = equilibrium_run
-    assert run['parameter']['end_case'] == 1  # converged, not stopped by a limit
+    _, _, _, run = equilibrium_runs
     var, atm = run['variable'], run['atm']
     y, k, x = var['y'], var['k'], var['ymix']
 
@@ -116,13 +201,13 @@ def test_equilibrium_satisfies_detailed_balance(equilibrium_run):
 
 
 @pytest.mark.integration
-def test_repeated_run_in_one_process_is_bitwise_identical(equilibrium_run, tmp_path):
+def test_repeated_run_in_one_process_is_bitwise_identical(equilibrium_runs, tmp_path):
     """A second run with an identical, fresh config reproduces the first exactly.
 
     PROTEUS calls run_vulcan repeatedly in one process, so no state may leak between runs.
     """
-    first = equilibrium_run
-    second = _run(_config(tmp_path, **EQ_SETTINGS))
+    _, const_mix, _, first = equilibrium_runs
+    second = _run(_config(tmp_path, ini_mix='const_mix', const_mix=const_mix, **EQ_SETTINGS))
     assert second['parameter']['count'] == first['parameter']['count']
     np.testing.assert_array_equal(second['variable']['y'], first['variable']['y'])
 
@@ -134,9 +219,9 @@ def test_repeated_run_in_one_process_is_bitwise_identical(equilibrium_run, tmp_p
 
 @pytest.fixture(scope='module')
 def photochem_run(tmp_path_factory):
-    """Default model on 20 layers, started from the default well-mixed abundances."""
+    """Default model on 20 layers."""
     tmp = tmp_path_factory.mktemp('vulcan_photo')
-    cfg = _config(tmp, nz=20, ini_mix='const_mix')
+    cfg = _config(tmp, nz=20)
     return cfg, _run(cfg)
 
 
