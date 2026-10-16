@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import importlib
 import logging
+from re import findall, sub
 
 import numpy as np
 from sympy import Matrix, Symbol  # for constructing the symbolic Jacobian matrix
@@ -412,8 +413,19 @@ def make_chemdf(re_table, ofname):
     ost += '\t y = np.transpose(y) \n'.expandtabs(3)
     ost += '\t dydt = np.zeros(shape=y.shape) \n'.expandtabs(3)
 
+    # Evaluate each net reaction rate v_i once into a local vi, since a rate enters the
+    # tendency of every species it involves
+    rate_calls = {}
+    chemdf_terms = {}
     for num in reac_dict:
-        ost += '\t dydt['.expandtabs(3) + str(num) + '] = ' + reac_dict[num] + '\n'
+        for call, re_num in findall(r'(v_(\d+)\([^)]*\))', reac_dict[num]):
+            rate_calls[int(re_num)] = call
+        chemdf_terms[num] = sub(r'v_(\d+)\([^)]*\)', r'v\1', reac_dict[num])
+    for re_num in sorted(rate_calls):
+        ost += '\t v'.expandtabs(3) + str(re_num) + ' = ' + rate_calls[re_num] + '\n'
+
+    for num in chemdf_terms:
+        ost += '\t dydt['.expandtabs(3) + str(num) + '] = ' + chemdf_terms[num] + '\n'
 
     ost += '\t dydt = np.transpose(dydt) \n'.expandtabs(3)
     ost += '\t return dydt \n\n'.expandtabs(3)

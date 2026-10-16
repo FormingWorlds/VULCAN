@@ -601,6 +601,15 @@ class Atm(object):
         if not self.use_vz:
             data_atm.vz = np.zeros(nz - 1)
 
+        # every rate coefficient and the number density depend on T: reject unphysical
+        # profiles here rather than letting NaNs spread through the integration
+        if not np.all(np.isfinite(data_atm.Tco) & (data_atm.Tco > 0)):
+            raise ValueError(
+                'Temperature must be finite and positive in every layer; got T from '
+                f'{np.nanmin(data_atm.Tco)} to {np.nanmax(data_atm.Tco)} K '
+                f'(atm_type = {self.type})'
+            )
+
         # calculating and storing M(the third body)
         data_atm.M = data_atm.pco / (kb * data_atm.Tco)
         data_atm.n_0 = data_atm.M.copy()
