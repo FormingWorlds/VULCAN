@@ -32,6 +32,10 @@ nav:
       - PROTEUS coupling: Explanations/proteus_coupling.md
       - Testing suite: Explanations/testing.md
 
+  - Validation:
+      - Overview: Validation/index.md
+      - Stellar irradiation: Validation/stellar_irradiation.md
+
   - Reference:
       - Publications: Reference/bibliography.md
       - Configuration: Reference/config.md
