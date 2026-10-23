@@ -59,6 +59,7 @@ develop = [
     "pytest >= 8.1",
     "pytest-cov",
     "pytest-timeout",
+    "proteus-mpl>=1.4.0",
     "ruff",
     "pre-commit"
 ]
@@ -135,6 +136,8 @@ markers = [
     "integration: marks tests as integration tests",
     "unit: marks tests as unit tests",
     "smoke: marks tests as smoke tests (quick validation with real binaries, 1 timestep, low res)",
+    "physics_invariant: marks tests that assert a physical invariant (conservation, positivity, boundedness, monotonicity, symmetry)",
+    "reference_pinned: marks tests that pin behaviour against a published benchmark, an analytical limit or an independent implementation; cite the source in the test docstring",
 ]
 
 [tool.coverage.report]
