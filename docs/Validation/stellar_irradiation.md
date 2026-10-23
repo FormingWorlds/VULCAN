@@ -9,7 +9,7 @@ This case is an input-to-output identity of the top boundary on a real run: the 
 ![Top-of-atmosphere flux against wavelength and its relative difference from the diluted input spectrum](../assets/validation/toa_flux_diluted_stellar_spectrum.svg#only-light){ width="80%" }
 ![Top-of-atmosphere flux against wavelength and its relative difference from the diluted input spectrum](../assets/validation/toa_flux_diluted_stellar_spectrum_dark.svg#only-dark){ width="80%" }
 
-Top: the diluted input spectrum (line, every 25th of the 2588 bins from 2 to 654 nm) and the flux in the top interface of the run (dots, every 100th bin). Bottom: their relative difference at every 50th bin and the tolerance (dashed); bins that agree exactly are drawn at 1e-18. Over all bins the largest relative difference is 2.4e-16, and 1803 of the 2588 bins agree exactly.
+Top: the diluted input spectrum (line, every 25th of the 2588 bins from 2 to 654 nm) and the flux in the top interface of the run (dots, every 100th bin). Bottom: their relative difference at every 50th bin and the tolerance (dashed); bins that agree exactly are drawn at 1e-18. All bins agree to machine precision, well inside the tolerance.
 
 - Reference: the stellar input file times (R_star / a)^2, interpolated with `np.interp`
 - Tolerance: `rtol=1e-12` on every bin
