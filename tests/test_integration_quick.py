@@ -221,7 +221,8 @@ def test_repeated_run_in_one_process_is_bitwise_identical(equilibrium_runs, tmp_
 
 @pytest.fixture(scope='module')
 def photochem_run(tmp_path_factory):
-    """Default model on 20 layers."""
+    """Default model on 20 layers; r_star and orbit_radius are set explicitly because the
+    dilution pin of the top-of-atmosphere test depends on them."""
     tmp = tmp_path_factory.mktemp('vulcan_photo')
     cfg = _config(tmp, nz=20, r_star=0.805, orbit_radius=0.03142)
     return cfg, _run(cfg)
@@ -256,11 +257,14 @@ def test_top_of_atmosphere_flux_is_diluted_stellar_spectrum(photochem_run, valid
     dilution = (cfg.r_star * r_sun / (au * cfg.orbit_radius)) ** 2
     expected = np.interp(var['bins'], raw['lambda'], raw['flux'], left=0, right=0) * dilution
     assert expected.max() > 0
-    # 0.805 R_sun (IAU nominal 6.957e8 m) at 0.03142 au (scipy.constants.au): guards phy_const
+    # pinned from the IAU 2015 nominal R_sun (6.957e8 m) and the IAU 2012 au, not phy_const
     assert dilution == pytest.approx(0.0141962, rel=1e-5)
     # linear interpolation of the same data: machine precision
     rtol = 1e-12
     np.testing.assert_allclose(var['sflux'][-1], expected, rtol=rtol, atol=0)
+    # discrimination: R_star / a without the square is 8.4 times larger in every bin
+    wrong = expected / np.sqrt(dilution)
+    assert np.all(np.abs(var['sflux'][-1] - wrong) > rtol * wrong)
 
     def figure():
         import matplotlib.pyplot as plt
