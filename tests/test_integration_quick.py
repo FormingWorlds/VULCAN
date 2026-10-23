@@ -223,7 +223,7 @@ def test_repeated_run_in_one_process_is_bitwise_identical(equilibrium_runs, tmp_
 def photochem_run(tmp_path_factory):
     """Default model on 20 layers."""
     tmp = tmp_path_factory.mktemp('vulcan_photo')
-    cfg = _config(tmp, nz=20)
+    cfg = _config(tmp, nz=20, r_star=0.805, orbit_radius=0.03142)
     return cfg, _run(cfg)
 
 
@@ -256,7 +256,7 @@ def test_top_of_atmosphere_flux_is_diluted_stellar_spectrum(photochem_run, valid
     dilution = (cfg.r_star * r_sun / (au * cfg.orbit_radius)) ** 2
     expected = np.interp(var['bins'], raw['lambda'], raw['flux'], left=0, right=0) * dilution
     assert expected.max() > 0
-    # HD 189733b: 0.805 R_sun at 0.03142 au, from scipy.constants (guards phy_const)
+    # 0.805 R_sun (IAU nominal 6.957e8 m) at 0.03142 au (scipy.constants.au): guards phy_const
     assert dilution == pytest.approx(0.0141962, rel=1e-5)
     # linear interpolation of the same data: machine precision
     rtol = 1e-12
