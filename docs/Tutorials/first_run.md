@@ -36,8 +36,9 @@ It runs until the convergence criteria are met, typically a few minutes. When it
 ls output/
 ```
 
-You should find the NetCDF result `example.nc` (the name is set by `out_name`, the format by
-`save_type`; see [Output files](../Reference/output.md)), the
+You should find the results `example.nc`, `example.pkl` and the text dumps `example.var`,
+`.atm` and `.par` (the name is set by `out_name`, the formats by `save_type`; see
+[Output files](../Reference/output.md)), the
 diagnostic plots under `output/plot/`, a copy of the configuration `vulcan_cfg.txt`, and the
 run log `vulcan.log`.
 
@@ -92,14 +93,8 @@ self.use_live_plot = False
 
 ## 3. Plot the results
 
-A plotting helper lives in `tools/`. It reads the pickle output, so first make sure the run
-also writes one by setting, in `config.py`:
-
-```python
-self.save_type = ['netcdf', 'pickle']
-```
-
-Then:
+A plotting helper lives in `tools/`. It reads the pickle output, which the default `save_type`
+writes:
 
 ```sh
 cd tools/

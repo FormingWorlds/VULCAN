@@ -18,8 +18,8 @@ VULCAN registers six pytest markers under `[tool.pytest.ini_options]` in `pyproj
 - `smoke`: quick validation with real binaries at one timestep and low resolution.
 - `integration`: a full default-config run that produces the expected outputs.
 - `slow`: long-running validation, launched manually.
-- `physics_invariant`: a test that asserts a conservation law, a bound or an identity of the physics.
-- `reference_pinned`: a test that compares VULCAN with an independent reference; each one is a case in the [Validation](../Validation/index.md) tab.
+- `physics_invariant`: a test that asserts a physical invariant (conservation, positivity, boundedness, monotonicity, symmetry).
+- `reference_pinned`: a test that pins behaviour against a published benchmark, an analytical limit or an independent implementation, with the source in its docstring; the [Validation](../Validation/index.md) tab lists these cases.
 
 Not every test carries a tier marker. The package-import checks and the log-level validation check run without one, so they count toward the total but toward neither sub-category; see [Public categories](#public-categories).
 
