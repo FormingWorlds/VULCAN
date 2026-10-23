@@ -39,8 +39,9 @@ ls output/
 You should find the results `example.nc`, `example.pkl` and the text dumps `example.var`,
 `.atm` and `.par` (the name is set by `out_name`, the formats by `save_type`; see
 [Output files](../Reference/output.md)), the
-diagnostic plots under `output/plot/`, a copy of the configuration `vulcan_cfg.txt`, and the
-run log `vulcan.log`.
+diagnostic plots under `output/plot/` and a copy of the configuration `vulcan_cfg.txt`. The
+run log goes to the terminal; with `clean_output = True` (the default) the wipe of `output/`
+deletes the log file that the run opened before it.
 
 !!! note "The default model is a hot Jupiter, not Earth"
     The defaults in `config.py` describe HD 189733b: the T–P and $K_{zz}$ profile come from

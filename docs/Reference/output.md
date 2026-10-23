@@ -10,8 +10,9 @@ with `save_type` in `config.py`, and the file name with `out_name`:
 | `'plain'` | `<out_name>.var`, `.atm`, `.par` | Human-readable text dumps (`str()` of each field). Not intended for parsing. |
 
 `save_type` may also be a list to write several formats from one run; the default
-`['pickle', 'netcdf', 'plain']` writes all three. The configuration is always dumped to `vulcan_cfg.txt` as well. The time evolution
-saved with `save_evolution = True` is only written to the pickle and plain-text outputs.
+`['pickle', 'netcdf', 'plain']` writes all three. The configuration is always dumped to
+`vulcan_cfg.txt` as well. The time evolution saved with `save_evolution = True` is only
+written to the pickle and plain-text outputs.
 
 ## NetCDF file
 

@@ -64,10 +64,10 @@ Commit messages, pull-request text, code comments, docstrings, test names, test 
 
 `run_vulcan.py` at the repository root is the command-line entry point: it puts `src/` first on `sys.path` and calls `vulcan.vulcan.run_cli()`. `src/vulcan/vulcan.py` runs a model in this order:
 
-1. Build the `Config` (`config.py`) and regenerate the chemistry functions (`make_chem_funs.make_all`) unless `-n` is given.
-2. Build the state containers `store.Variables`, `store.AtmData` and `store.Parameters`, and `op.Output`, which empties `output_dir` when `clean_output` is set (the default).
-3. Build the atmosphere (`build_atm.Atm`): pressure levels, temperature, Kzz and molecular diffusion.
-4. Read the reactions (`op.ReadRate`) and set the initial abundances (`build_atm.InitialAbun`), then compute the mean molecular weight, the layer thickness and the boundary fluxes (`f_mu_dz`, `BC_flux`).
+1. Build the `Config` (`config.py`), open the log `output_dir/vulcan.log`, and regenerate the chemistry functions (`make_chem_funs.make_all`) unless `-n` is given.
+2. Build the state containers `store.Variables`, `store.AtmData` and `store.Parameters`, the atmosphere object `build_atm.Atm`, and `op.Output`. When `clean_output` is set (the default), `op.Output` deletes `output_dir` and creates it again, unless it is the working directory or holds a `.git` folder; this also deletes the open log file. Then write `vulcan_cfg.txt`.
+3. Build the profiles: pressure levels (`f_pico`), temperature and Kzz (`load_TPK`), molecular diffusion (`mol_diff`) and, with `use_condense`, saturation pressures (`sp_sat`).
+4. Read the reactions (`op.ReadRate`) and set the initial abundances (`build_atm.InitialAbun`), then compute the mean molecular weight and the layer thickness (`f_mu_dz`, which also plots the initial T-P profile when `plot_TP` is set) and the boundary fluxes (`BC_flux`).
 5. Integrate with `op.Integration` and the `op.Ros2` solver (live plots in `plot_dir` when `use_live_plot` is set, the default), with photochemistry when `use_photo` is set (the cross sections and the stellar flux at the top, `build_atm.Atm.read_sflux`, are read first) and AGNI coupling (`agni.py`) when `agni_call_frq > 0`.
 6. Write the output (`op.Output.save_out`) and the final plots (`plot_dir`, default `output/plot/`).
 
