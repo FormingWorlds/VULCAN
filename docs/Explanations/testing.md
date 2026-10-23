@@ -12,12 +12,14 @@ Tests verify that the code keeps doing what was written. A passing suite confirm
 
 ## Markers
 
-VULCAN registers four pytest markers under `[tool.pytest.ini_options]` in `pyproject.toml`, with `--strict-markers` enforced:
+VULCAN registers six pytest markers under `[tool.pytest.ini_options]` in `pyproject.toml`, with `--strict-markers` enforced:
 
 - `unit`: fast, isolated checks that finish in well under a second, such as logger file output and the FastChem install check.
 - `smoke`: quick validation with real binaries at one timestep and low resolution.
-- `integration`: a full default-config run that produces the expected outputs.
+- `integration`: a full model run, on a coarse grid (`test_integration_quick.py`) or with the default configuration (`test_integration.py`).
 - `slow`: long-running validation, launched manually.
+- `physics_invariant`: a test that asserts a physical invariant (conservation, positivity, boundedness, monotonicity, symmetry).
+- `reference_pinned`: a test that pins behaviour against a published benchmark, an analytical limit or an independent implementation, with the source in its docstring; the [Validation](../Validation/index.md) tab lists these cases.
 
 Not every test carries a tier marker. The package-import checks and the log-level validation check run without one, so they count toward the total but toward neither sub-category; see [Public categories](#public-categories).
 

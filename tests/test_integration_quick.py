@@ -221,9 +221,10 @@ def test_repeated_run_in_one_process_is_bitwise_identical(equilibrium_runs, tmp_
 
 @pytest.fixture(scope='module')
 def photochem_run(tmp_path_factory):
-    """Default model on 20 layers."""
+    """Default model on 20 layers; r_star and orbit_radius are set explicitly because the
+    dilution pin of the top-of-atmosphere test depends on them."""
     tmp = tmp_path_factory.mktemp('vulcan_photo')
-    cfg = _config(tmp, nz=20)
+    cfg = _config(tmp, nz=20, r_star=0.805, orbit_radius=0.03142)
     return cfg, _run(cfg)
 
 
@@ -240,17 +241,52 @@ def test_photochemical_run_converges_to_a_valid_state(photochem_run):
 
 
 @pytest.mark.integration
-def test_top_of_atmosphere_flux_is_diluted_stellar_spectrum(photochem_run):
-    """The direct beam entering the top layer is the stellar surface flux times
-    (R_star / a)^2, interpolated onto the wavelength bins (geometric dilution)."""
+@pytest.mark.physics_invariant
+@pytest.mark.reference_pinned
+def test_top_of_atmosphere_flux_is_diluted_stellar_spectrum(photochem_run, validation_plot):
+    """The direct beam at the top interface is the stellar surface flux times
+    (R_star / a)^2, interpolated onto the wavelength bins (geometric dilution).
+
+    Reference: the stellar input file read with numpy and interpolated with np.interp,
+    independently of the scipy interpolation in build_atm.read_sflux; an input-to-output
+    identity of the top boundary on a real run, not a radiative-transfer benchmark.
+    """
     cfg, run = photochem_run
     var = run['variable']
     raw = np.genfromtxt(cfg.sflux_file, skip_header=1, names=['lambda', 'flux'])
     dilution = (cfg.r_star * r_sun / (au * cfg.orbit_radius)) ** 2
     expected = np.interp(var['bins'], raw['lambda'], raw['flux'], left=0, right=0) * dilution
     assert expected.max() > 0
+    # pinned from the IAU 2015 nominal R_sun (6.957e8 m) and the IAU 2012 au, not phy_const
+    assert dilution == pytest.approx(0.0141962, rel=1e-5)
     # linear interpolation of the same data: machine precision
-    np.testing.assert_allclose(var['sflux'][-1], expected, rtol=1e-12, atol=0)
+    rtol = 1e-12
+    np.testing.assert_allclose(var['sflux'][-1], expected, rtol=rtol, atol=0)
+    # discrimination: R_star / a without the square is 8.4 times larger in every bin
+    wrong = expected / np.sqrt(dilution)
+    assert np.all(np.abs(var['sflux'][-1] - wrong) > rtol * wrong)
+
+    def figure():
+        import matplotlib.pyplot as plt
+
+        rel = np.abs(var['sflux'][-1] - expected) / expected
+        fig, (top, bottom) = plt.subplots(2, 1, sharex=True, figsize=(6.4, 5.6))
+        top.plot(var['bins'][::25], expected[::25], label='input file')
+        top.plot(var['bins'][::100], var['sflux'][-1][::100], 'o', ms=3, label='VULCAN')
+        top.set(yscale='log', ylabel='Flux\n[erg/s/cm2/nm]')
+        top.legend()
+        bottom.plot(var['bins'][::50], np.maximum(rel[::50], 1e-18), '.', ms=2)
+        bottom.axhline(rtol, color=plt.rcParams['text.color'], ls='--')
+        bottom.set(
+            yscale='log', ylim=(1e-18, 1e-10), yticks=[1e-16, 1e-12], xlabel='Wavelength [nm]'
+        )
+        bottom.set_ylabel('Rel. difference')
+        for ax in (top, bottom):
+            ax.minorticks_off()
+        fig.tight_layout()
+        return fig
+
+    validation_plot(figure, 'toa_flux_diluted_stellar_spectrum')
 
 
 @pytest.mark.integration

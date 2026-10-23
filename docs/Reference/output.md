@@ -5,13 +5,14 @@ with `save_type` in `config.py`, and the file name with `out_name`:
 
 | `save_type` | File(s) | Contents |
 |---|---|---|
-| `'netcdf'` (default) | `<out_name>.nc` | Self-describing NetCDF4 file, described below. |
+| `'netcdf'` | `<out_name>.nc` | Self-describing NetCDF4 file, described below. |
 | `'pickle'` | `<out_name>.pkl` | Python pickle of `{'variable', 'atm', 'parameter'}` dicts. Required by `ini_mix = 'vulcan_ini'`, `atm_type = 'vulcan_ini'` and the scripts in `tools/`. |
 | `'plain'` | `<out_name>.var`, `.atm`, `.par` | Human-readable text dumps (`str()` of each field). Not intended for parsing. |
 
-`save_type` may also be a list, e.g. `['netcdf', 'pickle']`, to write several formats from
-one run. The configuration is always dumped to `vulcan_cfg.txt` as well. The time evolution
-saved with `save_evolution = True` is only written to the pickle and plain-text outputs.
+`save_type` may also be a list to write several formats from one run; the default
+`['pickle', 'netcdf', 'plain']` writes all three. The configuration is always dumped to
+`vulcan_cfg.txt` as well. The time evolution saved with `save_evolution = True` is only
+written to the pickle and plain-text outputs.
 
 ## NetCDF file
 
