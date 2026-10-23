@@ -6,7 +6,7 @@
   <rdf:RDF xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:cc="http://creativecommons.org/ns#" xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
    <cc:Work>
     <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage"/>
-    <dc:description>test: tests/test_integration_quick.py::test_top_of_atmosphere_flux_is_diluted_stellar_spectrum; command: pytest tests/test_integration_quick.py::test_top_of_atmosphere_flux_is_diluted_stellar_spectrum --validation-plots</dc:description>
+    <dc:description>test: tests/test_integration_quick.py::test_top_of_atmosphere_flux_is_diluted_stellar_spectrum; command: pytest tests/test_integration_quick.py::test_top_of_atmosphere_flux_is_diluted_stellar_spectrum --validation-plots=vplots-other; summary: {"axes": [{"lines": [[104, 2.0, 630.0, 146.46153846153857, 1.751893898420702, 212913.13497873957, 11397.30627497635], [26, 2.0, 480.0, 137.2307692307693, 2.592680371146452, 212913.13497873957, 8852.870900553458]], "collections": [], "images": []}, {"lines": [[52, 2.0, 580.0, 143.38461538461547, 1e-18, 2.1389976314464545e-16, 4.618720382356802e-17], [2, 0.0, 1.0, 0.5, 1e-12, 1e-12, 1e-12]], "collections": [], "images": []}]}</dc:description>
     <dc:format>image/svg+xml</dc:format>
     <dc:creator>
      <cc:Agent>
