@@ -243,7 +243,7 @@ def test_photochemical_run_converges_to_a_valid_state(photochem_run):
 @pytest.mark.physics_invariant
 @pytest.mark.reference_pinned
 def test_top_of_atmosphere_flux_is_diluted_stellar_spectrum(photochem_run, validation_plot):
-    """The direct beam entering the top layer is the stellar surface flux times
+    """The direct beam at the top interface is the stellar surface flux times
     (R_star / a)^2, interpolated onto the wavelength bins (geometric dilution).
 
     Reference: the stellar input file read with numpy and interpolated with np.interp,
@@ -256,6 +256,8 @@ def test_top_of_atmosphere_flux_is_diluted_stellar_spectrum(photochem_run, valid
     dilution = (cfg.r_star * r_sun / (au * cfg.orbit_radius)) ** 2
     expected = np.interp(var['bins'], raw['lambda'], raw['flux'], left=0, right=0) * dilution
     assert expected.max() > 0
+    # HD 189733b: 0.805 R_sun at 0.03142 au, from scipy.constants (guards phy_const)
+    assert dilution == pytest.approx(0.0141962, rel=1e-5)
     # linear interpolation of the same data: machine precision
     rtol = 1e-12
     np.testing.assert_allclose(var['sflux'][-1], expected, rtol=rtol, atol=0)
