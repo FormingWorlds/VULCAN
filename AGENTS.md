@@ -2,18 +2,18 @@
 
 VULCAN computes the chemical kinetics of planetary atmospheres: photochemistry, vertical mixing, condensation and the coupling to AGNI. PROTEUS selects it as `atmos_chem.module = vulcan`. Before a first edit:
 
-- Tests for `src/vulcan/<file>.py` go in `tests/test_<file>.py`; the test rules are in `tests/AGENTS.md`.
+- Run every command from the repository root. Tests for `src/vulcan/<file>.py` go in `tests/test_<file>.py`; the test rules are in `tests/AGENTS.md`.
 - These commands decide whether a change is ready (CI runs the tests with coverage and pre-commit on the changed files):
 
 ```bash
-python -m pip install -e '.[develop]'
+python -m pip install -e '.[develop]'    # the package alone: pip install -e .
 (cd fastchem_vulcan && make)        # FastChem, needed by ini_mix = 'eq'; not make -j
 pytest tests/
 ruff check <changed .py files>
 pre-commit run --files <changed files>
 ```
 
-Run the model with `python run_vulcan.py` (the default demo); `python run_vulcan.py -n` skips the regeneration of the chemistry functions, which is safe only when the network is unchanged. One test: `pytest tests/test_imports.py::test_package_imports -q`. Coverage as CI measures it: `pytest --cov-report term --cov-report json:coverage.json --cov=vulcan tests/`. Docs: `pip install -e '.[docs]'`, then `zensical build --clean`.
+Run the model with `python run_vulcan.py` (the default demo); `python run_vulcan.py -n` skips the regeneration of the chemistry functions, which is safe only when the network is unchanged. One test: `pytest tests/test_imports.py::test_package_imports -q`; a group by name: `pytest -k import`. `ruff check .` lints the whole tree. Coverage as CI measures it: `pytest --cov-report term --cov-report json:coverage.json --cov=vulcan tests/`. Docs: `pip install -e '.[docs]'`, then `zensical build --clean`.
 
 <!-- fwl-core:begin sha256=1adfa510a4f117ec -->
 ## PROTEUS ecosystem rules
@@ -66,10 +66,10 @@ Commit messages, pull-request text, code comments, docstrings, test names, test 
 
 1. Build the `Config` (`config.py`) and regenerate the chemistry functions (`make_chem_funs.make_all`) unless `-n` is given.
 2. Build the state containers `store.Variables`, `store.AtmData` and `store.Parameters`.
-3. Build the atmosphere (`build_atm.Atm`): pressure levels, temperature, Kzz, molecular diffusion, boundary fluxes, and the stellar flux at the top (`read_sflux`).
+3. Build the atmosphere (`build_atm.Atm`): pressure levels, temperature, Kzz, molecular diffusion, and the boundary fluxes.
 4. Read the reactions (`op.ReadRate`) and set the initial abundances (`build_atm.InitialAbun`).
-5. Integrate with `op.Integration` and the `op.Ros2` solver, with photochemistry when `use_photo` is set and AGNI coupling (`agni.py`) when `agni_call_frq > 0`.
-6. Write the output (`op.Output.save_out`) and the plots.
+5. Integrate with `op.Integration` and the `op.Ros2` solver, with photochemistry when `use_photo` is set (the cross sections and the stellar flux at the top, `build_atm.Atm.read_sflux`, are read first) and AGNI coupling (`agni.py`) when `agni_call_frq > 0`.
+6. Write the output (`op.Output.save_out`) and the plots (`plot_dir`, default `output/plot/`).
 
 Module roles: `config.py` holds every runtime setting; `paths.py` the absolute paths to the repository data (thermo, cross sections, FastChem, AGNI, the generated chemistry file); `make_chem_funs.py` writes `chem_funs.py` from the network and the thermodynamic data; `op.py` reads the rates, integrates, solves and writes output; `build_atm.py` builds the atmosphere and the initial abundances (with FastChem equilibrium); `store.py` holds the state passed through the solver.
 

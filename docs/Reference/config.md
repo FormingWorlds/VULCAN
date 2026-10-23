@@ -215,7 +215,7 @@ are the shipped configuration, which describes the hot Jupiter **HD 189733b**.
 | `plot_dir` | `output/plot/` | Plot directory. |
 | `out_name` | `'example'` | Output file stem; the extension is set by `save_type`. A trailing `.pkl` or `.nc` is stripped. |
 | `clean_output` | `True` | Wipe the output directory at startup. |
-| `save_type` | `'netcdf'` | Output format(s): `'netcdf'` (`.nc`, see [Output files](output.md)), `'pickle'` (`.pkl`), `'plain'` (human-readable `.var`/`.atm`/`.par` text), or a list such as `['netcdf', 'pickle']`. Replaces the deprecated `output_humanread`. |
+| `save_type` | `['pickle', 'netcdf', 'plain']` | Output format(s): `'netcdf'` (`.nc`, see [Output files](output.md)), `'pickle'` (`.pkl`), `'plain'` (human-readable `.var`/`.atm`/`.par` text), or a list such as `['netcdf', 'pickle']`. Replaces the deprecated `output_humanread`. |
 | `save_evolution` | `False` | Save the time evolution (`y_time`, `t_time`). |
 | `save_evo_frq` | `10` | Step interval for storing evolution data. |
 | `log_level` | `'INFO'` | Logging verbosity (`'DEBUG'`, `'INFO'`, `'WARNING'`, `'ERROR'`). |

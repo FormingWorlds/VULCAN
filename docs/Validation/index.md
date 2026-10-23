@@ -11,7 +11,7 @@ This tab lists the tests that compare VULCAN with an independent result: a publi
 
 ## Numerical checks
 
-Two tests compare the linear solvers with `numpy.linalg.solve` on the same matrices, to `rtol=1e-12`. They check the numerics of the solver, not the physics, and are not marked as validation cases:
+Two tests compare the linear solvers with `numpy.linalg.solve` on the same matrices, to `rtol=1e-12` (the Thomas test also with `atol=1e-12`, the band test with `atol=0`). They check the numerics of the solver, not the physics, and are not marked as validation cases:
 
 - `tests/test_op.py::test_thomas_vec_matches_dense_solve`: the Thomas algorithm for a tridiagonal system with several right-hand sides.
 - `tests/test_op.py::test_band_solve_matches_dense_solve`: the band LU factorisation of the Ros2 solver, with chemistry off.
