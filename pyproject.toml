@@ -59,7 +59,7 @@ develop = [
     "pytest >= 8.1",
     "pytest-cov",
     "pytest-timeout",
-    "proteus-mpl @ git+https://github.com/FormingWorlds/proteus-visual-language@76aec141a97cb9f633df34dd2e07ea4360a392bf#subdirectory=figures/proteus-mpl",
+    "proteus-mpl @ git+https://github.com/FormingWorlds/proteus-visual-language@775724f7ff4335673aa64224e0757c6f7d83f617#subdirectory=figures/proteus-mpl",
     "ruff",
     "pre-commit"
 ]
