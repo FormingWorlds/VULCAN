@@ -49,6 +49,10 @@ jobs:
         run: |
           python -m pip install -e '.[develop]'
 
+      - name: Check agent instruction files
+        if: ${{ matrix.os == 'ubuntu-latest' && matrix.python-version == '3.12' }}
+        run: python tools/agents/check_agents_md.py
+
       - name: Compile fastchem
         run: |
           cd fastchem_vulcan
