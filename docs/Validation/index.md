@@ -1,6 +1,8 @@
 # Validation
 
-This tab lists the tests that compare VULCAN with an independent result: a published benchmark, an analytical limit or a second implementation. Each case gives its reference, its tolerance, its test id and the command that runs it.
+## What this page checks
+
+This tab lists the tests that compare VULCAN with an independent result: a published benchmark, an analytical limit or a second implementation. Validation means that a test runs the code on a case with a known right answer and checks the result within a stated tolerance. A wrong result in one of these parts of the code would change the chemistry that VULCAN computes for the atmosphere. Each case page says why the check exists, what it tests, how we know the right answer and why it matters. A box "Test details" at the end of each case gives its reference, its tolerance, its test id and the command that runs it.
 
 ## Cases by process
 
