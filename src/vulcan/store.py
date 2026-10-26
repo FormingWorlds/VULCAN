@@ -10,7 +10,11 @@ There are three classes: `Variables`, `AtmData`, and `Parameters`, which store t
 Imports
 ---
 - [`vulcan.config`](config.md): `Config` class for handling configuration settings.
-- `vulcan.chem_funs`: `ni`, `spec_list`: Number of species and reactions in the chemical network.
+- `vulcan.chem_funs`: `ni`, `spec_list`: number of species and the species list of the network.
+
+Array conventions shared by all three classes: index 0 of the vertical axis is the bottom
+of the atmosphere; `nz` is the number of layers (`Config.nz`) and `ni` the number of species.
+Quantities with `nz - 1` values sit on the interior interfaces between layers.
 
 """
 
@@ -25,10 +29,117 @@ from .chem_funs import ni, spec_list  # number of species and reactions in the n
 
 class Variables(object):
     """
-    store the essential variables for calculation
+    Composition, rate coefficients and time-stepping state of a run.
+
+    One instance is passed through the whole run (usually as `var` or `data_var`) and is
+    updated in place by the solver. Photochemistry attributes such as `bins`, `sflux_top`,
+    `tau`, `aflux` and `cross` are added later by `op.ReadRate.make_bins_read_cross` and
+    `op.ODESolver.compute_tau` / `compute_flux`.
+
+    Attributes
+    ----------
+    y : np.ndarray
+        Number densities, shape (nz, ni) [cm-3].
+    y_prev : np.ndarray
+        Number densities at the previous accepted step, shape (nz, ni) [cm-3].
+    y_ini : np.ndarray
+        Initial number densities, shape (nz, ni) [cm-3].
+    ymix : np.ndarray
+        Mixing ratios, shape (nz, ni) [dimensionless]. With condensation, normalised by the
+        sum over the gas species only (`AtmData.gas_indx`).
+    k : dict
+        Rate coefficients keyed by reaction number, each of shape (nz,): [s-1] for
+        unimolecular and photochemical reactions, [cm3 s-1] for two-body reactions and
+        [cm6 s-1] for three-body reactions.
+    t : float
+        Integration time [s].
+    dt : float
+        Current time step [s]; starts at `Config.dttry`.
+    dy : float
+        Largest relative change of y over the last step [dimensionless].
+    dy_prev : float
+        `dy` of the step before [dimensionless].
+    dydt : float
+        `dy / dt` [s-1].
+    longdy : float
+        Largest change of the mixing ratios, relative to themselves, over the convergence
+        look-back window (dn in eq. 10 of Tsai et al. 2017) [dimensionless].
+    longdydt : float
+        `longdy` divided by the length of that window (dn/dt in eq. 11 of Tsai et al. 2017)
+        [s-1].
+    aflux_change : float
+        Largest relative change of the actinic flux at the last photochemistry update
+        [dimensionless]; stays 0 without photochemistry.
+    y_time, t_time : list
+        `y` [cm-3] and `t` [s] after each accepted step.
+    atom_loss_time : list
+        `atom_loss` values after each accepted step [dimensionless].
+    atom_ini : dict
+        Per element, the initial sum over all species and layers of the number of atoms
+        times the number density [cm-3]. This is a sum over layers, not a column density.
+    atom_sum : dict
+        The same sum for the current `y` [cm-3].
+    atom_loss : dict
+        Relative change `(atom_sum - atom_ini) / atom_ini` per element [dimensionless].
+    atom_loss_prev : dict
+        `atom_loss` at the previous step [dimensionless].
+    atom_conden : dict
+        Per element; set to 0 by `build_atm.InitialAbun.ele_sum` and not updated elsewhere.
+    Rf : dict
+        Reaction equation string keyed by reaction number.
+    Rindx : dict
+        Reaction number as written in the network file, keyed by the internal number.
+    a, n, E : dict
+        Arrhenius parameters of k = a T^n exp(-E/T), keyed by reaction number: a in the
+        units of k, n [dimensionless], E [K].
+    a_inf, n_inf, E_inf : dict
+        The same parameters for the high-pressure limit of three-body reactions.
+    k_fun : dict
+        Callables `k_fun[i](T, M)` returning k[i] from temperature [K] and total number
+        density [cm-3].
+    kinf_fun : dict
+        Callables returning the high-pressure-limit rate coefficient [cm3 s-1].
+    k_fun_new : dict
+        Pressure-dependent `k_fun` of three-body reactions with a high-pressure limit;
+        merged into `k_fun` by `op.ReadRate.read_rate`.
+    k_inf : dict
+        Not filled by the current code.
+    photo_sp : set
+        Species with photodissociation reactions in the network.
+    pho_rate_index : dict
+        Reaction number keyed by (species, branch index) for photodissociation.
+    n_branch : dict
+        Number of photodissociation branches per species.
+    ion_sp : set
+        Species with photoionisation reactions in the network.
+    ion_rate_index, ion_branch : dict
+        As `pho_rate_index` and `n_branch`, for photoionisation.
+    charge_list : list
+        Species with non-zero charge, excluding the electron 'e'.
+    def_bin_min, def_bin_max : float
+        Wavelength range of the stellar spectrum clipped to 2-700 nm [nm]; narrowed further
+        by `op.ReadRate.make_bins_read_cross`.
+    threshold : dict
+        Photodissociation threshold wavelength per species [nm], set by
+        `op.ReadRate.make_bins_read_cross`.
+    cross_T_sp_list : dict
+        Temperatures with tabulated cross sections, per species [K].
+    conden_re_list : list
+        Reaction numbers of the condensation reactions.
+    var_save : list of str
+        Names of the attributes written to the output file.
+    var_evol_save : list of str
+        Names of the time series written to the output when `Config.save_evolution` is set.
     """
 
-    def __init__(self, vulcan_cfg: Config):  # self means the created object instance
+    def __init__(self, vulcan_cfg: Config):
+        """
+        Parameters
+        ----------
+        vulcan_cfg : Config
+            Run configuration; reads `nz`, `dttry`, `sflux_file`, `use_photo`,
+            `T_cross_sp` and `use_ion`.
+        """
 
         nz = vulcan_cfg.nz
 
@@ -169,10 +280,97 @@ class Variables(object):
 
 class AtmData(object):
     """
-    store the data of atmospheric structure
+    Atmospheric structure: pressure, temperature, heights, mixing and boundary conditions.
+
+    One instance (usually `atm` or `data_atm`) is filled by the methods of `build_atm.Atm`
+    and read by the solver. Layer i lies between the interfaces i and i + 1.
+
+    Attributes
+    ----------
+    pco : np.ndarray
+        Pressure at the layer centres, log-spaced from `P_b` to `P_t`, shape (nz,)
+        [dyn cm-2].
+    pico : np.ndarray
+        Pressure at the interfaces, shape (nz + 1,) [dyn cm-2]; set by `Atm.f_pico`.
+    Tco : np.ndarray
+        Temperature at the layer centres, shape (nz,) [K]; set by `Atm.load_TPK`.
+    M, n_0 : np.ndarray
+        Total number density p / (k_B T), shape (nz,) [cm-3]. `M` is used as the third body.
+    Kzz : np.ndarray
+        Eddy diffusion coefficient at the interior interfaces, shape (nz - 1,) [cm2 s-1].
+    vz : np.ndarray
+        Vertical advection velocity at the interior interfaces, shape (nz - 1,)
+        [cm s-1]; positive is upward.
+    dz : np.ndarray
+        Layer thickness, shape (nz,) [cm].
+    dzi : np.ndarray
+        Distance between the centres of adjacent layers, shape (nz - 1,) [cm].
+    zco : np.ndarray
+        Height of the interfaces, shape (nz + 1,) [cm]. Zero at the bottom, or for a gas
+        giant with `P_b` >= 1 bar at the interface closest to 1 bar.
+    zmco : np.ndarray
+        Height of the layer centres, shape (nz,) [cm].
+    Hp : np.ndarray
+        Pressure scale height, shape (nz,) [cm].
+    mu : np.ndarray
+        Mean molar mass, shape (nz,) [g mol-1].
+    ms : np.ndarray
+        Molar mass of each species, shape (ni,) [g mol-1].
+    gs : float
+        Gravity at the surface, or at 1 bar for a gas giant [cm s-2].
+    g : np.ndarray
+        Gravity in each layer, shape (nz,) [cm s-2].
+    Dzz : np.ndarray
+        Molecular diffusion coefficient at the interior interfaces, shape (nz - 1, ni)
+        [cm2 s-1]; set by `Atm.mol_diff`.
+    Dzz_cen : np.ndarray
+        Shape (nz, ni); not used by the current code.
+    vm : np.ndarray
+        Molecular diffusion velocity read by `op.ODESolver.diffdf_settling_vm`, shape
+        (nz, ni) [cm s-1]. Nothing in the current code sets it, so it stays zero.
+    vs : np.ndarray
+        Settling velocity of the non-gaseous species at the interior interfaces, shape
+        (nz - 1, ni) [cm s-1]; negative is downward.
+    alpha : np.ndarray
+        Thermal diffusion factor of each species, shape (ni,) [dimensionless]; set by
+        `Atm.mol_diff` for the chosen `atm_base`.
+    top_flux : np.ndarray
+        Flux at the top boundary, shape (ni,) [cm-2 s-1]; positive into the atmosphere,
+        negative for escape.
+    bot_flux : np.ndarray
+        Flux at the bottom boundary, shape (ni,) [cm-2 s-1]; positive into the atmosphere.
+    bot_vdep : np.ndarray
+        Deposition velocity at the bottom boundary, shape (ni,) [cm s-1]; the surface loss
+        is `bot_vdep * y[0]`.
+    bot_fix_sp : np.ndarray
+        Fixed bottom mixing ratios read by `Atm.BC_flux`, shape (ni,) [dimensionless]. The
+        solver takes the fixed values from `Config.use_fix_sp_bot` instead.
+    sat_p : dict
+        Saturation vapour pressure per condensing species, shape (nz,) [dyn cm-2].
+    sat_mix : dict
+        Saturation mixing ratio `sat_p / pco` per condensing species, capped at 1 and
+        scaled by `Config.humidity` for H2O, shape (nz,) [dimensionless].
+    gas_indx : list of int
+        Species indices that are not in `Config.non_gas_sp`.
+    fix_sp_indx : dict
+        Per species in `Config.fix_species`, the indices of that species in the flattened
+        (nz * ni) array of y.
+    fix_e_indx : np.ndarray
+        The same indices for the electron; only with `use_ion`.
+    r_p : dict
+        Particle radius per condensate [cm].
+    rho_p : dict
+        Particle density per condensate [g cm-3].
     """
 
     def __init__(self, vulcan_cfg: Config):
+        """
+        Parameters
+        ----------
+        vulcan_cfg : Config
+            Run configuration; reads `nz`, `P_b`, `P_t`, `gs`, `non_gas_sp`, `fix_species`,
+            `use_ion`, `use_condense`, `r_p` and `rho_p`.
+        """
 
         nz = vulcan_cfg.nz
 
@@ -240,10 +438,52 @@ class AtmData(object):
 
 class Parameters(object):
     """
-    store the overall parameters for numerical method and counters
+    Counters and switches of the numerical integration.
+
+    Attributes
+    ----------
+    count : int
+        Number of steps taken.
+    delta : float
+        Relative truncation error of the last step [dimensionless]; a step with
+        `delta > Config.rtol` is rejected.
+    nega_count : int
+        Steps rejected because of negative number densities.
+    loss_count : int
+        Steps rejected because the element conservation changed too much.
+    delta_count : int
+        Steps rejected because of the truncation error.
+    small_y : float
+        Running sum of the small positive number densities clipped to 0 [cm-3].
+    nega_y : float
+        Running sum of the magnitudes of the negative number densities clipped to 0
+        [cm-3].
+    end_case : int
+        Why the integration stopped: 0 not set, 1 steady state, 2 runtime limit,
+        3 step limit (`count_max`).
+    solver_str : str
+        Name of the solver method that `op.Ros2.one_step` calls.
+    switch_final_photo_frq : bool
+        True once the photochemistry update interval has switched to
+        `Config.final_update_photo_frq` near convergence.
+    where_varies_most : np.ndarray
+        `longdy / ymix` per layer and species at the last convergence check, shape
+        (nz, ni) [dimensionless].
+    pic_count : int
+        Number of live-plot frames written.
+    fix_species_start : bool
+        True once the condensed species in `Config.fix_species` are held fixed.
+    tableau20 : list of tuple
+        The 20 "Tableau 20" colours as RGB in [0, 1].
     """
 
     def __init__(self, vulcan_cfg: Config):
+        """
+        Parameters
+        ----------
+        vulcan_cfg : Config
+            Run configuration; reads `nz`.
+        """
 
         nz = vulcan_cfg.nz
 

@@ -50,10 +50,20 @@ compo_row = list(compo['species'])
 
 class InitialAbun(object):
     """
-    Calculating the appropriate initial mixing ratios with the assigned elemental abundance
+    Initial composition of the atmosphere, chosen by `Config.ini_mix`.
+
+    The options are 'eq' (chemical equilibrium from FastChem), 'vulcan_ini' (the result of
+    a previous run), 'table' (mixing ratios from a text file), 'const_mix' (constant mixing
+    ratios) and 'const_lowt' (H2, H2O, CH4, NH3 and He solved from the elemental ratios).
     """
 
     def __init__(self, vulcan_cfg: Config):
+        """
+        Parameters
+        ----------
+        vulcan_cfg : Config
+            Run configuration. `ini_mix` is converted to lower case in place.
+        """
         self.cfg = vulcan_cfg
         self.ini_m = [0.9, 0.1, 0.0, 0.0, 0]  # initial guess
         self.atom_list = vulcan_cfg.atom_list
@@ -61,9 +71,18 @@ class InitialAbun(object):
 
     def abun_lowT(self, x):
         """
-        calculating the initial mixing ratios of the following 5 molecules (with CH4)
-        satisfying the assigned elemental abundance
-        x1:H2 x2:H2O x3:CH4 x4:He x5:NH3
+        Residuals of the low-temperature composition, for `scipy.optimize.fsolve`.
+
+        Parameters
+        ----------
+        x : sequence of float
+            Mixing ratios of H2, H2O, CH4, He and NH3 [dimensionless].
+
+        Returns
+        -------
+        tuple of float
+            Residuals of x1 + x2 + x3 + x4 = 1 and of the O/H, C/H, He/H and N/H number
+            ratios (`Config.O_H`, `C_H`, `He_H`, `N_H`).
         """
         O_H, C_H, He_H, N_H = self.cfg.O_H, self.cfg.C_H, self.cfg.He_H, self.cfg.N_H
         x1, x2, x3, x4, x5 = x
@@ -76,9 +95,20 @@ class InitialAbun(object):
 
     def abun_highT(self, x):
         """
-        calculating the initial mixing ratios of the following 4 molecules (with CO)
-        satisfying the assigned elemental abundance
-        x1:H2 x2:H2O x3:CO x4:He x5:N2
+        Residuals of the high-temperature composition, for `scipy.optimize.fsolve`.
+
+        Not called by the current code; `ini_mol` uses `abun_lowT` only.
+
+        Parameters
+        ----------
+        x : sequence of float
+            Mixing ratios of H2, H2O, CO, He and N2 [dimensionless].
+
+        Returns
+        -------
+        tuple of float
+            Residuals of x1 + x2 + x3 + x4 = 1 and of the O/H, C/H, He/H and N/H number
+            ratios.
         """
         O_H, C_H, He_H, N_H = self.cfg.O_H, self.cfg.C_H, self.cfg.He_H, self.cfg.N_H
         x1, x2, x3, x4, x5 = x
@@ -90,10 +120,42 @@ class InitialAbun(object):
         return f1, f2, f3, f4, f5
 
     def ini_mol(self):
+        """
+        Solve `abun_lowT` for `ini_mix = 'const_lowt'`.
+
+        Returns
+        -------
+        np.ndarray or None
+            Mixing ratios of H2, H2O, CH4, He and NH3 [dimensionless], or None for any
+            other `ini_mix`.
+        """
         if self.cfg.ini_mix == 'const_lowt':
             return np.array(sop.fsolve(self.abun_lowT, self.ini_m))
 
     def ini_fc(self, data_var, data_atm):
+        """
+        Run FastChem for the equilibrium composition on the current T-P profile.
+
+        Writes the FastChem inputs inside `paths.FASTCHEM_DIR`: it copies the parameter file
+        with or without ions over `input/parameters.dat`, writes the elemental abundances to
+        `input/element_abundances_vulcan.dat` and the profile to `input/vulcan_TP/
+        vulcan_TP.dat` (pressure in bar, T in K). With `Config.use_solar = False` the
+        elements in `atom_list` take the ratios `<X>_H` from the configuration and the other
+        FastChem elements are scaled by `fastchem_met_scale`. FastChem writes its result to
+        `output/vulcan_EQ.dat`, which `ini_y` reads.
+
+        Parameters
+        ----------
+        data_var : store.Variables
+            Not used.
+        data_atm : store.AtmData
+            Reads `pco` [dyn cm-2] and `Tco` [K].
+
+        Raises
+        ------
+        RuntimeError
+            If the FastChem executable is missing.
+        """
 
         # check that fastchem is compiled in the correct place
         if not os.path.isfile(os.path.join(FASTCHEM_DIR, 'fastchem')):
@@ -223,7 +285,35 @@ class InitialAbun(object):
             )
 
     def ini_y(self, data_var, data_atm):
-        # initial mixing ratios of the molecules
+        """
+        Set the initial number densities and mixing ratios for `Config.ini_mix`.
+
+        With `use_condense`, also sets the saturation mixing ratios and, with
+        `use_ini_cold_trap`, caps each condensing species at saturation and holds it above
+        the cold trap at the saturation mixing ratio of the cold-trap level.
+
+        Parameters
+        ----------
+        data_var : store.Variables
+            Filled in place: `y` [cm-3], `y_ini` [cm-3], `ymix` and, with `use_ion`,
+            `charge_list`.
+        data_atm : store.AtmData
+            Reads `pco` [dyn cm-2], `Tco` [K], `M` and `n_0` [cm-3], and with condensation
+            `sat_p` [dyn cm-2]; sets `sat_mix` and `conden_min_lev`.
+
+        Returns
+        -------
+        store.Variables
+            `data_var`.
+
+        Raises
+        ------
+        ValueError
+            If a 'table' file has a different number of layers, or `use_ion` is set and the
+            network has no charged species.
+        IOError
+            If `ini_mix` is not recognised.
+        """
 
         nz = self.cfg.nz
         ini_mol = self.ini_mol()
@@ -404,6 +494,22 @@ class InitialAbun(object):
         return data_var
 
     def ele_sum(self, data_var):
+        """
+        Record the initial element totals for the conservation check.
+
+        Sets `atom_ini[atom]`, the sum over species and layers of the number of atoms times
+        the number density [cm-3], and resets `atom_loss` and `atom_conden` to 0.
+
+        Parameters
+        ----------
+        data_var : store.Variables
+            Reads `y`; filled in place.
+
+        Returns
+        -------
+        store.Variables
+            `data_var`.
+        """
 
         for atom in self.atom_list:
             data_var.atom_ini[atom] = np.sum(
@@ -416,7 +522,21 @@ class InitialAbun(object):
 
 
 class Atm(object):
+    """
+    Build the atmospheric structure stored in `store.AtmData`.
+
+    The methods are called in this order by `vulcan.run_vulcan`: `f_pico`, `load_TPK`,
+    `mol_diff`, `sp_sat` (with condensation), then after the initial abundances `f_mu_dz`
+    and `BC_flux`, and `read_sflux` with photochemistry.
+    """
+
     def __init__(self, vulcan_cfg: Config):
+        """
+        Parameters
+        ----------
+        vulcan_cfg : Config
+            Run configuration; the profile settings are copied to attributes.
+        """
         self.cfg = vulcan_cfg
         self.gs = vulcan_cfg.gs  # gravity
         self.P_b = vulcan_cfg.P_b
@@ -432,7 +552,22 @@ class Atm(object):
         self.non_gas_sp = vulcan_cfg.non_gas_sp
 
     def f_pico(self, data_atm):
-        """calculating the pressure at interface"""
+        """
+        Set the interface pressures from the layer-centre pressures.
+
+        Each interior interface takes the geometric mean of the two adjacent centres; the
+        bottom and top interfaces are extrapolated by the same ratio in log p.
+
+        Parameters
+        ----------
+        data_atm : store.AtmData
+            Reads `pco` [dyn cm-2]; sets `pico`, shape (nz + 1,) [dyn cm-2].
+
+        Returns
+        -------
+        store.AtmData
+            `data_atm`.
+        """
 
         pco = data_atm.pco
 
@@ -449,6 +584,38 @@ class Atm(object):
         return data_atm
 
     def load_TPK(self, data_atm):
+        """
+        Set the temperature, eddy diffusion and vertical velocity profiles.
+
+        `Config.atm_type` sets T: 'isothermal' (`Tiso`), 'analytical' (`TP_H14` with
+        `para_anaTP`), 'file' (interpolated in p from `atm_file`, columns Pressure
+        [dyn cm-2], Temp [K] and, with `Kzz_prof = 'file'`, Kzz [cm2 s-1]; constant beyond
+        the file range), 'vulcan_ini' (from a previous run's pickle) or 'table' (p and T from
+        `vul_ini`). `Kzz_prof` sets Kzz on the interior interfaces: 'const' (`const_Kzz`),
+        'file', 'JM16' (1e5 (300 / p[mbar])^0.5 cm2 s-1, at least `K_deep`) or 'Pfunc'
+        (`K_max` (`K_p_lev`[bar] / p[bar])^0.4, at least `K_max`). `vz_prof` sets vz:
+        'const' (`const_vz`) or 'file' (column vz of `atm_file`, which needs
+        `atm_type = 'file'`). Kzz and vz are zero when `use_Kzz` and `use_vz` are off.
+
+        Parameters
+        ----------
+        data_atm : store.AtmData
+            Reads `pco` and `pico` [dyn cm-2]; sets `Tco` [K], `Kzz` [cm2 s-1], `vz`
+            [cm s-1], and `M` and `n_0` = p / (k_B T) [cm-3]. 'table' also replaces `pco`.
+
+        Returns
+        -------
+        store.AtmData
+            `data_atm`.
+
+        Raises
+        ------
+        ValueError
+            If `atm_type` is not recognised, a 'table' file has a different number of
+            layers, or T is not finite and positive in every layer.
+        IOError
+            If `Kzz_prof` or `vz_prof` is not recognised.
+        """
 
         PTK_fun = {}
         nz = self.cfg.nz
@@ -618,6 +785,26 @@ class Atm(object):
 
     # T(P) profile in Heng et al. 2014 (126)
     def TP_H14(self, pco, *args_analytical):
+        """
+        Analytical T-P profile of Heng et al. (2014), their eq. 126.
+
+        The collision-induced absorption term is switched off. The shortwave scattering
+        parameter sets the albedo, (1 - beta_S) / (1 + beta_S), which reduces T_irr by
+        (1 - albedo)^(1/4). Gravity is `Config.gs` throughout.
+
+        Parameters
+        ----------
+        pco : np.ndarray
+            Pressure [dyn cm-2].
+        *args_analytical : float
+            T_int [K], T_irr [K], kappa_L and kappa_S (longwave and shortwave opacities)
+            [cm2 g-1], beta_S and beta_L [dimensionless], as in `Config.para_anaTP`.
+
+        Returns
+        -------
+        np.ndarray
+            Temperature [K], same shape as `pco`.
+        """
 
         # convert args_analytical tuple to a list so we can modify it
         T_int, T_irr, ka_0, ka_s, beta_s, beta_l = list(args_analytical)
@@ -654,10 +841,29 @@ class Atm(object):
         return T
 
     def mol_mass(self, sp):
-        """calculating the molar mass of each species"""
+        """
+        Molar mass of a species from the composition file `paths.COM_FILE` [g mol-1].
+        """
         return compo['mass'][compo_row.index(sp)]
 
     def mean_mass(self, var, atm, ni):
+        """
+        Set the mean molar mass `atm.mu` [g mol-1] from the mixing ratios `var.ymix`.
+
+        Parameters
+        ----------
+        var : store.Variables
+            Reads `ymix`.
+        atm : store.AtmData
+            Sets `mu`, shape (nz,) [g mol-1].
+        ni : int
+            Number of species.
+
+        Returns
+        -------
+        store.AtmData
+            `atm`.
+        """
         nz = self.cfg.nz
         mu = np.zeros(nz)
         for i in range(ni):
@@ -665,7 +871,41 @@ class Atm(object):
         atm.mu = mu
         return atm
 
-    def f_mu_dz(self, data_var, data_atm, output):  # Initilising mean molecular weight and dz
+    def f_mu_dz(self, data_var, data_atm, output):
+        """
+        Set the mean molar mass, gravity, scale height and the height grid.
+
+        Integrates hydrostatic balance layer by layer, dz = H_p ln(p_i / p_{i+1}) with
+        H_p = k_B T N_A / (mu g) and g = g_s (R_p / (R_p + z))^2. For a gas giant with
+        `P_b` >= 1 bar, z = 0 and g = g_s at the interface closest to 1 bar; otherwise at
+        the bottom. With `use_settling`, also sets the Stokes settling velocity of the
+        non-gaseous species, -2/9 rho_p r_p^2 g / eta, with the viscosity eta of the
+        `atm_base` gas from Cloutman (Table 1); CO2 uses the N2 values. Plots the T-P
+        profile when `plot_TP` is set and warns when T is outside 200-6000 K, the range of
+        the thermodynamic data.
+
+        Parameters
+        ----------
+        data_var : store.Variables
+            Reads `ymix`.
+        data_atm : store.AtmData
+            Reads `Tco` [K] and `pico` [dyn cm-2]; sets `mu` [g mol-1], `g` and `gs`
+            [cm s-2], `Hp`, `dz`, `dzi`, `zco`, `zmco` [cm], `pref_indx`, with
+            `use_moldiff` `Ti` [K] and `Hpi` [cm] on the interfaces, and with
+            `use_settling` `vs` [cm s-1].
+        output : op.Output
+            Not used.
+
+        Returns
+        -------
+        store.AtmData
+            `data_atm`.
+
+        Raises
+        ------
+        ValueError
+            If a non-gaseous species has no particle radius or density.
+        """
 
         nz = self.cfg.nz
         dz, zco = data_atm.dz, data_atm.zco  # pressure defined at interfaces
@@ -782,7 +1022,22 @@ class Atm(object):
         return data_atm
 
     def read_sflux(self, var, atm):
-        """reading in stellar stpactal flux at the stellar surface and converting it to the flux on the planet to the uniform grid using trapezoidal integral"""
+        """
+        Read the stellar spectrum and put the flux at the top of the atmosphere on the bins.
+
+        The flux at the stellar surface from `Config.sflux_file` (wavelength [nm], flux
+        [erg cm-2 s-1 nm-1]) is scaled by (R_star / a)^2 and interpolated linearly onto
+        `var.bins`, with zero outside the file range. Logs the fraction of the energy in
+        the bin range that the binned flux keeps, both integrated with the trapezoidal rule.
+
+        Parameters
+        ----------
+        var : store.Variables
+            Reads `bins` [nm]; sets `sflux_top` [erg cm-2 s-1 nm-1] and
+            `sflux_din12_indx`, the first bin at `Config.dbin_12trans` (-1 if none).
+        atm : store.AtmData
+            Sets `sflux_raw`, the spectrum as read.
+        """
         atm.sflux_raw = np.genfromtxt(
             self.cfg.sflux_file, dtype=float, skip_header=1, names=['lambda', 'flux']
         )
@@ -861,8 +1116,25 @@ class Atm(object):
 
     def mol_diff(self, atm):
         """
-        choosing the formulea of molecular diffusion for each species
-        then constucting Dzz(z)
+        Set the molar masses and the molecular diffusion coefficients.
+
+        Without `use_moldiff`, only `ms` is set. Otherwise the coefficient of each species
+        in the `atm_base` gas is a reference binary coefficient A T^s / n (H2: CH4-H2 from
+        Moses 2000a; N2 and O2: CH4-N2 and CH4-O2 from Banks & Kockarts 1973; CO2: H2-CO2),
+        scaled by the square root of the ratio of reduced masses, and evaluated with T and n
+        averaged onto the interior interfaces. Non-gaseous species get zero. Also sets the
+        thermal diffusion factors.
+
+        Parameters
+        ----------
+        atm : store.AtmData
+            Reads `Tco` [K] and `n_0` [cm-3]; sets `ms` [g mol-1], `Dzz` [cm2 s-1] and
+            `alpha` [dimensionless].
+
+        Raises
+        ------
+        IOError
+            If `atm_base` is not H2, N2, O2 or CO2.
         """
         Tco = atm.Tco
         n_0 = atm.n_0
@@ -961,7 +1233,18 @@ class Atm(object):
 
     def BC_flux(self, atm):
         """
-        Reading-in the boundary conditions of constant flux (cm^-2 s^-1) at top/bottom
+        Read the boundary conditions from the files named in the configuration.
+
+        With `use_topflux`, `top_BC_flux_file` gives a species and its flux per line. With
+        `use_botflux`, `bot_BC_flux_file` gives a species, its flux and its deposition
+        velocity; with `use_fix_sp_bot`, the fourth column of that file is the fixed
+        mixing ratio.
+
+        Parameters
+        ----------
+        atm : store.AtmData
+            Sets `top_flux` and `bot_flux` [cm-2 s-1] (positive into the atmosphere),
+            `bot_vdep` [cm s-1] and `bot_fix_sp` [dimensionless].
         """
         # read in the const top BC
         if self.cfg.use_topflux:
@@ -994,8 +1277,21 @@ class Atm(object):
     # TEST condensation
     def sp_sat(self, atm):
         """
-        For all the species in self.cfg.condense_sp, pre-calculating the
-        saturation varpor pressure (in dyne/cm2) and storing in atm.sat_p.
+        Set the saturation vapour pressure of each species in `Config.condense_sp`.
+
+        Fits by species: H2O over ice and water (Ackerman & Marley 2001), NH3 (Weast 1971),
+        H2SO4 (Ayers), S2 and S8 (Zahnle 2017, refitted from Lyons 2008), C (NIST) and
+        H2S over ice and liquid (Giauque & Blue 1936).
+
+        Parameters
+        ----------
+        atm : store.AtmData
+            Reads `Tco` [K]; sets `sat_p[sp]`, shape (nz,) [dyn cm-2].
+
+        Raises
+        ------
+        IOError
+            If a species has no saturation data.
         """
         # the list that the data has been coded
         sat_sp_list = ['H2O', 'NH3', 'H2SO4', 'S2', 'S8', 'C', 'H2S']
