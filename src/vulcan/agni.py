@@ -40,6 +40,22 @@ AGNI_LOGFILE_NAME = 'agni_recent.log'
 
 
 def activate_julia(vulcan_cfg: Config):
+    """
+    Activate the Julia environment of AGNI and import AGNI.
+
+    Also sets up headless plotting in Julia and points the AGNI log to
+    `agni_recent.log` in `Config.output_dir`.
+
+    Parameters
+    ----------
+    vulcan_cfg : Config
+        VULCAN configuration; only `output_dir` is used.
+
+    Raises
+    ------
+    FileNotFoundError
+        If `paths.AGNI_DIR` or `agni.jl` inside it does not exist.
+    """
 
     # Check AGNI is in the right location
     if not os.path.isdir(paths.AGNI_DIR):
@@ -71,6 +87,41 @@ def activate_julia(vulcan_cfg: Config):
 
 
 def init_agni_atmos(vulcan_cfg: Config, atm: AtmData, var: Variables):
+    """
+    Create and allocate an AGNI atmosphere that matches the VULCAN column.
+
+    The instellation is the integral of the stellar spectrum in `Config.sflux_file`
+    (at the stellar surface, erg s^-1 cm^-2 nm^-1), scaled by (r_star / orbit_radius)^2
+    and converted to W m^-2. The composition is well mixed, from the median over layers
+    of each gas mixing ratio in `var.ymix`; species with '_' in their name
+    (condensates) are left out. The boundary pressures are `atm.pico[0]` and
+    `atm.pico[-1]`, converted from dyn cm^-2 to bar. Gravity and planet radius are
+    converted from cgs to SI and `Config.sl_angle` from radians to degrees. The initial
+    temperature profile is log-linear from `Config.Tsurf_guess` [K], with a stratosphere
+    at min(500 K, `Tsurf_guess`).
+
+    A `runtime.sf` spectral file in `Config.output_dir` is used unchanged when it exists;
+    otherwise AGNI makes it from `Config.spectral_file` and the stellar spectrum.
+
+    Parameters
+    ----------
+    vulcan_cfg : Config
+        VULCAN configuration.
+    atm : AtmData
+        Atmosphere data; `pico` [dyn cm^-2] sets the pressure range.
+    var : Variables
+        Model variables; `ymix` sets the composition.
+
+    Returns
+    -------
+    juliacall.AnyValue
+        The AGNI `Atmos_t` object.
+
+    Raises
+    ------
+    RuntimeError
+        If AGNI fails to set up or allocate the atmosphere.
+    """
     log.debug('New AGNI atmosphere')
 
     atmos = jl.AGNI.atmosphere.Atmos_t()

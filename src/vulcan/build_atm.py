@@ -268,6 +268,7 @@ class InitialAbun(object):
             )
 
             def check_io():
+                """Log each line FastChem has written to stdout, until none is waiting."""
                 while True:
                     out_std = process.stdout.readline().decode().strip()
                     if out_std:
