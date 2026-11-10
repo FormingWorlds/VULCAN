@@ -117,8 +117,8 @@ class Variables(object):
     charge_list : list
         Species with non-zero charge, excluding the electron 'e'.
     def_bin_min, def_bin_max : float
-        Wavelength range of the stellar spectrum clipped to 2-700 nm [nm]; narrowed further
-        by `op.ReadRate.make_bins_read_cross`.
+        Wavelength range of the stellar spectrum clipped to 2-700 nm [nm];
+        `op.ReadRate.make_bins_read_cross` limits its grid to this range.
     threshold : dict
         Photodissociation threshold wavelength per species [nm], set by
         `op.ReadRate.make_bins_read_cross`.

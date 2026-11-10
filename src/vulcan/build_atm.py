@@ -302,8 +302,9 @@ class InitialAbun(object):
         Set the initial number densities and mixing ratios for `Config.ini_mix`.
 
         With `use_condense`, also sets the saturation mixing ratios and, with
-        `use_ini_cold_trap`, caps each condensing species at saturation and holds it above
-        the cold trap at the saturation mixing ratio of the cold-trap level.
+        `use_ini_cold_trap` (not applied for `ini_mix = 'table'`), caps each condensing
+        species at saturation and, if it condenses, holds it above the cold trap at the
+        saturation mixing ratio of the cold-trap level.
 
         Parameters
         ----------
@@ -322,8 +323,9 @@ class InitialAbun(object):
         Raises
         ------
         ValueError
-            If a 'table' file has a different number of layers, or `use_ion` is set and the
-            network has no charged species.
+            If a 'table' file has a different number of layers, or `use_ion` is set and no
+            charged species were collected (always the case for `ini_mix = 'table'`, which
+            does not fill `charge_list`).
         IOError
             If `ini_mix` is not recognised.
         """

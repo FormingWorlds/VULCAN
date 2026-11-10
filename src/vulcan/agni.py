@@ -121,7 +121,8 @@ def init_agni_atmos(vulcan_cfg: Config, atm, var):
 
     A `runtime.sf` spectral file in `Config.output_dir` is used unchanged when it exists;
     otherwise AGNI makes it from `Config.spectral_file` in `agni_dir` and the stellar
-    spectrum. FastChem files go to `agni_fastchem` in `Config.output_dir`.
+    spectrum. With `spectral_file = 'greygas'`, AGNI uses its grey-gas scheme instead of
+    a spectral file. FastChem files go to `agni_fastchem` in `Config.output_dir`.
 
     Parameters
     ----------

@@ -114,9 +114,10 @@ class ReadRate(object):
     Read the chemical network and compute the rate coefficients on the T-P profile.
 
     Each reaction in the network file gets an odd internal number and its reverse the next
-    even number. The methods are called in this order by `vulcan.run_vulcan`: `read_rate`,
-    optionally `lim_lowT_rates`, `rev_rate`, `remove_rate`, and with photochemistry
-    `make_bins_read_cross`.
+    even number. The methods are called in this order by `vulcan.vulcan.run_vulcan`:
+    `read_rate`, optionally `lim_lowT_rates`, `rev_rate`, `remove_rate`, and with
+    photochemistry `make_bins_read_cross` and `remove_rate` again after the first photolysis
+    rates.
     """
 
     def __init__(self, vulcan_cfg: Config):
@@ -149,8 +150,9 @@ class ReadRate(object):
         ----------
         var : store.Variables
             Filled in place: `k`, `k_fun`, `kinf_fun`, `Rf`, `Rindx`, the Arrhenius parameters,
-            `photo_sp`, `pho_rate_index`, `n_branch`, `conden_re_list`, with `use_ion`
-            `ion_sp`, `ion_rate_index` and `ion_branch`, and the first reaction number of each
+            `photo_sp`, `pho_rate_index`, `n_branch`, `conden_re_list`, `ion_rate_index` and
+            `ion_branch` from the `# ionisation` section, with `use_ion` also `ion_sp`, and
+            the first reaction number of each
             section (`conden_indx`, `recomb_indx`, `photo_indx`, `ion_indx`, `stop_rev_indx`).
         atm : store.AtmData
             Reads `Tco` [K] and `M` [cm-3].
@@ -579,7 +581,8 @@ class ReadRate(object):
         The grid covers the wavelengths absorbed by the photodissociating and photoionising
         species, limited to `var.def_bin_min`-`var.def_bin_max` and to the longest
         photodissociation threshold (`thresholds.txt`), with spacing `Config.dbin1` below
-        `Config.dbin_12trans` and `Config.dbin2` above. Cross sections are interpolated
+        `Config.dbin_12trans` and `Config.dbin2` above if `dbin_12trans` lies inside the grid,
+        otherwise `dbin1` throughout. Cross sections are interpolated
         linearly onto the grid with zero outside the data; branching ratios are held constant
         beyond their data. For the species in `Config.T_cross_sp`, the cross sections in each
         layer are interpolated linearly in T and in log10 of the cross section between the
@@ -1507,8 +1510,8 @@ class Integration(object):
         var : store.Variables
             Reads `ymix`.
         atm : store.AtmData
-            Updates `mu` [g mol-1], `g` [cm s-2], `Hp`, `dz`, `dzi`, `zco`, `zmco` [cm], and with
-            `use_moldiff` `Ti` [K] and `Hpi` [cm].
+            Updates `mu` [g mol-1], `g` [cm s-2], `Hp`, `dz`, `dzi`, `zco`, `zmco` [cm], and
+            with `use_moldiff` `Ti` [K] and `Hpi` [cm].
         make_atm : build_atm.Atm
             Provides `mean_mass`.
 
@@ -1566,7 +1569,9 @@ class Integration(object):
         Set the diffusion-limited escape flux at the top for the species in `Config.diff_esc`.
 
         phi = -D n (1/H - 1/H_i) in the top layer, with H the pressure scale height and
-        H_i = N_A k_B T / (m g) that of the species with molar mass m, limited in magnitude to `Config.max_flux`.
+        H_i = N_A k_B T / (m g) that of the species with molar mass m. Escape is limited to
+        `Config.max_flux`: the flux is not allowed below -max_flux, and a positive (inflowing)
+        value is not limited.
 
         Parameters
         ----------
@@ -1852,8 +1857,8 @@ class Integration(object):
         coefficient of X, m its molecular mass, and rho_p and r_p the particle density and
         radius. The positive part is the condensation coefficient and the magnitude of the
         negative part the evaporation coefficient of the reverse reaction [s-1]. Handles
-        H2O (with `Config.humidity`; zero rates when relaxation is used instead), NH3, H2SO4,
-        S2, S4, S8 and C.
+        H2O (with `Config.humidity`), NH3, H2SO4, S2, S4, S8 and C. The H2O and NH3 rates are
+        set to zero whenever `Config.use_relax` is non-empty, whichever species it lists.
 
         Parameters
         ----------
@@ -2312,8 +2317,9 @@ class ODESolver(object):
     Also holds the step acceptance tests, the radiative transfer and the photolysis rates.
     The `lhs_jac_*` methods return the matrix 1/(r h) I - J of the Rosenbrock step for the
     state flattened layer by layer (index j * ni + i), shape (nz ni, nz ni), with
-    r = 1 + 1/sqrt(2) and h the time step [s]. Transport uses zero-flux boundaries except
-    for the fluxes set with `use_topflux` and `use_botflux`.
+    r = 1 + 1/sqrt(2) and h the time step [s] (except the `*_fix_all_bot` variants, whose
+    bottom-layer columns are zero). Transport uses zero-flux boundaries except for the
+    fluxes set with `use_topflux` and `use_botflux`.
     """
 
     def __init__(self, vulcan_cfg: Config):
@@ -3162,7 +3168,8 @@ class ODESolver(object):
         Jacobian J of chemistry plus transport, with molecular diffusion.
 
         Not called by the current code; the solver builds 1/(r h) I - J directly with
-        `lhs_jac_tot`.
+        `lhs_jac_tot`. It no longer runs: it calls the generated `symjac` without `nz`, which
+        raises TypeError.
 
         Parameters
         ----------
@@ -3540,7 +3547,8 @@ class ODESolver(object):
         """
         Rosenbrock matrix as `lhs_jac_tot`, with the molecular advection velocity `atm.vm`.
 
-        Selected only with `Config.use_vm_mol`, which `Integration` rejects.
+        Selected only with `Config.use_vm_mol`, which `Integration` rejects. It no longer
+        runs: it calls the generated `neg_symjac` without `nz`, which raises TypeError.
 
         Parameters
         ----------
@@ -3809,10 +3817,12 @@ class ODESolver(object):
 
     def lhs_jac_fix_all_bot(self, var, atm):
         """
-        Rosenbrock matrix as `lhs_jac_tot`, with no dependence on the bottom layer.
+        Rosenbrock matrix like `lhs_jac_tot`, with no dependence on the bottom layer.
 
-        The columns of the bottom layer are zero; used by `Ros2.solver_fix_all_bot`, which
-        holds the bottom layer fixed.
+        Unlike `lhs_jac_tot`, it adds the diffusion-limited escape term for `Config.diff_esc`
+        on the top-layer diagonal and omits the `bot_vdep` deposition term. The columns of
+        the bottom layer, its 1/(r h) diagonal included, are zero, so the matrix is singular
+        and `band_lu` raises LinAlgError. Used only by `Ros2.solver_fix_all_bot`.
 
         Parameters
         ----------
@@ -3984,7 +3994,9 @@ class ODESolver(object):
         """
         Rosenbrock matrix as `lhs_jac_no_mol`, with no dependence on the bottom layer.
 
-        Used by `Ros2.solver_fix_all_bot` without molecular diffusion.
+        Used by `Ros2.solver_fix_all_bot` without molecular diffusion. The columns of the
+        bottom layer, its 1/(r h) diagonal included, are zero, so the matrix is singular and
+        `band_lu` raises LinAlgError.
 
         Parameters
         ----------
@@ -4320,7 +4332,8 @@ class ODESolver(object):
         """
         Rosenbrock matrix as `lhs_jac_settling`, with the molecular advection velocity `atm.vm`.
 
-        Matches `diffdf_settling_vm`; selected only with `Config.use_vm_mol`.
+        Matches `diffdf_settling_vm`; selected only with `Config.use_vm_mol`. It no longer
+        runs: it calls the generated `neg_symjac` without `nz`, which raises TypeError.
 
         Parameters
         ----------
@@ -4540,7 +4553,8 @@ class ODESolver(object):
         Parameters
         ----------
         data_var : store.Variables
-            Reads `y` and `atom_ini`; sets `atom_sum` [cm-3] and `atom_loss` [dimensionless].
+            Reads `y` and `atom_ini`; sets `atom_sum` [cm-3, summed over all layers] and
+            `atom_loss` [dimensionless].
 
         Returns
         -------
@@ -4815,12 +4829,12 @@ class ODESolver(object):
         """
         Compute the direct and diffuse stellar flux and the actinic flux in each layer.
 
-        The direct beam follows Beer's law along the zenith angle `Config.sl_angle`. The diffuse
-        flux comes from a two-stream solution with the Eddington coefficient `Config.edd`,
-        isotropic scattering (`phy_const.ag0` = 0), the single-scattering albedo from the
-        Rayleigh cross sections and the absorption of the photodissociating species, and no upward diffuse flux at the bottom. The
-        actinic flux is the direct beam plus the diffuse fluxes divided by `edd`, converted to
-        photons.
+        The direct beam follows Beer's law along the zenith angle `Config.sl_angle`. The
+        diffuse flux comes from a two-stream solution with the Eddington coefficient
+        `Config.edd`, isotropic scattering (`phy_const.ag0` = 0), the single-scattering albedo
+        from the Rayleigh cross sections and the absorption of the photodissociating species,
+        and no upward diffuse flux at the bottom. The actinic flux is the direct beam plus
+        the diffuse fluxes divided by `edd`, converted to photons.
 
         Parameters
         ----------
@@ -5254,9 +5268,12 @@ class Ros2(ODESolver):
         (`diffdf` / `lhs_jac_tot`, `diffdf_settling` / `lhs_jac_settling`, or
         `diffdf_no_mol` / `lhs_jac_no_mol`). Species held fixed by condensation
         (`fix_species`) and the electron with `use_ion` are kept out of the update, and the
-        species in `use_fix_sp_bot` are reset to their fixed bottom mixing ratios. The truncation error ignores species
-        below `mtol` or `atol`, the bottom layer with bottom boundary conditions, and the
-        condensing species. With `use_ion`, the electron density is then set by charge balance.
+        species in `use_fix_sp_bot` are reset to their fixed bottom mixing ratios. The
+        truncation error ignores species below `mtol` or `atol`, the bottom layer with bottom
+        boundary conditions, and the condensing species. With `use_ion`, the electron density
+        is then set by charge balance. With `use_fix_H2He`, once t > 1e6 s it adds H2 and He
+        at their current bottom mixing ratios to `Config.use_fix_sp_bot`, which changes the
+        shared Config.
 
         Parameters
         ----------
@@ -5440,9 +5457,11 @@ class Ros2(ODESolver):
         """
         Take one Rosenbrock step with the bottom-layer composition held fixed.
 
-        As `solver`, with `lhs_jac_fix_all_bot` or `lhs_jac_no_mol_fix_all_bot`, and the bottom
-        mixing ratios reset after the step. `naming_solver` always selects `solver`, so this
-        method is not used by the current code.
+        Like `solver`, with `lhs_jac_fix_all_bot` or `lhs_jac_no_mol_fix_all_bot`, and the
+        bottom mixing ratios reset after the step. Unlike `solver`, it does not handle
+        `fix_species`, `use_fix_sp_bot` or settling. `naming_solver` always selects `solver`,
+        so this method is not used by the current code; it would fail anyway, because the
+        matrix from `lhs_jac_*_fix_all_bot` is singular and `band_lu` raises LinAlgError.
 
         Parameters
         ----------
@@ -5778,7 +5797,8 @@ class Output(object):
         Parameters
         ----------
         var : store.Variables
-            Final state; its time series are converted to arrays in place.
+            Final state; its time series are converted to arrays in place and, with
+            `save_evolution`, thinned in place to every `save_evo_frq`-th entry.
         atm : store.AtmData
             Atmospheric structure.
         para : store.Parameters
