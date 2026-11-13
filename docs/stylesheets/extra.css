@@ -104,6 +104,7 @@
   --md-code-hl-comment-color: #5A6B7A;
   --md-code-hl-function-color: var(--pt-ice);
   --md-code-hl-name-color: #C6D0D9;
+  --md-code-hl-constant-color: var(--pt-ice);
 
   --md-admonition-bg-color: var(--pt-basalt);
   --md-footer-bg-color: var(--pt-basalt);
@@ -131,6 +132,9 @@
   --md-code-hl-string-color: var(--pt-abyss);
   --md-code-hl-number-color: var(--pt-ocean);
   --md-code-hl-comment-color: #7A8894;
+  --md-code-hl-function-color: var(--pt-abyss);
+  --md-code-hl-constant-color: var(--pt-ocean);
+  --md-code-hl-name-color: #22303B;
 
   /* the one domain colour that differs by scheme: the bright tone reaches
      only 2.0:1 on Paper, and deepening lifts it to 2.8:1 */
@@ -178,9 +182,15 @@
 .md-typeset h2 { border-top: 1px solid var(--pt-line-d); padding-top: 0.8em; }
 [data-md-color-scheme="default"] .md-typeset h2 { border-top-color: #D2DAE1; }
 
-/* code blocks: magma spine */
+/* code blocks: magma spine, one per block. A block with line numbers holds
+   two <pre> (numbers, code), so the spine sits on the container instead. */
 .md-typeset pre > code { border-radius: 4px; }
-.md-typeset pre { border-left: 3px solid var(--pt-magma); border-radius: 4px; }
+.md-typeset pre { border-radius: 4px; }
+.md-typeset .highlight > pre,
+.md-typeset .highlighttable {
+  border-left: 3px solid var(--pt-magma);
+  border-radius: 4px;
+}
 
 /* tabs: active = magma underline */
 .md-tabs__link--active { border-bottom: 2px solid var(--pt-magma); }
