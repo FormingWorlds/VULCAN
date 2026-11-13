@@ -1,22 +1,28 @@
 """
 -------
-Module that includes all the numerical functions of VULCAN.
+Numerical core of VULCAN: rate coefficients, time integration, solver and output.
 
 Copyright (C) 2016 Shang-Min Tsai (Shami)
 
-- `ReadRate()` reads in the chemical network and construct the rate constants based
-on the T-P structure.
-- `Integration()` is the backbone of integrating for one time step
-- `ODESolver()` contains the functions for solving system of ODEs (e.g. dy/dt, Jacobian, etc.)
+- `ReadRate` reads the chemical network and computes the rate coefficients on the T-P
+profile, and builds the wavelength grid and cross sections for photochemistry.
+- `Integration` advances the model step by step until steady state or a limit.
+- `ODESolver` holds the transport terms, the Jacobians, the radiative transfer and the
+photolysis rates; `Ros2` adds the second-order Rosenbrock step.
+- `Output` prints progress and writes the results.
+
+Units are cgs: number densities in cm-3, time in s, heights in cm, wavelengths in nm.
+Index 0 of the vertical axis is the bottom layer.
 
 Imports
 ---
 - [`vulcan.config`](config.md): `Config` class for handling configuration settings.
 - [`vulcan.paths`](paths.md): Paths to various files and directories used in VULCAN.
-- [`vulcan.build_atm`](build_atm.md): `compo` and `compo_row` functions for building the atmospheric composition.
+- [`vulcan.build_atm`](build_atm.md): `compo` and `compo_row`, the elemental composition
+table of all species.
 - [`vulcan.phy_const`](phy_const.md): Physical constants used in VULCAN.
-- `vulcan.chem_funs`: Functions related to the chemical network.
-
+- `vulcan.chem_funs`: the generated chemistry functions (`chemdf`, the Jacobians, `Gibbs`)
+and the network sizes `ni` and `nr`.
 """
 
 from __future__ import annotations
@@ -60,17 +66,19 @@ log = logging.getLogger('fwl.' + __name__)
 
 def safe_rm(fpath: str) -> bool:
     """
-    Safely remove a file or folder
+    Remove a file, or a folder with its contents.
+
+    A folder is not removed if it contains a `.git` folder or is the working directory.
 
     Parameters
     ----------
     fpath : str
-        Path to the file or folder to be removed
+        Path to the file or folder.
 
     Returns
     -------
-    removed : bool
-        True if the file or folder was removed, False otherwise
+    bool or None
+        True if something was removed, False otherwise; None for an empty path.
     """
 
     if fpath == '':
@@ -103,10 +111,21 @@ def safe_rm(fpath: str) -> bool:
 
 class ReadRate(object):
     """
-    to read in rate constants from the network file and compute the reaction rates for the corresponding Tco and pco
+    Read the chemical network and compute the rate coefficients on the T-P profile.
+
+    Each reaction in the network file gets an odd internal number and its reverse the next
+    even number. The methods are called in this order by `vulcan.run_vulcan`: `read_rate`,
+    optionally `lim_lowT_rates`, `rev_rate`, `remove_rate`, and with photochemistry
+    `make_bins_read_cross`.
     """
 
     def __init__(self, vulcan_cfg: Config):
+        """
+        Parameters
+        ----------
+        vulcan_cfg : Config
+            Run configuration.
+        """
 
         self.cfg = vulcan_cfg
         self.i = 1
@@ -115,6 +134,32 @@ class ReadRate(object):
         self.list_tri = []
 
     def read_rate(self, var, atm):
+        """
+        Read the network file `Config.network` and compute the forward rate coefficients.
+
+        The sections are recognised by their header lines. Two-body and radiative reactions use
+        the Arrhenius form k = a T^n exp(-E/T). After `# 3-body`, reactions with high-pressure
+        parameters use k = k_0 / (1 + k_0 M / k_inf); those after `# 3-body reactions without
+        high-pressure rates` use k_0 alone. Reactions after `# special` have hard-coded forms
+        (currently OH + CH3 + M -> CH3OH + M). Condensation, photodissociation and
+        photoionisation rates are set to zero here and computed later by
+        `Integration.conden`, `ODESolver.compute_J` and `ODESolver.compute_Jion`.
+
+        Parameters
+        ----------
+        var : store.Variables
+            Filled in place: `k`, `k_fun`, `kinf_fun`, `Rf`, `Rindx`, the Arrhenius parameters,
+            `photo_sp`, `pho_rate_index`, `n_branch`, `conden_re_list`, with `use_ion`
+            `ion_sp`, `ion_rate_index` and `ion_branch`, and the first reaction number of each
+            section (`conden_indx`, `recomb_indx`, `photo_indx`, `ion_indx`, `stop_rev_indx`).
+        atm : store.AtmData
+            Reads `Tco` [K] and `M` [cm-3].
+
+        Returns
+        -------
+        store.Variables
+            `var`.
+        """
 
         nz = self.cfg.nz
 
@@ -400,6 +445,26 @@ class ReadRate(object):
         return var
 
     def rev_rate(self, var, atm):
+        """
+        Compute the reverse rate coefficients from the equilibrium constants.
+
+        For every reaction before the `# reverse stops` header, k_rev = k_fwd / K_eq with K_eq
+        from the Gibbs free energies (`chem_funs.Gibbs`); `k_fun` gets the same relation. The
+        reverse coefficients of the later reactions, and of reverse reactions listed in
+        `Config.remove_list`, are zero.
+
+        Parameters
+        ----------
+        var : store.Variables
+            Reads and updates `k` and `k_fun`.
+        atm : store.AtmData
+            Reads `Tco` [K].
+
+        Returns
+        -------
+        store.Variables
+            `var`.
+        """
 
         nz = self.cfg.nz
 
@@ -432,6 +497,19 @@ class ReadRate(object):
         return var
 
     def remove_rate(self, var):
+        """
+        Set the rate coefficients of the reactions in `Config.remove_list` to zero.
+
+        Parameters
+        ----------
+        var : store.Variables
+            `k` and `k_fun` are updated in place.
+
+        Returns
+        -------
+        store.Variables
+            `var`.
+        """
 
         nz = self.cfg.nz
 
@@ -441,9 +519,26 @@ class ReadRate(object):
 
         return var
 
-    def lim_lowT_rates(
-        self, var, atm
-    ):  # for setting up the lower limit of rate coefficients for low T
+    def lim_lowT_rates(self, var, atm):
+        """
+        Replace three hydrocarbon rate coefficients with their low-temperature limits.
+
+        Used with `Config.use_lowT_limit_rates`. The limits, from Moses et al. (2005) as noted
+        in the code, apply to H + CH3 + M -> CH4 + M (T <= 277.5 K), H + C2H4 + M -> C2H5 + M
+        (T <= 300 K) and H + C2H5 + M -> C2H6 + M (T <= 200 K).
+
+        Parameters
+        ----------
+        var : store.Variables
+            `k` is updated in place [cm6 s-1 for these reactions].
+        atm : store.AtmData
+            Reads `Tco` [K] and `M` [cm-3].
+
+        Returns
+        -------
+        store.Variables
+            `var`.
+        """
         for i in range(1, nr, 2):
             if var.Rf[i] == 'H + CH3 + M -> CH4 + M':
                 T_mask = atm.Tco <= 277.5
@@ -479,10 +574,36 @@ class ReadRate(object):
 
     def make_bins_read_cross(self, var, atm):
         """
-        determining the bin range and only use the min and max wavelength that the molecules absorb
-        to avoid photons with w0=1 (pure scatteing) in certain wavelengths
-        var.cross stores the total absorption cross sections of each species, e.g. var.cross['H2O']
-        var.cross stores the IDIVIDUAL photodissociation cross sections for each bracnh, e.g. var.cross_J[('H2O',1)], which is equvilent to var.cross['H2O'] times the branching ratio of branch 1
+        Build the wavelength grid and put the cross sections on it.
+
+        The grid covers the wavelengths absorbed by the photodissociating and photoionising
+        species, limited to `var.def_bin_min`-`var.def_bin_max` and to the longest
+        photodissociation threshold (`thresholds.txt`), with spacing `Config.dbin1` below
+        `Config.dbin_12trans` and `Config.dbin2` above. Cross sections are interpolated
+        linearly onto the grid with zero outside the data; branching ratios are held constant
+        beyond their data. For the species in `Config.T_cross_sp`, the cross sections in each
+        layer are interpolated linearly in T and in log10 of the cross section between the
+        tabulated temperatures (the default file counts as 300 K), and held at the nearest
+        table beyond them.
+
+        Parameters
+        ----------
+        var : store.Variables
+            Reads `photo_sp`, `ion_sp`, `n_branch`, `ion_branch`, `def_bin_min` and
+            `def_bin_max` [nm]. Sets `bins` [nm], `nbin`, `dbin1` and `dbin2` [nm],
+            `threshold` [nm], the cross sections `cross`, `cross_J`, `cross_scat`, `cross_T`,
+            `cross_J_T` and with `use_ion` `cross_Jion` [cm2], `cross_T_sp_list` [K], and
+            allocates `sflux`, `dflux_u`, `dflux_d`, `aflux`, `tau` and `sflux_top`.
+        atm : store.AtmData
+            Reads `Tco` [K].
+
+        Raises
+        ------
+        RuntimeError
+            If a cross-section or branching-ratio file is missing, or a species is not in
+            `thresholds.txt`.
+        IOError
+            If a cross-section file starts or ends with a zero.
         """
         photo_sp = list(var.photo_sp)
         ion_sp = list(var.ion_sp)
@@ -1008,12 +1129,29 @@ def _state_copy(obj) -> dict:
 
 class Integration(object):
     """
-    time-stepping until the stopping criteria (steady-state) is satisfied
-    #all the operators required in the continuity equation: dn/dt + dphi/dz = P - L
-    #or class incorporating the esential numerical operations?
+    Advance the model in time until it reaches steady state or a limit.
+
+    Each step updates the photolysis rates when due, takes one solver step, updates the
+    condensation rates, the height grid and the escape fluxes, restores hydrostatic
+    balance, and checks convergence (`stop`).
     """
 
     def __init__(self, odesolver, output, vulcan_cfg: Config):
+        """
+        Parameters
+        ----------
+        odesolver : Ros2
+            The solver that takes the steps.
+        output : Output
+            Used for the progress messages.
+        vulcan_cfg : Config
+            Run configuration.
+
+        Raises
+        ------
+        RuntimeError
+            If `Config.use_vm_mol` is set; that scheme is in development.
+        """
 
         self.cfg = vulcan_cfg
         self.mtol = self.cfg.mtol
@@ -1046,10 +1184,20 @@ class Integration(object):
             self.condense_sp_index = [species.index(sp) for sp in self.cfg.condense_sp]
 
     def __call__(self, var, atm, para, make_atm, climate=None):
-        """Integrate until steady state, or until a runtime or step limit.
+        """
+        Integrate until steady state, or until a runtime or step limit (see `stop`).
 
         Parameters
         ----------
+        var : store.Variables
+            State, updated in place.
+        atm : store.AtmData
+            Atmospheric structure, updated in place.
+        para : store.Parameters
+            Counters, updated in place.
+        make_atm : build_atm.Atm
+            Used to update the mean molar mass, the height grid and, after a climate
+            update, the other temperature-dependent profiles.
         climate : callable or None
             Climate hook (see `vulcan.climate`). With a hook, the temperature and, with
             `Kzz_prof = 'climate'`, the eddy diffusion are updated every `agni_call_frq`
@@ -1231,6 +1379,19 @@ class Integration(object):
                 plot.plot_update(self.cfg, species, var, atm, para)
 
     def backup(self, var):
+        """
+        Store `y`, `dy` and `atom_loss` as the previous-step values.
+
+        Parameters
+        ----------
+        var : store.Variables
+            Sets `y_prev` [cm-3], `dy_prev` and `atom_loss_prev`.
+
+        Returns
+        -------
+        store.Variables
+            `var`.
+        """
         var.y_prev = np.copy(var.y)
         var.dy_prev = np.copy(var.dy)
         var.atom_loss_prev = var.atom_loss.copy()
@@ -1333,7 +1494,29 @@ class Integration(object):
             make_atm.settling_velocity(atm)
         self.update_phi_esc(var, atm)
 
-    def update_mu_dz(self, var, atm, make_atm):  # y, ni, spec, Tco, pco
+    def update_mu_dz(self, var, atm, make_atm):
+        """
+        Update the mean molar mass, gravity, scale height and the height grid.
+
+        Repeats the hydrostatic integration of `build_atm.Atm.f_mu_dz` for the current
+        composition, keeping the reference level `atm.pref_indx`; called every
+        `Config.update_frq` steps and after each climate update.
+
+        Parameters
+        ----------
+        var : store.Variables
+            Reads `ymix`.
+        atm : store.AtmData
+            Updates `mu` [g mol-1], `g` [cm s-2], `Hp`, `dz`, `dzi`, `zco`, `zmco` [cm], and with
+            `use_moldiff` `Ti` [K] and `Hpi` [cm].
+        make_atm : build_atm.Atm
+            Provides `mean_mass`.
+
+        Returns
+        -------
+        store.AtmData
+            `atm`.
+        """
 
         # gravity
         gz = atm.g
@@ -1378,7 +1561,25 @@ class Integration(object):
 
         return atm
 
-    def update_phi_esc(self, var, atm):  # updating diffusion-mimited escape
+    def update_phi_esc(self, var, atm):
+        """
+        Set the diffusion-limited escape flux at the top for the species in `Config.diff_esc`.
+
+        phi = -D n (1/H - 1/H_i) in the top layer, with H the pressure scale height and
+        H_i = N_A k_B T / (m g) that of the species with molar mass m, limited in magnitude to `Config.max_flux`.
+
+        Parameters
+        ----------
+        var : store.Variables
+            Reads `y` [cm-3].
+        atm : store.AtmData
+            Updates `top_flux` [cm-2 s-1]; negative is escape.
+
+        Returns
+        -------
+        store.AtmData
+            `atm`.
+        """
 
         # Diffusion limited escape
         for sp in self.cfg.diff_esc:
@@ -1397,8 +1598,25 @@ class Integration(object):
 
         return atm
 
-    # function calculating the change of y
-    def f_dy(self, var, para):  # y, y_prev, ymix, yconv, count, dt
+    def f_dy(self, var, para):
+        """
+        Set the largest relative change of y over the last step.
+
+        Species with mixing ratio below `Config.mtol` or number density below `Config.atol`
+        are ignored. On the first step both values are 1.
+
+        Parameters
+        ----------
+        var : store.Variables
+            Reads `y`, `y_prev` and `ymix`; sets `dy` [dimensionless] and `dydt` [s-1].
+        para : store.Parameters
+            Reads `count`.
+
+        Returns
+        -------
+        store.Variables
+            `var`.
+        """
         if para.count == 0:
             var.dy, var.dydt = 1.0, 1.0
             return var
@@ -1414,7 +1632,35 @@ class Integration(object):
 
     def conv(self, var, para, atm, out=False, print_freq=100):
         """
-        funtion returns TRUE if the convergence condition is satisfied
+        Check whether the model has reached steady state.
+
+        `longdy` is the largest change of the mixing ratios, relative to themselves, between now
+        and the saved step closest to `Config.st_factor` times the current time (at most
+        `Config.conv_step` steps back); `longdydt` divides it by the elapsed time. Species with
+        mixing ratio below `mtol_conv` or density below `atol`, those in `conver_ignore` and the
+        non-gaseous species are ignored. Converged means `longdy < yconv_cri` and
+        `longdydt < slope_cri`, or `longdy < yconv_min` and `longdydt` below
+        min(Kzz / (0.1 H_p)^2) (kept between 1e-10 and 1e-8 s-1), with the actinic flux change
+        below `flux_cri` in both cases. After a climate update, steps before
+        `para.climate_count` are not used, since the densities changed there without chemistry;
+        if no later step is available, the model is not converged.
+
+        Parameters
+        ----------
+        var : store.Variables
+            Reads `y`, `ymix`, `y_time`, `t_time` and `aflux_change`; sets `longdy` and
+            `longdydt` [s-1].
+        para : store.Parameters
+            Reads `count`, `climate_dT` and `climate_count`; sets `where_varies_most`.
+        atm : store.AtmData
+            Reads `n_0` [cm-3], `Kzz` [cm2 s-1] and `Hp` [cm].
+        out, print_freq
+            Not used.
+
+        Returns
+        -------
+        bool
+            True when converged.
         """
         st_factor, mtol_conv, atol, yconv_cri, slope_cri, yconv_min = (
             self.cfg.st_factor,
@@ -1507,7 +1753,29 @@ class Integration(object):
 
     def stop(self, var, para, atm):
         """
-        To check the convergence criteria and stop the integration
+        Decide whether to stop the integration and record why in `para.end_case`.
+
+        Stops when converged (`conv`, after `Config.trun_min` and `Config.count_min`), when the
+        time exceeds `Config.runtime` [s], or when the step count exceeds `Config.count_max`.
+        After a climate update that changed the temperature, convergence is only tested once
+        `count_min` more steps have passed. With a climate hook, a converged state also
+        needs a settled climate (`_climate_settled`); if the temperature still changes, the
+        integration continues, or stops with `end_case = 4` after `Config.agni_max_calls`
+        updates at steady state.
+
+        Parameters
+        ----------
+        var : store.Variables
+            Reads `t` [s].
+        para : store.Parameters
+            Reads `count`, `climate_dT` and `climate_count`; sets `end_case`.
+        atm : store.AtmData
+            Passed to `conv`.
+
+        Returns
+        -------
+        bool or None
+            True to stop; False or None to continue.
         """
         if (
             var.t > self.cfg.trun_min
@@ -1544,7 +1812,19 @@ class Integration(object):
 
     def save_step(self, var, para):
         """
-        save current values of y and add 1 to the counter
+        Advance the time by `dt`, count the step, and append to the time series.
+
+        Parameters
+        ----------
+        var : store.Variables
+            Updates `t` [s] and appends to `y_time`, `t_time` and `atom_loss_time`.
+        para : store.Parameters
+            Increments `count`.
+
+        Returns
+        -------
+        tuple
+            `(var, para)`.
         """
         var.t += var.dt
         para.count += 1
@@ -1565,12 +1845,28 @@ class Integration(object):
     # TESTing condensation
     def conden(self, var, atm):
         """
-        Updating the condensation reactions according to the new number density
-        using the condensation growth timescale in the contiuum regime (not in the kinetic regime)
+        Update the rate coefficients of the condensation reactions.
 
-        Note that when n_g -> n_s, n_s is still the number density of "molecules", not "particles."
-        So I scaled down the evaporation rate by n_mol.
-        n_s / n_mol should also be used for plotting.
+        For a reaction 'X -> X_condensate' the rate is D m / (rho_p r_p^2) (n_X - n_sat), the
+        growth rate of a particle in the continuum regime, with D the molecular diffusion
+        coefficient of X, m its molecular mass, and rho_p and r_p the particle density and
+        radius. The positive part is the condensation coefficient and the magnitude of the
+        negative part the evaporation coefficient of the reverse reaction [s-1]. Handles
+        H2O (with `Config.humidity`; zero rates when relaxation is used instead), NH3, H2SO4,
+        S2, S4, S8 and C.
+
+        Parameters
+        ----------
+        var : store.Variables
+            Reads `y` [cm-3]; updates `k` for the reactions in `conden_re_list`.
+        atm : store.AtmData
+            Reads `sat_p` [dyn cm-2], `Tco` [K], `Dzz` [cm2 s-1], `r_p` [cm] and
+            `rho_p` [g cm-3].
+
+        Returns
+        -------
+        store.Variables
+            `var`.
         """
 
         nz = self.cfg.nz
@@ -1811,6 +2107,25 @@ class Integration(object):
         return var
 
     def h2o_conden_relax(self, var, atm):
+        """
+        Relax supersaturated H2O towards saturation and move the excess to H2O_l_s.
+
+        An implicit Euler step with the timescale 1 / |D m / (rho_p r_p^2) (n - n_sat)|, with
+        a fixed particle density of 0.95 g cm-3. Not called by the current code;
+        `h2o_conden_evap_relax` is used instead.
+
+        Parameters
+        ----------
+        var : store.Variables
+            Updates `ymix` and `y` [cm-3].
+        atm : store.AtmData
+            Reads `sat_p` [dyn cm-2], `Tco` [K], `n_0` [cm-3], `Dzz` [cm2 s-1] and `r_p` [cm].
+
+        Returns
+        -------
+        store.Variables
+            `var`.
+        """
         m = 18.0 / Navo
         rho_p = 0.95  # mix of water and ice
         r_p = atm.r_p['H2O_l_s']
@@ -1846,6 +2161,27 @@ class Integration(object):
         return var
 
     def h2o_conden_evap_relax(self, var, atm):
+        """
+        Relax H2O towards saturation by condensation and evaporation.
+
+        Where H2O is supersaturated, an implicit Euler step with the timescale
+        1 / (D m / (rho_p r_p^2) (n - n_sat)) moves the excess to H2O_l_s; where it is
+        undersaturated, H2O_l_s evaporates at the same rate, limited to the amount present.
+        Used when 'H2O' is in `Config.use_relax`.
+
+        Parameters
+        ----------
+        var : store.Variables
+            Updates `ymix` and `y` [cm-3].
+        atm : store.AtmData
+            Reads `sat_p` [dyn cm-2], `Tco` [K], `n_0` [cm-3], `Dzz` [cm2 s-1], `r_p` [cm] and
+            `rho_p` [g cm-3].
+
+        Returns
+        -------
+        store.Variables
+            `var`.
+        """
         m = 18.0 / Navo
         rho_p = atm.rho_p['H2O_l_s']  # mix of water and ice
         r_p = atm.r_p['H2O_l_s']
@@ -1892,6 +2228,26 @@ class Integration(object):
         return var
 
     def nh3_conden_evap_relax(self, var, atm):
+        """
+        Relax NH3 towards saturation by condensation and evaporation.
+
+        As `h2o_conden_evap_relax`, for NH3 and NH3_l_s, with no condensation above the level of
+        the lowest saturation mixing ratio (the cold trap). Used when 'NH3' is in
+        `Config.use_relax`.
+
+        Parameters
+        ----------
+        var : store.Variables
+            Updates `ymix` and `y` [cm-3].
+        atm : store.AtmData
+            Reads `sat_p` [dyn cm-2], `Tco` [K], `n_0` [cm-3], `Dzz` [cm2 s-1], `r_p` [cm] and
+            `rho_p` [g cm-3].
+
+        Returns
+        -------
+        store.Variables
+            `var`.
+        """
         m = 17.0 / Navo
         rho_p = atm.rho_p['NH3_l_s']  # mix of water and ice
         r_p = atm.r_p['NH3_l_s']
@@ -1950,7 +2306,24 @@ class Integration(object):
 
 
 class ODESolver(object):
-    def __init__(self, vulcan_cfg: Config):  # do I always need to update var, atm, para ?
+    """
+    Terms of the continuity equation dn/dt = P - L - dphi/dz and their Jacobians.
+
+    Also holds the step acceptance tests, the radiative transfer and the photolysis rates.
+    The `lhs_jac_*` methods return the matrix 1/(r h) I - J of the Rosenbrock step for the
+    state flattened layer by layer (index j * ni + i), shape (nz ni, nz ni), with
+    r = 1 + 1/sqrt(2) and h the time step [s]. Transport uses zero-flux boundaries except
+    for the fluxes set with `use_topflux` and `use_botflux`.
+    """
+
+    def __init__(self, vulcan_cfg: Config):
+        """
+        Parameters
+        ----------
+        vulcan_cfg : Config
+            Run configuration; the species fixed at the bottom by `use_fix_sp_bot` are indexed
+            here.
+        """
 
         self.cfg = vulcan_cfg
         self.mtol = self.cfg.mtol
@@ -1978,8 +2351,23 @@ class ODESolver(object):
 
     def diffdf_no_mol(self, y, atm):
         """
-        function of eddy diffusion without molecular diffusion, with zero-flux boundary conditions and non-uniform grids (dzi)
-        in the form of Aj*y_j + Bj+1*y_j+1 + Cj-1*y_j-1
+        Transport tendency from eddy diffusion and advection, without molecular diffusion.
+
+        The eddy flux is phi = -K_zz n d(n_i/n)/dz, with n the total gas density, on the
+        non-uniform grid `dzi`; advection by `vz` is upwind. With `use_topflux` and
+        `use_botflux` the prescribed fluxes and the deposition loss `bot_vdep y[0]` are added.
+
+        Parameters
+        ----------
+        y : np.ndarray
+            Number densities, shape (nz, ni) [cm-3].
+        atm : store.AtmData
+            Atmospheric structure.
+
+        Returns
+        -------
+        np.ndarray
+            Transport tendency -dphi/dz, shape (nz, ni) [cm-3 s-1].
         """
 
         nz = self.cfg.nz
@@ -2085,8 +2473,24 @@ class ODESolver(object):
 
     def diffdf(self, y, atm):
         """
-        function of eddy diffusion including molecular diffusion, with zero-flux boundary conditions and non-uniform grids (dzi)
-        in the form of Aj*y_j + Bj+1*y_j+1 + Cj-1*y_j-1
+        Transport tendency from eddy diffusion, advection and molecular diffusion.
+
+        As `diffdf_no_mol`, plus the molecular flux
+        phi_i = -D_i [n d(n_i/n)/dz + n_i (m_i g / (N_A k_B T) - 1/H_p + alpha_i / T dT/dz)],
+        with m_i the molar mass and alpha_i the thermal diffusion factor, evaluated on the
+        interfaces.
+
+        Parameters
+        ----------
+        y : np.ndarray
+            Number densities, shape (nz, ni) [cm-3].
+        atm : store.AtmData
+            Atmospheric structure.
+
+        Returns
+        -------
+        np.ndarray
+            Transport tendency -dphi/dz, shape (nz, ni) [cm-3 s-1].
         """
 
         nz = self.cfg.nz
@@ -2292,8 +2696,21 @@ class ODESolver(object):
 
     def diffdf_settling(self, y, atm):
         """
-        function of eddy diffusion including molecular diffusion and the settling velocity for particles, with zero-flux boundary conditions and non-uniform grids (dzi)
-        in the form of Aj*y_j + Bj+1*y_j+1 + Cj-1*y_j-1
+        Transport tendency as `diffdf`, plus gravitational settling of particles.
+
+        The non-gaseous species are advected with the settling velocity `atm.vs` (upwind).
+
+        Parameters
+        ----------
+        y : np.ndarray
+            Number densities, shape (nz, ni) [cm-3].
+        atm : store.AtmData
+            Atmospheric structure.
+
+        Returns
+        -------
+        np.ndarray
+            Transport tendency -dphi/dz, shape (nz, ni) [cm-3 s-1].
         """
 
         nz = self.cfg.nz
@@ -2540,9 +2957,23 @@ class ODESolver(object):
 
     def diffdf_settling_vm(self, y, atm):
         """
-        added vm for molecular diffusion
-        function of eddy diffusion including molecular diffusion and the settling velocity for particles, with zero-flux boundary conditions and non-uniform grids (dzi)
-        in the form of Aj*y_j + Bj+1*y_j+1 + Cj-1*y_j-1
+        Transport tendency with settling and the advective part of molecular diffusion as `vm`.
+
+        As `diffdf_settling`, but the non-gradient part of the molecular flux is an upwind
+        advection with the velocity `atm.vm`. Selected only with `Config.use_vm_mol`, which
+        `Integration` rejects.
+
+        Parameters
+        ----------
+        y : np.ndarray
+            Number densities, shape (nz, ni) [cm-3].
+        atm : store.AtmData
+            Atmospheric structure.
+
+        Returns
+        -------
+        np.ndarray
+            Transport tendency -dphi/dz, shape (nz, ni) [cm-3 s-1].
         """
 
         nz = self.cfg.nz
@@ -2728,8 +3159,22 @@ class ODESolver(object):
 
     def jac_tot(self, var, atm):
         """
-        jacobian matrix for dn/dt + dphi/dz = P - L (including molecular diffusion)
-        zero-flux BC:  1st derivitive of y is zero
+        Jacobian J of chemistry plus transport, with molecular diffusion.
+
+        Not called by the current code; the solver builds 1/(r h) I - J directly with
+        `lhs_jac_tot`.
+
+        Parameters
+        ----------
+        var : store.Variables
+            Reads `y` [cm-3] and `k`.
+        atm : store.AtmData
+            Atmospheric structure.
+
+        Returns
+        -------
+        np.ndarray
+            Shape (nz ni, nz ni).
         """
 
         nz = self.cfg.nz
@@ -2887,9 +3332,21 @@ class ODESolver(object):
 
     def lhs_jac_tot(self, var, atm):
         """
-        directly constructing lhs = 1./(r*h)*sparse.identity(ni*nz) - dfdy
-        jacobian matrix for dn/dt + dphi/dz = P - L (including molecular diffusion)
-        zero-flux BC:  1st derivitive of y is zero
+        Rosenbrock matrix 1/(r h) I - J for chemistry, eddy and molecular diffusion.
+
+        Matches `diffdf`, including the deposition term `bot_vdep`.
+
+        Parameters
+        ----------
+        var : store.Variables
+            Reads `y` [cm-3], `k` and `dt` [s].
+        atm : store.AtmData
+            Atmospheric structure.
+
+        Returns
+        -------
+        np.ndarray
+            Shape (nz ni, nz ni).
         """
 
         nz = self.cfg.nz
@@ -3081,10 +3538,21 @@ class ODESolver(object):
 
     def lhs_jac_tot_vm(self, var, atm):
         """
-        directly constructing lhs = 1./(r*h)*sparse.identity(ni*nz) - dfdy
-        jacobian matrix for dn/dt + dphi/dz = P - L (including molecular diffusion)
-        zero-flux BC:  1st derivitive of y is zero
-        inc. vm from molecular diffusion
+        Rosenbrock matrix as `lhs_jac_tot`, with the molecular advection velocity `atm.vm`.
+
+        Selected only with `Config.use_vm_mol`, which `Integration` rejects.
+
+        Parameters
+        ----------
+        var : store.Variables
+            Reads `y` [cm-3], `k` and `dt` [s].
+        atm : store.AtmData
+            Atmospheric structure.
+
+        Returns
+        -------
+        np.ndarray
+            Shape (nz ni, nz ni).
         """
         y = var.y.copy()
         nz = self.cfg.nz
@@ -3233,9 +3701,21 @@ class ODESolver(object):
 
     def lhs_jac_no_mol(self, var, atm):
         """
-        directly constructing lhs = 1./(r*h)*sparse.identity(ni*nz) - dfdy
-        jacobian matrix for dn/dt + dphi/dz = P - L (WITHOUT molecular diffusion)
-        zero-flux BC:  1st derivitive of y is zero
+        Rosenbrock matrix 1/(r h) I - J for chemistry and eddy diffusion only.
+
+        Matches `diffdf_no_mol`.
+
+        Parameters
+        ----------
+        var : store.Variables
+            Reads `y` [cm-3], `k` and `dt` [s].
+        atm : store.AtmData
+            Atmospheric structure.
+
+        Returns
+        -------
+        np.ndarray
+            Shape (nz ni, nz ni).
         """
 
         nz = self.cfg.nz
@@ -3329,9 +3809,22 @@ class ODESolver(object):
 
     def lhs_jac_fix_all_bot(self, var, atm):
         """
-        directly constructing lhs = 1./(r*h)*sparse.identity(ni*nz) - dfdy
-        jacobian matrix for dn/dt + dphi/dz = P - L (including molecular diffusion)
-        Fixed all species BC: all species at bottom (y[0]) remains fixed
+        Rosenbrock matrix as `lhs_jac_tot`, with no dependence on the bottom layer.
+
+        The columns of the bottom layer are zero; used by `Ros2.solver_fix_all_bot`, which
+        holds the bottom layer fixed.
+
+        Parameters
+        ----------
+        var : store.Variables
+            Reads `y` [cm-3], `k` and `dt` [s].
+        atm : store.AtmData
+            Atmospheric structure.
+
+        Returns
+        -------
+        np.ndarray
+            Shape (nz ni, nz ni).
         """
 
         nz = self.cfg.nz
@@ -3489,9 +3982,21 @@ class ODESolver(object):
 
     def lhs_jac_no_mol_fix_all_bot(self, var, atm):
         """
-        directly constructing lhs = 1./(r*h)*sparse.identity(ni*nz) - dfdy
-        jacobian matrix for dn/dt + dphi/dz = P - L (WITHOUT molecular diffusion)
-        Fixed all species BC: all species at bottom (y[0]) remains fixed
+        Rosenbrock matrix as `lhs_jac_no_mol`, with no dependence on the bottom layer.
+
+        Used by `Ros2.solver_fix_all_bot` without molecular diffusion.
+
+        Parameters
+        ----------
+        var : store.Variables
+            Reads `y` [cm-3], `k` and `dt` [s].
+        atm : store.AtmData
+            Atmospheric structure.
+
+        Returns
+        -------
+        np.ndarray
+            Shape (nz ni, nz ni).
         """
 
         nz = self.cfg.nz
@@ -3576,9 +4081,21 @@ class ODESolver(object):
 
     def lhs_jac_settling(self, var, atm):
         """
-        directly constructing lhs = 1./(r*h)*sparse.identity(ni*nz) - dfdy
-        jacobian matrix for dn/dt + dphi/dz = P - L (including molecular diffusion and gravitation settling for particles)
-        zero-flux BC:  1st derivitive of y is zero
+        Rosenbrock matrix as `lhs_jac_tot`, plus gravitational settling of particles.
+
+        Matches `diffdf_settling`.
+
+        Parameters
+        ----------
+        var : store.Variables
+            Reads `y` [cm-3], `k` and `dt` [s].
+        atm : store.AtmData
+            Atmospheric structure.
+
+        Returns
+        -------
+        np.ndarray
+            Shape (nz ni, nz ni).
         """
 
         nz = self.cfg.nz
@@ -3801,10 +4318,21 @@ class ODESolver(object):
 
     def lhs_jac_settling_vm(self, var, atm):
         """
-        directly constructing lhs = 1./(r*h)*sparse.identity(ni*nz) - dfdy
-        jacobian matrix for dn/dt + dphi/dz = P - L (including molecular diffusion and gravitation settling for particles)
-        zero-flux BC:  1st derivitive of y is zero
-        inc. vs from molecular diffusion
+        Rosenbrock matrix as `lhs_jac_settling`, with the molecular advection velocity `atm.vm`.
+
+        Matches `diffdf_settling_vm`; selected only with `Config.use_vm_mol`.
+
+        Parameters
+        ----------
+        var : store.Variables
+            Reads `y` [cm-3], `k` and `dt` [s].
+        atm : store.AtmData
+            Atmospheric structure.
+
+        Returns
+        -------
+        np.ndarray
+            Shape (nz ni, nz ni).
         """
         y = var.y.copy()
         nz = self.cfg.nz
@@ -3959,8 +4487,28 @@ class ODESolver(object):
 
     def clip(self, var, para, atm, pos_cut=0, nega_cut=-1):
         """
-        function to clip samll and negative values
-        and to calculate the particle loss
+        Set small and slightly negative densities to zero and update the element totals.
+
+        Values in [nega_cut, pos_cut) become zero, as do negative values with mixing ratio below
+        `Config.mtol`. Then calls `loss` and recomputes `ymix`.
+
+        Parameters
+        ----------
+        var : store.Variables
+            Updates `y` [cm-3], `ymix`, `atom_sum` and `atom_loss`.
+        para : store.Parameters
+            Adds the clipped amounts to `small_y` and `nega_y` [cm-3].
+        atm : store.AtmData
+            Reads `gas_indx`.
+        pos_cut : float
+            Upper limit of the values set to zero [cm-3].
+        nega_cut : float
+            Lower limit of the values set to zero [cm-3].
+
+        Returns
+        -------
+        tuple
+            `(var, para)`.
         """
         y, ymix = var.y, var.ymix.copy()
 
@@ -3984,6 +4532,21 @@ class ODESolver(object):
         return var, para
 
     def loss(self, data_var):
+        """
+        Update the element totals and their relative change since the start.
+
+        Elements in `Config.loss_ex` are skipped.
+
+        Parameters
+        ----------
+        data_var : store.Variables
+            Reads `y` and `atom_ini`; sets `atom_sum` [cm-3] and `atom_loss` [dimensionless].
+
+        Returns
+        -------
+        store.Variables
+            `data_var`.
+        """
 
         y = data_var.y
         atom_list = self.cfg.atom_list
@@ -4008,6 +4571,25 @@ class ODESolver(object):
         return data_var
 
     def step_ok(self, var, para, loss_eps=1e-1, rtol=0.6):
+        """
+        Accept the step if y >= 0, the truncation error is within `rtol`, and the relative
+        element loss changed by less than `loss_eps` over the step.
+
+        Parameters
+        ----------
+        var : store.Variables
+            Reads `y`, `atom_loss` and `atom_loss_prev`.
+        para : store.Parameters
+            Reads `delta`.
+        loss_eps : float
+            Largest allowed change of `atom_loss` per step [dimensionless].
+        rtol : float
+            Largest allowed relative truncation error [dimensionless].
+
+        Returns
+        -------
+        bool
+        """
         if (
             np.all(var.y >= 0)
             and np.amax(
@@ -4024,6 +4606,30 @@ class ODESolver(object):
             return False
 
     def step_reject(self, var, para, loss_eps=1e-1, rtol=0.6):
+        """
+        Reject the step: count the reason, restore y and reduce the time step.
+
+        The time step is multiplied by `Config.dt_var_min`. If it falls below `Config.dt_min`,
+        it is set to `dt_min`, negative densities are set to zero, and the integration moves on
+        from the restored state.
+
+        Parameters
+        ----------
+        var : store.Variables
+            Updates `y` [cm-3] and `dt` [s].
+        para : store.Parameters
+            Increments `delta_count`, `nega_count` or `loss_count`.
+        loss_eps : float
+            Not used.
+        rtol : float
+            Largest allowed relative truncation error [dimensionless].
+
+        Returns
+        -------
+        bool
+            True if the time step reached `dt_min` and the integration should move on,
+            otherwise False.
+        """
 
         if para.delta > rtol:  # truncation error larger than the tolerence value
             para.delta_count += 1
@@ -4057,7 +4663,19 @@ class ODESolver(object):
 
     def reset_y(self, var, dt_reduc=0.5):
         """
-        reset y and reduce dt by dt_reduc
+        Restore y to the previous step and multiply the time step by `dt_reduc`.
+
+        Parameters
+        ----------
+        var : store.Variables
+            Updates `y` [cm-3] and `dt` [s].
+        dt_reduc : float
+            Factor applied to `dt`.
+
+        Returns
+        -------
+        store.Variables
+            `var`.
         """
 
         # reset and store y and dt
@@ -4068,6 +4686,16 @@ class ODESolver(object):
         return var
 
     def print_nega(self, data_var, data_para):
+        """
+        Log where and in which species the solution went negative.
+
+        Parameters
+        ----------
+        data_var : store.Variables
+            Reads `y`, `t` and `dt`.
+        data_para : store.Parameters
+            Reads `count`.
+        """
 
         nega_i = np.where(data_var.y < 0)
         log.warning(
@@ -4084,6 +4712,14 @@ class ODESolver(object):
         log.warning(spacer)
 
     def print_lossBig(self, para):
+        """
+        Log that a step was rejected because the element conservation changed too much.
+
+        Parameters
+        ----------
+        para : store.Parameters
+            Reads `count`.
+        """
 
         log.warning('Element conservation is violated too large')
         log.warning('at step: ' + str(para.count))
@@ -4091,9 +4727,22 @@ class ODESolver(object):
 
     def thomas_vec(a, b, c, d):
         """
-        Thomas vectorized solver, a b c d refer to http://en.wikipedia.org/wiki/Tridiagonal_matrix_algorithm
-        d is a matrix
-        not used in this current version
+        Solve a tridiagonal system for several right-hand sides with the Thomas algorithm.
+
+        Not used by the current code. It has no `self` argument, so it only works when called
+        through the class.
+
+        Parameters
+        ----------
+        a, b, c : np.ndarray
+            Sub-, main and super-diagonal, length nf.
+        d : np.ndarray
+            Right-hand sides, nf rows.
+
+        Returns
+        -------
+        np.ndarray
+            Solution, shape (nf, number of right-hand sides).
         """
         # number of equations
         nf = len(a)
@@ -4120,7 +4769,21 @@ class ODESolver(object):
         return x
 
     def compute_tau(self, var, atm):
-        """compute the optical depth"""
+        """
+        Compute the vertical optical depth at the interfaces.
+
+        tau[j] sums n sigma dz over the layers from j to the top, for absorption by the
+        photodissociating and photoionising species (temperature-dependent cross sections where
+        available) and Rayleigh scattering by `Config.scat_sp`; tau is zero at the top.
+
+        Parameters
+        ----------
+        var : store.Variables
+            Reads `y` [cm-3] and the cross sections [cm2]; sets `tau`, shape (nz + 1, nbin)
+            [dimensionless].
+        atm : store.AtmData
+            Reads `dz` [cm].
+        """
 
         nz = self.cfg.nz
 
@@ -4148,7 +4811,28 @@ class ODESolver(object):
 
     # Lines like chi = zeta_m**2*tran**2 - zeta_p**2 doing large np 2D array multiplication
     # can be sped up with cython
-    def compute_flux(self, var, atm):  # Vectorise this loop!
+    def compute_flux(self, var, atm):
+        """
+        Compute the direct and diffuse stellar flux and the actinic flux in each layer.
+
+        The direct beam follows Beer's law along the zenith angle `Config.sl_angle`. The diffuse
+        flux comes from a two-stream solution with the Eddington coefficient `Config.edd`,
+        isotropic scattering (`phy_const.ag0` = 0), the single-scattering albedo from the
+        Rayleigh cross sections and the absorption of the photodissociating species, and no upward diffuse flux at the bottom. The
+        actinic flux is the direct beam plus the diffuse fluxes divided by `edd`, converted to
+        photons.
+
+        Parameters
+        ----------
+        var : store.Variables
+            Reads `tau`, `sflux_top` [erg cm-2 s-1 nm-1], `ymix`, the cross sections [cm2] and
+            `bins` [nm]. Sets `sflux`, `dflux_u` and `dflux_d` at the interfaces, shape
+            (nz + 1, nbin) [erg cm-2 s-1 nm-1]; `aflux` at the layer centres, shape (nz, nbin)
+            [photons cm-2 s-1 nm-1]; `prev_aflux`; `aflux_change` [dimensionless]; and
+            `zeta_m`, `zeta_p` and `tran`.
+        atm : store.AtmData
+            Not used.
+        """
         # change it to stagerred grids
         # top: stellar flux
         # bottom BC: zero upcoming flux
@@ -4287,9 +4971,23 @@ class ODESolver(object):
             / var.aflux[var.aflux > self.cfg.flux_atol]
         )
 
-    def compute_J(self, var, atm):  # the vectorized version
+    def compute_J(self, var, atm):
         """
-        computes photodissociation/photoionization rates; including T-dependent cross sections
+        Compute the photodissociation rates and put them into the rate coefficients.
+
+        J = integral of aflux times the branch cross section over wavelength, with the
+        trapezoidal rule on the two parts of the grid, using the temperature-dependent cross
+        sections where available. Each branch rate, times `Config.f_diurnal`, becomes the rate
+        coefficient of its reaction unless the reaction is in `Config.remove_list`.
+
+        Parameters
+        ----------
+        var : store.Variables
+            Reads `aflux` [photons cm-2 s-1 nm-1], `cross_J` and `cross_J_T` [cm2], `dbin1`,
+            `dbin2` [nm] and `sflux_din12_indx`. Sets `J_sp[(sp, branch)]`, shape (nz,) [s-1],
+            with branch 0 the sum over branches, and updates `k`.
+        atm : store.AtmData
+            Not used.
         """
         flux = var.aflux
         nz = self.cfg.nz
@@ -4383,8 +5081,17 @@ class ODESolver(object):
 
     def compute_Jion(self, var, atm):
         """
-        compute the photoionization rate
-        haven't considered any temperature dependence yet
+        Compute the photoionisation rates and put them into the rate coefficients.
+
+        As `compute_J`, with `cross_Jion` and no temperature dependence.
+
+        Parameters
+        ----------
+        var : store.Variables
+            Reads `aflux` [photons cm-2 s-1 nm-1] and `cross_Jion` [cm2]. Sets
+            `Jion_sp[(sp, branch)]`, shape (nz,) [s-1], and updates `k`.
+        atm : store.AtmData
+            Not used.
         """
         nz = self.cfg.nz
         flux = var.aflux
@@ -4449,10 +5156,21 @@ class ODESolver(object):
 
 class Ros2(ODESolver):
     """
-    class inheritance from ODEsolver for 2nd order Rosenbrock solver
+    Second-order Rosenbrock solver (Verwer et al. 1997) with a banded linear solver.
+
+    With r = 1 + 1/sqrt(2) and the matrix A = 1/(r h) I - J, one step solves
+    A k1 = f(y) and A k2 = f(y + k1/r) - 2 k1 / (r h), and sets
+    y_new = y + 3/(2r) k1 + 1/(2r) k2. The truncation error is estimated from
+    |y_new - (y + k1/r)|.
     """
 
     def __init__(self, vulcan_cfg: Config):
+        """
+        Parameters
+        ----------
+        vulcan_cfg : Config
+            Run configuration.
+        """
         # ODESolver.__init__(self)
         super().__init__(vulcan_cfg)
 
@@ -4460,12 +5178,30 @@ class Ros2(ODESolver):
     def band_lu(a, nb):
         """
         LU-factorise the block-tridiagonal matrix a in LAPACK band storage.
-        a : square block-tridiagonal matrix of nb x nb blocks (nb = number of species)
 
         Chemistry couples the nb species within a layer (|row - col| <= nb - 1), and
         transport couples each species only to itself in the adjacent layers
         (|row - col| = nb), so both the lower and the upper bandwidth are exactly nb.
         The factors are computed once and reused for both Rosenbrock stages.
+
+        Parameters
+        ----------
+        a : np.ndarray
+            Square block-tridiagonal matrix of nb x nb blocks.
+        nb : int
+            Block size, the number of species.
+
+        Returns
+        -------
+        tuple
+            `(lub, piv, nb)`, the input of `band_solve`.
+
+        Raises
+        ------
+        ValueError
+            If a contains infs or NaNs.
+        np.linalg.LinAlgError
+            If a is singular.
         """
         n = a.shape[0]
         # dgbtrf stores a[i, j] at ab[2*nb + i - j, j]; the top nb rows hold the fill-in
@@ -4489,7 +5225,19 @@ class Ros2(ODESolver):
     @staticmethod
     def band_solve(lu, b):
         """
-        Solve a x = b with the factors returned by band_lu.
+        Solve a x = b with the factors returned by `band_lu`.
+
+        Parameters
+        ----------
+        lu : tuple
+            Output of `band_lu`.
+        b : np.ndarray
+            Right-hand side.
+
+        Returns
+        -------
+        np.ndarray
+            Solution x.
         """
         lub, piv, nb = lu
         b = np.asarray_chkfinite(b)
@@ -4500,8 +5248,29 @@ class Ros2(ODESolver):
 
     def solver(self, var, atm, para):
         """
-        2nd order Rosenbrock [Verwer et al. 1997] with banded-matrix solver
-        with switches to include the molecular diffusion or not
+        Take one Rosenbrock step of chemistry and transport.
+
+        The transport terms and matrix are chosen by `use_moldiff` and `use_settling`
+        (`diffdf` / `lhs_jac_tot`, `diffdf_settling` / `lhs_jac_settling`, or
+        `diffdf_no_mol` / `lhs_jac_no_mol`). Species held fixed by condensation
+        (`fix_species`) and the electron with `use_ion` are kept out of the update, and the
+        species in `use_fix_sp_bot` are reset to their fixed bottom mixing ratios. The truncation error ignores species
+        below `mtol` or `atol`, the bottom layer with bottom boundary conditions, and the
+        condensing species. With `use_ion`, the electron density is then set by charge balance.
+
+        Parameters
+        ----------
+        var : store.Variables
+            Reads `y`, `ymix`, `dt` [s] and `k`; sets `y` [cm-3] and `ymix`.
+        atm : store.AtmData
+            Atmospheric structure.
+        para : store.Parameters
+            Sets `delta` [dimensionless].
+
+        Returns
+        -------
+        tuple
+            `(var, para)`.
         """
 
         nz = self.cfg.nz
@@ -4669,8 +5438,25 @@ class Ros2(ODESolver):
 
     def solver_fix_all_bot(self, var, atm, para):
         """
-        2nd order Rosenbrock [Verwer et al. 1997] with banded-matrix solver
-        with switches to include the molecular diffusion or not
+        Take one Rosenbrock step with the bottom-layer composition held fixed.
+
+        As `solver`, with `lhs_jac_fix_all_bot` or `lhs_jac_no_mol_fix_all_bot`, and the bottom
+        mixing ratios reset after the step. `naming_solver` always selects `solver`, so this
+        method is not used by the current code.
+
+        Parameters
+        ----------
+        var : store.Variables
+            Reads `y`, `ymix`, `dt` [s] and `k`; sets `y` [cm-3] and `ymix`.
+        atm : store.AtmData
+            Atmospheric structure.
+        para : store.Parameters
+            Sets `delta` [dimensionless].
+
+        Returns
+        -------
+        tuple
+            `(var, para)`.
         """
 
         nz = self.cfg.nz
@@ -4740,6 +5526,14 @@ class Ros2(ODESolver):
         return var, para
 
     def naming_solver(self, para):
+        """
+        Set `para.solver_str` to the solver method used by `one_step` (always 'solver').
+
+        Parameters
+        ----------
+        para : store.Parameters
+            Sets `solver_str`.
+        """
         if self.cfg.use_moldiff:
             log.info('Include molecular diffusion.')
         else:
@@ -4747,6 +5541,27 @@ class Ros2(ODESolver):
         para.solver_str = 'solver'
 
     def one_step(self, var, atm, para):
+        """
+        Take solver steps until one is accepted.
+
+        After each step, `clip` cleans the densities. The loop ends when `step_ok` accepts the
+        step, or when `step_reject` reaches `Config.dt_min`; otherwise the step is repeated
+        with a smaller time step.
+
+        Parameters
+        ----------
+        var : store.Variables
+            State, updated in place.
+        atm : store.AtmData
+            Atmospheric structure.
+        para : store.Parameters
+            Counters, updated in place.
+
+        Returns
+        -------
+        tuple
+            `(var, para)`.
+        """
 
         while True:
             var, para = getattr(self, para.solver_str)(var, atm, para)
@@ -4769,7 +5584,27 @@ class Ros2(ODESolver):
 
     def step_size(self, var, para, dt_var_min=2, dt_var_max=0.5, dt_min=1e-10, dt_max=1e18):
         """
-        step-size control by delta(truncation error) for the Rosenbrock method
+        Set the next time step from the truncation error of the last step.
+
+        h_new = h * 0.9 (rtol / delta)^(1/2), with the factor limited to
+        [`dt_var_min`, `dt_var_max`] and h_new to [`dt_min`, `dt_max`]; a zero delta counts as
+        0.01 rtol.
+
+        Parameters
+        ----------
+        var : store.Variables
+            Updates `dt` [s].
+        para : store.Parameters
+            Reads `delta` [dimensionless].
+        dt_var_min, dt_var_max : float
+            Smallest and largest factor applied to the time step.
+        dt_min, dt_max : float
+            Smallest and largest time step [s].
+
+        Returns
+        -------
+        store.Variables
+            `var`.
         """
         h = var.dt
         delta = para.delta
@@ -4792,10 +5627,34 @@ class Ros2(ODESolver):
 
 
 class Output(object):
+    """
+    Progress messages and output files of a run.
+
+    The formats in `Config.save_type` are 'netcdf' (`.nc`), 'pickle' (`.pkl`) and 'plain'
+    (`.var`, `.atm` and `.par` text files), named from `Config.out_name` in
+    `Config.output_dir`.
+    """
+
     SAVE_TYPES = ('netcdf', 'pickle', 'plain')
     EXTENSIONS = {'netcdf': ['.nc'], 'pickle': ['.pkl'], 'plain': ['.var', '.atm', '.par']}
 
     def __init__(self, vulcan_cfg: Config):
+        """
+        Prepare the output folders.
+
+        With `Config.clean_output`, deletes `output_dir` first (see `safe_rm`). Creates
+        `output_dir` and `plot_dir`, and removes existing output files of the requested formats.
+
+        Parameters
+        ----------
+        vulcan_cfg : Config
+            Run configuration.
+
+        Raises
+        ------
+        ValueError
+            If `save_type` names an unknown format.
+        """
 
         self.cfg = vulcan_cfg
         self.save_types = self._save_types()
@@ -4855,6 +5714,17 @@ class Output(object):
         return os.path.join(self.cfg.output_dir, stem + ext)
 
     def print_prog(self, var, para):
+        """
+        Log the time, the step number, `longdy`, `longdydt`, `dt`, and where the composition
+        changes most.
+
+        Parameters
+        ----------
+        var : store.Variables
+            Reads `t`, `longdy`, `longdydt` and `dt`.
+        para : store.Parameters
+            Reads `count` and `where_varies_most`.
+        """
         indx_max = np.nanargmax(para.where_varies_most)
         log.info(
             'Elapsed time: '
@@ -4876,6 +5746,16 @@ class Output(object):
         log.info(spacer)
 
     def print_end_msg(self, var, para):
+        """
+        Log the final element loss and the counts of rejected steps.
+
+        Parameters
+        ----------
+        var : store.Variables
+            Reads `atom_loss`.
+        para : store.Parameters
+            Reads `nega_count`, `loss_count` and `delta_count`.
+        """
         log.info('Total atom loss:')
         for atom in self.cfg.atom_list:
             log.info(atom + ': ' + str(var.atom_loss[atom]) + ' ')
@@ -4886,6 +5766,24 @@ class Output(object):
         log.info('------ Live long and prosper \\V/ ------')
 
     def save_out(self, var, atm, para):
+        """
+        Make the final plots and write the output files.
+
+        Plots the evolution (`use_plot_evo`) and the final mixing ratios to `plot_dir/mix.<fmt>`
+        (`use_plot_end`). The pickle holds a dict with the keys 'variable' (the attributes in
+        `var.var_save`, plus `species` and `nr`), 'atm' and 'parameter'; the plain files hold
+        the same three groups as text. With `save_evolution`, the time series in
+        `var.var_evol_save` are kept every `save_evo_frq` steps.
+
+        Parameters
+        ----------
+        var : store.Variables
+            Final state; its time series are converted to arrays in place.
+        atm : store.AtmData
+            Atmospheric structure.
+        para : store.Parameters
+            Counters.
+        """
         output_dir = self.cfg.output_dir
 
         if not os.path.exists(output_dir):

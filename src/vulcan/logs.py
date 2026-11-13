@@ -14,6 +14,12 @@ import sys
 
 
 class CustomFormatter(logging.Formatter):
+    """
+    Terminal log formatter that colours the level name with ANSI escape codes.
+
+    INFO is green, WARNING yellow, DEBUG cyan and ERROR red.
+    """
+
     part1 = '[\033['
 
     info = '32'
@@ -31,6 +37,19 @@ class CustomFormatter(logging.Formatter):
     }
 
     def format(self, record):
+        """
+        Format a log record with the colour of its level.
+
+        Parameters
+        ----------
+        record : logging.LogRecord
+            The record to format.
+
+        Returns
+        -------
+        str
+            The formatted message.
+        """
         log_fmt = self.FORMATS.get(record.levelno)
         formatter = logging.Formatter(log_fmt)
         return formatter.format(record)
@@ -38,6 +57,32 @@ class CustomFormatter(logging.Formatter):
 
 # Custom logger instance
 def setup_logger(logpath: str = 'new.log', level: str = 'INFO', logterm: bool = True):
+    """
+    Set up the `fwl` logger, writing to a file and optionally to the terminal.
+
+    Existing handlers of the logger are removed and an existing file at `logpath` is
+    deleted. The function also replaces `sys.excepthook`, so that uncaught exceptions are
+    logged as CRITICAL.
+
+    Parameters
+    ----------
+    logpath : str
+        Path to the log file.
+    level : str
+        Log level, one of 'INFO', 'DEBUG', 'WARNING' or 'ERROR' (case insensitive).
+    logterm : bool
+        Also write coloured output to stdout.
+
+    Returns
+    -------
+    logging.Logger
+        The configured `fwl` logger.
+
+    Raises
+    ------
+    ValueError
+        If `level` is not one of the accepted levels.
+    """
     logger_name = 'fwl'
 
     # https://stackoverflow.com/a/61457119
@@ -73,6 +118,7 @@ def setup_logger(logpath: str = 'new.log', level: str = 'INFO', logterm: bool = 
     # Capture unhandled exceptions
     # https://stackoverflow.com/a/16993115
     def handle_exception(exc_type, exc_value, exc_traceback):
+        """Log an uncaught exception; a KeyboardInterrupt is passed on to the default hook."""
         if issubclass(exc_type, KeyboardInterrupt):
             custom_logger.error('KeyboardInterrupt')
             sys.__excepthook__(exc_type, exc_value, exc_traceback)

@@ -54,13 +54,27 @@ def agni_dir(vulcan_cfg: Config) -> str:
 
 
 def activate_julia(vulcan_cfg: Config):
-    """Load AGNI into Julia, unless a caller (such as PROTEUS) has loaded it already.
+    """
+    Load AGNI into Julia, unless a caller (such as PROTEUS) has loaded it already.
 
     When AGNI is already loaded, its Julia environment and logger are left as they are.
+    Otherwise the Julia environment in `agni_dir` is activated, AGNI is imported and its
+    log goes to `agni_recent.log` in `Config.output_dir`.
+
+    Parameters
+    ----------
+    vulcan_cfg : Config
+        VULCAN configuration; `agni_dir` and `output_dir` are used.
 
     Returns
     -------
-    The Julia `Main` module.
+    juliacall module
+        The Julia `Main` module.
+
+    Raises
+    ------
+    FileNotFoundError
+        If AGNI is not loaded yet and `agni.jl` is not in `agni_dir`.
     """
     jl = _julia()
     if bool(jl.seval('isdefined(Main, :AGNI)')):
@@ -95,14 +109,40 @@ def _instellation(vulcan_cfg: Config) -> float:
 
 
 def init_agni_atmos(vulcan_cfg: Config, atm, var):
-    """Set up and allocate an AGNI atmosphere on VULCAN's pressure range.
+    """
+    Set up and allocate an AGNI atmosphere on VULCAN's pressure range.
 
-    The composition starts from VULCAN's column-median mixing ratios and the temperature
-    from VULCAN's profile.
+    The composition starts from VULCAN's column-median mixing ratios, leaving out species
+    with '_' in their name (condensates and excited states), and the temperature from
+    VULCAN's profile (`set_temperature`). The instellation comes from `_instellation`
+    [W m-2]. The boundary pressures `atm.pico[0]` and `atm.pico[-1]` are converted from
+    dyn cm-2 to bar, gravity and planet radius from CGS to SI, and `Config.sl_angle` from
+    radians to degrees.
+
+    A `runtime.sf` spectral file in `Config.output_dir` is used unchanged when it exists;
+    otherwise AGNI makes it from `Config.spectral_file` in `agni_dir` and the stellar
+    spectrum. FastChem files go to `agni_fastchem` in `Config.output_dir`.
+
+    Parameters
+    ----------
+    vulcan_cfg : Config
+        VULCAN configuration.
+    atm : store.AtmData
+        Atmosphere data; reads `pico` [dyn cm-2], `pco` [dyn cm-2] and `Tco` [K].
+    var : store.Variables
+        Model variables; reads `ymix`.
 
     Returns
     -------
     AGNI.atmosphere.Atmos_t
+        The allocated AGNI atmosphere.
+
+    Raises
+    ------
+    ValueError
+        If `spectral_file = 'greygas'` is combined with `use_rayleigh`.
+    RuntimeError
+        If AGNI fails to set up or allocate the atmosphere.
     """
     if vulcan_cfg.spectral_file == 'greygas' and vulcan_cfg.use_rayleigh:
         raise ValueError('AGNI does not support Rayleigh scattering with greygas')
@@ -172,15 +212,29 @@ def init_agni_atmos(vulcan_cfg: Config, atm, var):
 
 
 def deallocate_atmos(atmos):
-    """Deallocate an AGNI atmosphere."""
+    """
+    Deallocate an AGNI atmosphere.
+
+    Parameters
+    ----------
+    atmos : AGNI.atmosphere.Atmos_t
+        The atmosphere to deallocate.
+    """
     _julia().AGNI.atmosphere.deallocate_b(atmos)
 
 
 def set_temperature(atmos, pco, tco):
-    """Set the AGNI temperature profile from VULCAN's.
+    """
+    Set the AGNI temperature profile from VULCAN's.
+
+    The temperature is interpolated in log pressure onto AGNI's layers and levels (see
+    `vulcan.climate.interp_logp`); the surface temperature is that of the last AGNI
+    level. AGNI's layer properties are then recomputed.
 
     Parameters
     ----------
+    atmos : AGNI.atmosphere.Atmos_t
+        AGNI atmosphere, updated in place.
     pco : np.ndarray
         VULCAN layer-centre pressures [dyn cm-2].
     tco : np.ndarray
@@ -195,18 +249,21 @@ def set_temperature(atmos, pco, tco):
 
 
 def set_composition(atmos, pco, species: list[str], ymix):
-    """Give an AGNI atmosphere VULCAN's mixing ratio profiles (see `map_composition`).
+    """
+    Give an AGNI atmosphere VULCAN's mixing ratio profiles (see `map_composition`).
 
     A gas that VULCAN lacks keeps its profile from before condensation (`gas_ovmr`).
 
     Parameters
     ----------
+    atmos : AGNI.atmosphere.Atmos_t
+        AGNI atmosphere; `gas_vmr` and `gas_ovmr` are updated in place.
     pco : np.ndarray
         VULCAN layer-centre pressures [dyn cm-2].
     species : list of str
         VULCAN species names, the columns of `ymix`.
     ymix : np.ndarray
-        VULCAN volume mixing ratios [layer, species].
+        VULCAN volume mixing ratios, shape (nz, ni) [1].
     """
     # gas_ovmr, not the rained-out gas_vmr, so a gas VULCAN lacks keeps its full inventory
     current = {str(g): np.asarray(atmos.gas_ovmr[g], dtype=float) for g in atmos.gas_names}
@@ -217,9 +274,22 @@ def set_composition(atmos, pco, species: list[str], ymix):
 
 
 def climate_update(atmos) -> ClimateUpdate:
-    """The temperature and eddy diffusion of an AGNI atmosphere, in VULCAN's CGS units.
+    """
+    The temperature and eddy diffusion of an AGNI atmosphere, in VULCAN's CGS units.
 
-    Temperature is on AGNI's layer centres and Kzz on its level edges.
+    Temperature is on AGNI's layer centres and Kzz on its level edges. Pressures are
+    converted from Pa to dyn cm-2 and Kzz from m2 s-1 to cm2 s-1.
+
+    Parameters
+    ----------
+    atmos : AGNI.atmosphere.Atmos_t
+        AGNI atmosphere.
+
+    Returns
+    -------
+    ClimateUpdate
+        `p` [dyn cm-2] and `tmp` [K] on the layers, `p_kzz` [dyn cm-2] and `kzz`
+        [cm2 s-1] on the levels.
     """
     return ClimateUpdate(
         p=np.asarray(atmos.p, dtype=float) * PA_TO_DYN,
@@ -278,11 +348,46 @@ class AgniClimate:
     """
 
     def __init__(self, vulcan_cfg: Config, atm, var):
+        """
+        Parameters
+        ----------
+        vulcan_cfg : Config
+            VULCAN configuration.
+        atm : store.AtmData
+            Atmosphere data, passed to `init_agni_atmos`.
+        var : store.Variables
+            Model variables, passed to `init_agni_atmos`.
+        """
         self.cfg = vulcan_cfg
         activate_julia(vulcan_cfg)
         self.atmos = init_agni_atmos(vulcan_cfg, atm, var)
 
     def __call__(self, pco, tco, species, ymix) -> ClimateUpdate:
+        """
+        Run AGNI with VULCAN's present composition and return the new profiles.
+
+        Parameters
+        ----------
+        pco : np.ndarray
+            VULCAN layer-centre pressures [dyn cm-2].
+        tco : np.ndarray
+            VULCAN temperatures on `pco` [K].
+        species : list of str
+            VULCAN species names, the columns of `ymix`.
+        ymix : np.ndarray
+            VULCAN volume mixing ratios, shape (nz, ni) [1].
+
+        Returns
+        -------
+        ClimateUpdate
+            With `solve_rce`, AGNI's temperature and Kzz (see `climate_update`); otherwise
+            `pco` and `tco` unchanged, with AGNI's Kzz [cm2 s-1].
+
+        Raises
+        ------
+        RuntimeError
+            If AGNI does not converge with `solve_rce`.
+        """
         log.info('Running climate calculation...')
         set_composition(self.atmos, pco, species, ymix)
         if self.cfg.solve_rce:

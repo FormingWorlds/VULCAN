@@ -394,6 +394,21 @@ def plot_evo_inter(cfg, species, var, atm, plot_j=-1, plot_ymin=1e-16, dn=1):
 
 
 def plot_TP(cfg, atm):
+    """
+    Plot the initial temperature and Kzz profiles.
+
+    Temperature [K] is drawn as a solid line and Kzz [cm^2 s^-1] as a dashed line on a
+    second x axis, against pressure [bar] or, with `cfg.plot_height`, height [km].
+    The figure is saved as `TPK_initial.<plot_fmt>` in `cfg.plot_dir`; the name is
+    appended to `plot_dir` directly, so `plot_dir` must end with a path separator.
+
+    Parameters
+    ----------
+    cfg : Config
+        VULCAN configuration.
+    atm : AtmData
+        Atmosphere data with `Tco`, `Kzz`, `pco` and `pico` [dyn cm^-2] and `zmco` [cm].
+    """
     plot_dir = cfg.plot_dir
     # plt.figure('TPK')
     fig, ax1 = plt.subplots()
