@@ -197,6 +197,8 @@ def set_temperature(atmos, pco, tco):
 def set_composition(atmos, pco, species: list[str], ymix):
     """Give an AGNI atmosphere VULCAN's mixing ratio profiles (see `map_composition`).
 
+    A gas that VULCAN lacks keeps its profile from before condensation (`gas_ovmr`).
+
     Parameters
     ----------
     pco : np.ndarray
@@ -206,7 +208,8 @@ def set_composition(atmos, pco, species: list[str], ymix):
     ymix : np.ndarray
         VULCAN volume mixing ratios [layer, species].
     """
-    current = {str(g): np.asarray(atmos.gas_vmr[g], dtype=float) for g in atmos.gas_names}
+    # gas_ovmr, not the rained-out gas_vmr, so a gas VULCAN lacks keeps its full inventory
+    current = {str(g): np.asarray(atmos.gas_ovmr[g], dtype=float) for g in atmos.gas_names}
     p_layers = np.asarray(atmos.p, dtype=float) * PA_TO_DYN
     for gas, prof in map_composition(pco, species, ymix, p_layers, current).items():
         atmos.gas_vmr[gas][:] = prof
@@ -269,8 +272,9 @@ class AgniClimate:
     """Climate hook that solves the temperature profile with AGNI (see `vulcan.climate`).
 
     With `solve_rce = True` AGNI solves for radiative-convective equilibrium with the
-    surface condition `agni_sol_type`. With `solve_rce = False` VULCAN's temperature is kept,
-    and AGNI only computes the convective fluxes and the eddy diffusion profile from it.
+    surface condition `agni_sol_type`. With `solve_rce = False` VULCAN's temperature is
+    returned unchanged, on VULCAN's own grid, and AGNI only computes the convective fluxes
+    and the eddy diffusion profile from it.
     """
 
     def __init__(self, vulcan_cfg: Config, atm, var):
@@ -285,12 +289,17 @@ class AgniClimate:
             log.info('Using nonlinear solver to conserve fluxes')
             if not _solve_energy(self.atmos, self.cfg):
                 raise RuntimeError('AGNI did not converge at this climate update')
-        else:
-            log.info('Using the present temperature profile')
-            set_temperature(self.atmos, pco, tco)
-            _julia().AGNI.energy.calc_fluxes_b(self.atmos, convective=True)
+            log.info(spacer)
+            return climate_update(self.atmos)
+
+        # Keep the temperature on VULCAN's own grid: a round trip through AGNI's grid would
+        # smooth it at every update. AGNI only fills Kzz from it.
+        log.info('Using the present temperature profile')
+        set_temperature(self.atmos, pco, tco)
+        _julia().AGNI.energy.calc_fluxes_b(self.atmos, convective=True)
+        update = climate_update(self.atmos)
         log.info(spacer)
-        return climate_update(self.atmos)
+        return ClimateUpdate(p=pco, tmp=tco, p_kzz=update.p_kzz, kzz=update.kzz)
 
     def close(self):
         """Deallocate the AGNI atmosphere."""

@@ -988,6 +988,24 @@ class ReadRate(object):
                 var.cross_scat[sp][n] = inter_scat(ld)
 
 
+def _state_copy(obj) -> dict:
+    """Copy of the attributes of a state container, enough to undo `update_climate`.
+
+    Arrays and dicts are copied (a dict one level deep, its arrays copied), since the
+    update overwrites both in place; lists such as the step histories are only appended to
+    by the integration, so they are shared.
+    """
+    out = {}
+    for key, val in vars(obj).items():
+        if isinstance(val, np.ndarray):
+            out[key] = val.copy()
+        elif isinstance(val, dict):
+            out[key] = {k: v.copy() if isinstance(v, np.ndarray) else v for k, v in val.items()}
+        else:
+            out[key] = val
+    return out
+
+
 class Integration(object):
     """
     time-stepping until the stopping criteria (steady-state) is satisfied
@@ -1271,15 +1289,14 @@ class Integration(object):
     def _refresh_densities(self, var, atm):
         """Number densities at the fixed pressures and the new temperature, same mixing ratios.
 
+        Condensates are rescaled with the gas, since their mixing ratios are relative to the
+        gas density; the column of each species, n dz with dz proportional to T, is then kept.
         The element totals that `loss` compares with change with the number densities, so
         they are rescaled keeping the relative element loss accumulated so far.
         """
         atm.M = atm.pco / (kb * atm.Tco)
         atm.n_0 = atm.M.copy()
-        if self.cfg.use_condense:
-            var.y[:, atm.gas_indx] = np.vstack(atm.n_0) * var.ymix[:, atm.gas_indx]
-        else:
-            var.y = np.vstack(atm.n_0) * var.ymix
+        var.y = np.vstack(atm.n_0) * var.ymix
         for atom in self.cfg.atom_list:
             total = np.sum(
                 [compo[compo_row.index(species[i])][atom] * var.y[:, i] for i in range(ni)]
@@ -1465,12 +1482,18 @@ class Integration(object):
         """At a chemical steady state, update the climate once more and test the change.
 
         Returns True when the largest relative temperature change is at most `agni_T_rtol`.
-        Otherwise the integration continues from the updated state, unless this was the
+        The state then goes back to the one before this update (temperature, Kzz, rates and
+        every other refreshed quantity), which is the state the chemistry is steady for, so
+        that is what the run saves; `para.climate_dT` still records the update. Otherwise the
+        integration continues from the updated state, unless this was the
         `agni_max_calls`-th such update, which sets `end_case = 4`.
         """
         para.climate_iter += 1
+        saved = (_state_copy(var), _state_copy(atm))
         d_tmp = self.update_climate(self.climate, var, atm, para, self.make_atm)
         if d_tmp <= self.cfg.agni_T_rtol:
+            vars(var).update(saved[0])
+            vars(atm).update(saved[1])
             return True
         if para.climate_iter >= self.cfg.agni_max_calls:
             log.warning(

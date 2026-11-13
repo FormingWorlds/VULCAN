@@ -49,15 +49,18 @@ def check_climate_config(vulcan_cfg: Config, climate=None) -> None:
     Raises
     ------
     ValueError
-        If `Kzz_prof = 'climate'` has no climate to come from, if temperature-dependent
-        cross sections are requested with a climate (they are read once, at the start), or
-        if `agni_T_rtol` or `agni_max_calls` is not positive.
+        If `Kzz_prof = 'climate'` has no climate to come from; if temperature-dependent
+        cross sections (read once, at the start) or fixed species (held at densities of the
+        old temperature) are requested with a climate; or if `agni_T_rtol` or
+        `agni_max_calls` is not positive.
     """
     coupled = climate is not None or vulcan_cfg.agni_call_frq > 0
     if vulcan_cfg.Kzz_prof == 'climate' and not coupled:
         raise ValueError("Kzz_prof = 'climate' needs a climate hook or agni_call_frq > 0")
     if coupled and vulcan_cfg.T_cross_sp:
         raise ValueError('T_cross_sp must be empty when the climate updates the temperature')
+    if coupled and vulcan_cfg.fix_species:
+        raise ValueError('fix_species must be empty when the climate updates the temperature')
     if not vulcan_cfg.agni_T_rtol > 0:
         raise ValueError(f'agni_T_rtol must be positive, got {vulcan_cfg.agni_T_rtol}')
     if not vulcan_cfg.agni_max_calls >= 1:

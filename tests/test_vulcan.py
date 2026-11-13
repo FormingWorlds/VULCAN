@@ -31,12 +31,14 @@ def test_check_climate_config_accepts_the_defaults_and_a_coupled_setup():
     [
         (dict(Kzz_prof='climate'), False, 'needs a climate hook'),
         (dict(T_cross_sp=['H2O']), True, 'T_cross_sp'),
+        (dict(fix_species=['H2O_l_s']), True, 'fix_species'),
         (dict(agni_T_rtol=0.0), False, 'agni_T_rtol'),
         (dict(agni_max_calls=0), False, 'agni_max_calls'),
     ],
     ids=[
         'kzz-without-climate',
         'temperature-dependent-cross-sections',
+        'fixed-species',
         'zero-rtol',
         'no-calls',
     ],

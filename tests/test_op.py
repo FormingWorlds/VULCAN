@@ -963,6 +963,39 @@ def test_steady_state_climate_updates_stop_when_the_temperature_settles(state):
 
 
 @pytest.mark.unit
+def test_settled_climate_update_leaves_the_state_the_chemistry_is_steady_for(state):
+    """When the update at a steady state changes T by less than agni_T_rtol, the run ends
+    with the temperature, Kzz, densities and rates the chemistry was steady for, not with
+    those of the update; the update is still recorded.
+
+    The update here changes T by 0.5 % and doubles Kzz; keeping it would save a chemistry
+    that was never integrated at that Kzz.
+    """
+    cfg, var, atm, para, integ, make_atm = _climate_setup(state)
+    cfg.Kzz_prof, cfg.agni_T_rtol = 'climate', 1e-2
+    p_clim = np.logspace(np.log10(atm.pico[-1]) - 1, np.log10(atm.pico[0]) + 1, 30)
+
+    def hook(pco, tco, species, ymix):
+        return ClimateUpdate(p=pco, tmp=tco * 1.005, p_kzz=p_clim, kzz=2e5 + 0.0 * p_clim)
+
+    integ.climate, integ.make_atm = hook, make_atm
+    para.start_time = 0.0
+    _history(var, para, cfg.count_min + 10)
+    t_before, kzz_before, n0_before = atm.Tco.copy(), atm.Kzz.copy(), atm.n_0.copy()
+    k_before = {i: np.copy(k) for i, k in var.k.items()}
+
+    assert integ.stop(var, para, atm)
+
+    assert para.end_case == 1
+    assert para.climate_dT == pytest.approx([0.005], rel=1e-9)
+    np.testing.assert_array_equal(atm.Tco, t_before)
+    np.testing.assert_array_equal(atm.Kzz, kzz_before)
+    np.testing.assert_array_equal(atm.n_0, n0_before)
+    for i, k in k_before.items():
+        np.testing.assert_array_equal(var.k[i], k, err_msg=f'reaction {i}')
+
+
+@pytest.mark.unit
 def test_oscillating_climate_stops_at_agni_max_calls(state):
     """A temperature that alternates by +-10% never settles: end_case 4 after agni_max_calls."""
     cfg, var, atm, para, integ, make_atm = _climate_setup(state)

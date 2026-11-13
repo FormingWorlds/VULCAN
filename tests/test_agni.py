@@ -12,6 +12,7 @@ import os
 import subprocess
 import sys
 from types import SimpleNamespace
+from unittest.mock import patch
 
 import numpy as np
 import pytest
@@ -70,6 +71,45 @@ def test_set_composition_maps_vulcan_profiles_onto_agni_layers():
     assert atmos.gas_vmr['H2O'][2] == pytest.approx(0.6, rel=1e-12)
     np.testing.assert_allclose(atmos.gas_vmr['H2O'] + atmos.gas_vmr['H2'], 1.0, rtol=1e-14)
     np.testing.assert_array_equal(atmos.gas_ovmr['H2O'], atmos.gas_vmr['H2O'])
+
+
+@pytest.mark.unit
+def test_set_composition_keeps_the_full_inventory_of_a_gas_vulcan_lacks():
+    """NH3, which VULCAN lacks here, keeps its profile from before condensation (gas_ovmr,
+    0.1), not the rained-out gas_vmr (0), so condensation does not remove it for good."""
+    atmos = _fake_atmos()
+    atmos.gas_names = ['H2O', 'H2', 'NH3']
+    atmos.gas_vmr['NH3'] = np.zeros(4)
+    atmos.gas_ovmr['NH3'] = np.full(4, 0.1)
+    pco = np.array([1e5, 1e4, 1e3, 1e2])
+    ymix = np.array([[0.5, 0.4], [0.5, 0.4], [0.5, 0.4], [0.5, 0.4]])
+
+    agni.set_composition(atmos, pco, ['H2O', 'H2'], ymix)
+
+    # each level: (0.5, 0.4, 0.1) over their sum of 1
+    np.testing.assert_allclose(atmos.gas_vmr['NH3'], 0.1, rtol=1e-12)
+    np.testing.assert_allclose(atmos.gas_ovmr['H2O'], 0.5, rtol=1e-12)
+
+
+@pytest.mark.unit
+def test_prescribed_climate_returns_vulcan_temperature_on_vulcan_grid():
+    """With solve_rce = False the update is VULCAN's own temperature on its own pressures,
+    unchanged, with only Kzz from AGNI; a round trip through AGNI's grid would smooth a
+    curved profile at every update. AGNI's own temperature (200 to 500 K) is not used."""
+    climate = agni.AgniClimate.__new__(agni.AgniClimate)
+    climate.cfg = Config()
+    climate.cfg.solve_rce = False
+    climate.atmos = _fake_atmos()
+    pco = np.array([1e5, 1e4, 1e3, 1e2])
+    tco = np.array([1500.0, 900.0, 700.0, 650.0])  # curved in ln p
+
+    with patch.object(agni, 'set_temperature') as mock_set, patch.object(agni, '_julia'):
+        update = climate(pco, tco, ['H2O', 'H2'], np.full((4, 2), 0.5))
+
+    mock_set.assert_called_once()
+    np.testing.assert_array_equal(update.p, pco)
+    np.testing.assert_array_equal(update.tmp, tco)
+    np.testing.assert_allclose(update.kzz, climate.atmos.Kzz * 1e4, rtol=1e-15)
 
 
 @pytest.mark.unit

@@ -213,10 +213,20 @@ the chemistry reaches a steady state. After each call it:
    pressures;
 3. recomputes every rate coefficient, the molecular diffusion, the saturation pressures,
    the scale heights and the photolysis rates at the new temperature;
-4. restarts from the initial step size `dttry`, because the change starts a fast chemical
-   transient.
+4. if the update changed the temperature by more than `agni_T_rtol` in some layer, restarts
+   from the initial step size `dttry`, because such a change starts a fast chemical
+   transient, and tests for a steady state only on the steps after it. A smaller change
+   does neither, so frequent updates of a climate that has settled do not hold the run
+   back.
 
 The run ends when a steady state is reached and the climate update made at that steady
 state changes the temperature by no more than `agni_T_rtol` in any layer. The chemistry and
-the climate then agree with each other. If that does not happen within `agni_max_calls`
-such updates, the run stops with `end_case = 4`.
+the climate then agree with each other. That last update is not integrated, so the run
+saves the state from before it: the temperature, $K_{zz}$ and rates that the chemistry is
+steady for. If the temperature has not settled within `agni_max_calls` such updates, the
+run stops with `end_case = 4`.
+
+With `solve_rce = False`, AGNI does not solve for the temperature: the hook returns
+VULCAN's own temperature unchanged, and only $K_{zz}$ comes from AGNI. Fixed species
+(`fix_species`) and temperature-dependent cross sections (`T_cross_sp`) cannot be used with
+a climate, because both are set once, at the temperature of the start.
