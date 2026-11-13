@@ -17,6 +17,8 @@ import scipy.linalg
 
 from vulcan import Config, build_atm, op, store
 from vulcan.chem_funs import ni, nr, spec_list
+from vulcan.climate import ClimateUpdate
+from vulcan.phy_const import Navo, kb
 
 NZ = 10
 R_ROS2 = 1.0 + 1.0 / np.sqrt(2.0)  # gamma^-1 of the 2nd-order Rosenbrock scheme
@@ -763,3 +765,266 @@ def test_output_rejects_unknown_save_type(state):
     cfg.save_type = 'hdf5'
     with pytest.raises(ValueError, match='Invalid save_type'):
         op.Output(cfg)
+
+
+# ---------------------------------------------------------------------------
+# Climate coupling
+# ---------------------------------------------------------------------------
+
+
+def _climate_setup(state):
+    """The state with its Integration and atmosphere builder, as `run_vulcan` makes them."""
+    cfg, var, atm, para = state
+    return cfg, var, atm, para, _integration(cfg), build_atm.Atm(cfg)
+
+
+def _isothermal_scaled(factor):
+    """Climate hook that returns the present temperature times `factor`."""
+
+    def hook(pco, tco, species, ymix):
+        return ClimateUpdate(p=pco, tmp=tco * factor)
+
+    return hook
+
+
+def _rates_at(cfg, atm):
+    """Rate coefficients from a fresh ReadRate on `atm`, as at the start of a run."""
+    fresh = store.Variables(cfg)
+    rate = op.ReadRate(cfg)
+    rate.read_rate(fresh, atm)
+    rate.rev_rate(fresh, atm)
+    rate.remove_rate(fresh)
+    return fresh.k
+
+
+@pytest.mark.unit
+def test_identity_climate_update_changes_nothing(state):
+    """A hook that returns VULCAN's own temperature leaves rates, densities and Kzz unchanged."""
+    cfg, var, atm, para, integ, make_atm = _climate_setup(state)
+    k_before = {i: np.copy(k) for i, k in var.k.items()}
+    n0, kzz, ymix = atm.n_0.copy(), atm.Kzz.copy(), var.ymix.copy()
+
+    d_tmp = integ.update_climate(_isothermal_scaled(1.0), var, atm, para, make_atm)
+
+    assert d_tmp == 0.0
+    np.testing.assert_allclose(atm.n_0, n0, rtol=1e-14)
+    np.testing.assert_array_equal(atm.Kzz, kzz)
+    np.testing.assert_array_equal(var.ymix, ymix)
+    for i, k in k_before.items():
+        np.testing.assert_allclose(var.k[i], k, rtol=1e-12, err_msg=f'reaction {i}')
+    assert para.climate_dT == [0.0]
+
+
+@pytest.mark.unit
+@pytest.mark.physics_invariant
+def test_climate_update_recomputes_densities_and_rates_at_the_new_temperature(state):
+    """After T rises by 30%, n_0 = p / (k_B T_new) and every rate equals a fresh set at T_new.
+
+    The stale density p / (k_B T_old) is 30% higher, far outside the tolerance, and many
+    rate coefficients change by more than 1%, so stale rates would fail the comparison.
+    """
+    cfg, var, atm, para, integ, make_atm = _climate_setup(state)
+    t_old, n_old, ymix = atm.Tco.copy(), atm.n_0.copy(), var.ymix.copy()
+    k_old = {i: np.copy(k) for i, k in var.k.items()}
+
+    d_tmp = integ.update_climate(_isothermal_scaled(1.3), var, atm, para, make_atm)
+
+    assert d_tmp == pytest.approx(0.3, rel=1e-12)
+    np.testing.assert_allclose(atm.Tco, 1.3 * t_old, rtol=1e-12)
+    np.testing.assert_allclose(atm.n_0, atm.pco / (kb * 1.3 * t_old), rtol=1e-12)
+    assert np.all(np.abs(atm.n_0 / n_old - 1.0) > 0.2)
+    np.testing.assert_allclose(var.ymix, ymix, rtol=1e-14)
+    np.testing.assert_allclose(var.y, atm.n_0[:, None] * ymix, rtol=1e-12)
+
+    k_fresh = _rates_at(cfg, atm)
+    for i in k_fresh:
+        np.testing.assert_allclose(var.k[i], k_fresh[i], rtol=1e-12, err_msg=f'reaction {i}')
+    changed = [
+        i for i in k_old if np.any(np.abs(k_fresh[i] - k_old[i]) > 0.01 * np.abs(k_old[i]))
+    ]
+    assert len(changed) > 10
+
+    # at the reference layer the scale height is k_B T / (mu g_s), with unchanged mu and g_s
+    i = atm.pref_indx
+    hp_ref = kb * atm.Tco[i] / (atm.mu[i] / Navo * atm.gs)
+    assert atm.Hp[i] == pytest.approx(hp_ref, rel=1e-12)
+
+
+@pytest.mark.unit
+@pytest.mark.physics_invariant
+def test_climate_update_keeps_the_accumulated_element_loss(state):
+    """The element totals follow the new densities, so the relative loss so far is unchanged.
+
+    Without the rescaled baseline, the loss after a 30% warming would read 1/1.3 - 1 = -23%,
+    which `step_ok` would take as a failed step.
+    """
+    cfg, var, atm, para, integ, make_atm = _climate_setup(state)
+    var.atom_loss = {atom: 2e-3 for atom in cfg.atom_list}
+    ini_old = dict(var.atom_ini)
+
+    integ.update_climate(_isothermal_scaled(1.3), var, atm, para, make_atm)
+    integ.odesolver.loss(var)
+
+    for atom in cfg.atom_list:
+        assert var.atom_loss[atom] == pytest.approx(2e-3, rel=1e-9)
+        stale = (var.atom_sum[atom] - ini_old[atom]) / ini_old[atom]
+        assert abs(stale - 2e-3) > 0.1
+
+
+@pytest.mark.unit
+def test_climate_kzz_replaces_the_profile_only_with_kzz_prof_climate(state):
+    """With Kzz_prof = 'climate' the hook's power-law Kzz is regridded exactly; otherwise kept.
+
+    A hook that returns no Kzz under Kzz_prof = 'climate' is an error raised before the
+    temperature is changed.
+    """
+    cfg, var, atm, para, integ, make_atm = _climate_setup(state)
+    p_clim = np.logspace(np.log10(atm.pico[-1]) - 1, np.log10(atm.pico[0]) + 1, 30)
+
+    def hook(pco, tco, species, ymix):
+        return ClimateUpdate(p=pco, tmp=tco, p_kzz=p_clim, kzz=1e5 * (p_clim / 1e6) ** -0.5)
+
+    kzz_file = atm.Kzz.copy()
+    integ.update_climate(hook, var, atm, para, make_atm)
+    np.testing.assert_array_equal(atm.Kzz, kzz_file)  # Kzz_prof = 'file' keeps its own
+
+    cfg.Kzz_prof = 'climate'
+    integ.update_climate(hook, var, atm, para, make_atm)
+    expected = 1e5 * (atm.pico[1:-1] / 1e6) ** -0.5
+    np.testing.assert_allclose(atm.Kzz, expected, rtol=1e-10)
+
+    t_before = atm.Tco.copy()
+    with pytest.raises(ValueError, match='no kzz'):
+        integ.update_climate(_isothermal_scaled(1.3), var, atm, para, make_atm)
+    np.testing.assert_array_equal(atm.Tco, t_before)
+
+
+@pytest.mark.unit
+def test_only_a_real_temperature_change_restarts_the_step_and_the_window(state):
+    """A 0.1% change (below agni_T_rtol = 1%) keeps the step and the window; 30% restarts both.
+
+    Restarting on every small update would keep a run with frequent climate updates from
+    ever reaching the count_min steps that the steady-state test needs.
+    """
+    cfg, var, atm, para, integ, make_atm = _climate_setup(state)
+    cfg.agni_T_rtol = 1e-2
+    para.count, var.dt = 500, 1e12
+
+    integ.update_climate(_isothermal_scaled(1.001), var, atm, para, make_atm)
+    assert para.climate_count == 0
+    assert var.dt == 1e12
+
+    integ.update_climate(_isothermal_scaled(1.3), var, atm, para, make_atm)
+    assert para.climate_count == 500
+    assert var.dt == cfg.dttry
+    assert para.climate_dT == pytest.approx([1e-3, 0.3], rel=1e-9)
+
+
+def _drive_to_stop(cfg, var, atm, para, integ, max_checks=30):
+    """Present a steady history to `stop` until it ends the run; count_min steps between checks."""
+    para.start_time = 0.0
+    n = cfg.count_min + 10
+    for _ in range(max_checks):
+        _history(var, para, n)
+        if integ.stop(var, para, atm):
+            return True
+        n = para.count + cfg.count_min + 10
+    return False
+
+
+@pytest.mark.unit
+def test_steady_state_climate_updates_stop_when_the_temperature_settles(state):
+    """A climate that relaxes geometrically, T_n = T* + (T0 - T*) r^n, settles at a known call.
+
+    With T* = 1.2 T0 and r = 1/2 the change of call n is 0.2 r^(n-1) (1 - r) / (1.2 - 0.2
+    r^(n-1)); the first call at or below agni_T_rtol = 1e-2 is call 5.
+    """
+    cfg, var, atm, para, integ, make_atm = _climate_setup(state)
+    cfg.agni_T_rtol, cfg.agni_max_calls = 1e-2, 20
+    t0, r = atm.Tco.copy(), 0.5
+    calls = []
+
+    def hook(pco, tco, species, ymix):
+        calls.append(1)
+        return ClimateUpdate(p=pco, tmp=t0 * (1.2 - 0.2 * r ** len(calls)))
+
+    integ.climate, integ.make_atm = hook, make_atm
+    assert _drive_to_stop(cfg, var, atm, para, integ)
+
+    expected = next(
+        n
+        for n in range(1, 50)
+        if 0.2 * r ** (n - 1) * (1 - r) / (1.2 - 0.2 * r ** (n - 1)) <= cfg.agni_T_rtol
+    )
+    assert expected == 5
+    assert para.end_case == 1
+    assert para.climate_iter == expected
+    assert para.climate_dT[-1] <= cfg.agni_T_rtol < para.climate_dT[-2]
+
+
+@pytest.mark.unit
+def test_settled_climate_update_leaves_the_state_the_chemistry_is_steady_for(state):
+    """When the update at a steady state changes T by less than agni_T_rtol, the run ends
+    with the temperature, Kzz, densities and rates the chemistry was steady for, not with
+    those of the update; the update is still recorded.
+
+    The update here changes T by 0.5 % and doubles Kzz; keeping it would save a chemistry
+    that was never integrated at that Kzz.
+    """
+    cfg, var, atm, para, integ, make_atm = _climate_setup(state)
+    cfg.Kzz_prof, cfg.agni_T_rtol = 'climate', 1e-2
+    p_clim = np.logspace(np.log10(atm.pico[-1]) - 1, np.log10(atm.pico[0]) + 1, 30)
+
+    def hook(pco, tco, species, ymix):
+        return ClimateUpdate(p=pco, tmp=tco * 1.005, p_kzz=p_clim, kzz=2e5 + 0.0 * p_clim)
+
+    integ.climate, integ.make_atm = hook, make_atm
+    para.start_time = 0.0
+    _history(var, para, cfg.count_min + 10)
+    t_before, kzz_before, n0_before = atm.Tco.copy(), atm.Kzz.copy(), atm.n_0.copy()
+    k_before = {i: np.copy(k) for i, k in var.k.items()}
+
+    assert integ.stop(var, para, atm)
+
+    assert para.end_case == 1
+    assert para.climate_dT == pytest.approx([0.005], rel=1e-9)
+    np.testing.assert_array_equal(atm.Tco, t_before)
+    np.testing.assert_array_equal(atm.Kzz, kzz_before)
+    np.testing.assert_array_equal(atm.n_0, n0_before)
+    for i, k in k_before.items():
+        np.testing.assert_array_equal(var.k[i], k, err_msg=f'reaction {i}')
+
+
+@pytest.mark.unit
+def test_oscillating_climate_stops_at_agni_max_calls(state):
+    """A temperature that alternates by +-10% never settles: end_case 4 after agni_max_calls."""
+    cfg, var, atm, para, integ, make_atm = _climate_setup(state)
+    cfg.agni_max_calls = 3
+    t0 = atm.Tco.copy()
+    calls = []
+
+    def hook(pco, tco, species, ymix):
+        calls.append(1)
+        return ClimateUpdate(p=pco, tmp=t0 * (1.1 if len(calls) % 2 else 1.0))
+
+    integ.climate, integ.make_atm = hook, make_atm
+    assert _drive_to_stop(cfg, var, atm, para, integ)
+    assert para.end_case == 4
+    assert para.climate_iter == 3
+    assert min(para.climate_dT) > cfg.agni_T_rtol
+
+
+@pytest.mark.unit
+def test_steady_state_test_ignores_steps_before_a_climate_update(state):
+    """A history that is steady only across a climate update is not yet a steady state."""
+    cfg, var, atm, para, integ, make_atm = _climate_setup(state)
+    _history(var, para, cfg.count_min + 10)
+    assert integ.conv(var, para, atm)  # steady, no climate update
+
+    para.climate_dT, para.climate_count = [0.1], para.count - 1
+    assert not integ.conv(var, para, atm)
+
+    # stop also waits count_min steps after the update before it tests convergence
+    para.climate_count = para.count - 5
+    assert not integ.stop(var, para, atm)
+    assert para.end_case == 0

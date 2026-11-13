@@ -48,6 +48,18 @@ compo = np.genfromtxt(COM_FILE, names=True, dtype=type_list)
 compo_row = list(compo['species'])
 
 
+def saturation_mixing_ratio(cfg: Config, atm, sp: str) -> np.ndarray:
+    """Saturation mixing ratio of a condensing species on each layer [1].
+
+    The saturation pressure `atm.sat_p[sp]` over the layer pressure, capped at 1; for H2O
+    it is scaled by the relative humidity `cfg.humidity`.
+    """
+    sat_mix = np.minimum(1.0, atm.sat_p[sp] / atm.pco)
+    if sp == 'H2O':
+        sat_mix = sat_mix * cfg.humidity
+    return sat_mix
+
+
 class InitialAbun(object):
     """
     Calculating the appropriate initial mixing ratios with the assigned elemental abundance
@@ -329,13 +341,7 @@ class InitialAbun(object):
 
         if self.cfg.use_condense:
             for sp in self.cfg.condense_sp:
-                data_atm.sat_mix[sp] = data_atm.sat_p[sp] / data_atm.pco
-
-                # fixed 2022
-                data_atm.sat_mix[sp] = np.minimum(1.0, data_atm.sat_mix[sp])
-
-                if sp == 'H2O':
-                    data_atm.sat_mix[sp] *= self.cfg.humidity
+                data_atm.sat_mix[sp] = saturation_mixing_ratio(self.cfg, data_atm, sp)
 
                 if self.cfg.use_ini_cold_trap:
                     if self.cfg.ini_mix != 'table' and self.cfg.ini_mix != 'vul_ini':
@@ -573,6 +579,8 @@ class Atm(object):
 
         elif self.Kzz_prof == 'file':
             pass  # already defined within atm_type = 'file
+        elif self.Kzz_prof == 'climate':
+            data_atm.Kzz = np.zeros(nz - 1)  # set by the climate hook before integrating
         else:
             raise IOError(
                 '"Kzz_prof" (the type of Kzz profile) cannot be recongized.\nPlease assign it as "file" or "const" or "JM16" in vulcan_cfg.'
@@ -730,46 +738,7 @@ class Atm(object):
         data_atm.pref_indx = pref_indx
 
         if self.use_settling:
-            # TESTing settling velocity
-            # based on L. D. Cloutman: A Database of Selected Transport Coefficients for Combustion Studies (Table 1.)
-            if self.cfg.atm_base == 'N2':
-                na = 1.52
-                a = 1.186e-5
-                b = 86.54
-            elif self.cfg.atm_base == 'H2':
-                na = 1.67
-                a = 1.936e-6
-                b = 2.187
-            elif self.cfg.atm_base == 'CO2':
-                log.warning('NO CO2 viscosity yet! (using N2 instead)')
-                na = 1.52
-                a = 1.186e-5
-                b = 86.54
-            elif self.cfg.atm_base == 'H2O':
-                na = 1.5
-                a = 1.6e-5
-                b = 0
-            elif self.cfg.atm_base == 'O2':
-                na = 1.46
-                a = 2.294e-5
-                b = 164.4
-
-            dmu = a * data_atm.Tco**na / (b + data_atm.Tco)  # g cm-1 s-1 dynamic viscosity
-
-            for sp in self.cfg.non_gas_sp:
-                try:
-                    rho_p = data_atm.rho_p[sp]
-                    r_p = data_atm.r_p[sp]
-
-                except (ValueError, KeyError):
-                    raise ValueError(sp + ' has not been prescribed size and density!')
-
-                # Calculating the setteling (terminal) velocity
-                gi = 0.5 * (data_atm.g + np.roll(data_atm.g, -1))
-                gi = gi[:-1]
-                data_atm.vs[:, species.index(sp)] = -1.0 * (
-                    2.0 / 9 * rho_p * r_p**2 * gi / dmu[1:]
-                )
+            self.settling_velocity(data_atm)
 
         # plot T-P profile
         if self.cfg.plot_TP:
@@ -780,6 +749,50 @@ class Atm(object):
             log.warning('Temperatures exceed the valid range of Gibbs free energy.\n')
 
         return data_atm
+
+    def settling_velocity(self, data_atm):
+        """Terminal settling velocity of each condensate particle, `data_atm.vs` [cm s-1].
+
+        Stokes drag in the background gas, whose dynamic viscosity depends on temperature.
+        """
+        # TESTing settling velocity
+        # based on L. D. Cloutman: A Database of Selected Transport Coefficients for Combustion Studies (Table 1.)
+        if self.cfg.atm_base == 'N2':
+            na = 1.52
+            a = 1.186e-5
+            b = 86.54
+        elif self.cfg.atm_base == 'H2':
+            na = 1.67
+            a = 1.936e-6
+            b = 2.187
+        elif self.cfg.atm_base == 'CO2':
+            log.warning('NO CO2 viscosity yet! (using N2 instead)')
+            na = 1.52
+            a = 1.186e-5
+            b = 86.54
+        elif self.cfg.atm_base == 'H2O':
+            na = 1.5
+            a = 1.6e-5
+            b = 0
+        elif self.cfg.atm_base == 'O2':
+            na = 1.46
+            a = 2.294e-5
+            b = 164.4
+
+        dmu = a * data_atm.Tco**na / (b + data_atm.Tco)  # g cm-1 s-1 dynamic viscosity
+
+        for sp in self.cfg.non_gas_sp:
+            try:
+                rho_p = data_atm.rho_p[sp]
+                r_p = data_atm.r_p[sp]
+
+            except (ValueError, KeyError):
+                raise ValueError(sp + ' has not been prescribed size and density!')
+
+            # Calculating the setteling (terminal) velocity
+            gi = 0.5 * (data_atm.g + np.roll(data_atm.g, -1))
+            gi = gi[:-1]
+            data_atm.vs[:, species.index(sp)] = -1.0 * (2.0 / 9 * rho_p * r_p**2 * gi / dmu[1:])
 
     def read_sflux(self, var, atm):
         """reading in stellar stpactal flux at the stellar surface and converting it to the flux on the planet to the uniform grid using trapezoidal integral"""

@@ -255,6 +255,9 @@ class Parameters(object):
         self.loss_count = 0
         self.delta_count = 0
         self.end_case = 0
+        self.climate_count = 0  # step count at the latest climate update that changed T
+        self.climate_iter = 0  # climate updates made at a chemical steady state
+        self.climate_dT = []  # max |dT|/T of each climate update
         self.solver_str = ''  # for assigning the name of solver
         self.switch_final_photo_frq = False
         self.where_varies_most = np.zeros(

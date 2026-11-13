@@ -32,7 +32,8 @@ import scipy
 from scipy import interpolate
 
 from vulcan import plot
-from vulcan.build_atm import compo, compo_row
+from vulcan.build_atm import compo, compo_row, saturation_mixing_ratio
+from vulcan.climate import max_relative_change, regrid_kzz, regrid_temperature
 from vulcan.config import Config
 from vulcan.paths import CROSS_DIR
 from vulcan.phy_const import (  # hc is used to convert to the actinic flux
@@ -987,6 +988,24 @@ class ReadRate(object):
                 var.cross_scat[sp][n] = inter_scat(ld)
 
 
+def _state_copy(obj) -> dict:
+    """Copy of the attributes of a state container, enough to undo `update_climate`.
+
+    Arrays and dicts are copied (a dict one level deep, its arrays copied), since the
+    update overwrites both in place; lists such as the step histories are only appended to
+    by the integration, so they are shared.
+    """
+    out = {}
+    for key, val in vars(obj).items():
+        if isinstance(val, np.ndarray):
+            out[key] = val.copy()
+        elif isinstance(val, dict):
+            out[key] = {k: v.copy() if isinstance(v, np.ndarray) else v for k, v in val.items()}
+        else:
+            out[key] = val
+    return out
+
+
 class Integration(object):
     """
     time-stepping until the stopping criteria (steady-state) is satisfied
@@ -1014,11 +1033,9 @@ class Integration(object):
                 'You must disable the upwind scheme by setting `use_vm_mol=False`'
             )
 
-        # import AGNI?
-        if self.cfg.agni_call_frq > 0:
-            from .agni import run_agni
-
-            self.run_agni = run_agni
+        # climate hook and atmosphere builder, set by __call__
+        self.climate = None
+        self.make_atm = None
 
         # including photoionisation
         if self.cfg.use_photo:
@@ -1028,9 +1045,20 @@ class Integration(object):
             self.non_gas_sp_index = [species.index(sp) for sp in self.non_gas_sp]
             self.condense_sp_index = [species.index(sp) for sp in self.cfg.condense_sp]
 
-    def __call__(self, var, atm, para, make_atm, atmos=None):
+    def __call__(self, var, atm, para, make_atm, climate=None):
+        """Integrate until steady state, or until a runtime or step limit.
+
+        Parameters
+        ----------
+        climate : callable or None
+            Climate hook (see `vulcan.climate`). With a hook, the temperature and, with
+            `Kzz_prof = 'climate'`, the eddy diffusion are updated every `agni_call_frq`
+            steps (never when 0) and at each steady state, until the temperature settles.
+        """
 
         nz = self.cfg.nz
+        self.climate = climate
+        self.make_atm = make_atm
 
         while not self.stop(var, para, atm):  # Looping until the stop condition is satisfied
             var = self.backup(var)
@@ -1186,9 +1214,13 @@ class Integration(object):
                 dt_max=self.cfg.dt_max,
             )
 
-            # call atmosphere solver?
-            if atmos and (para.count % self.cfg.agni_call_frq == 0):
-                atmos = self.run_agni(atmos, self.cfg, atm, var)
+            # periodic climate update
+            if (
+                climate is not None
+                and self.cfg.agni_call_frq > 0
+                and para.count % self.cfg.agni_call_frq == 0
+            ):
+                self.update_climate(climate, var, atm, para, make_atm)
 
             # print info to user
             if self.cfg.use_print_prog and (para.count % self.cfg.print_prog_num == 0):
@@ -1198,13 +1230,108 @@ class Integration(object):
             if self.cfg.use_live_plot and (para.count % self.cfg.live_plot_frq == 0):
                 plot.plot_update(self.cfg, species, var, atm, para)
 
-        return atmos
-
     def backup(self, var):
         var.y_prev = np.copy(var.y)
         var.dy_prev = np.copy(var.dy)
         var.atom_loss_prev = var.atom_loss.copy()
         return var
+
+    def update_climate(self, climate, var, atm, para, make_atm) -> float:
+        """Call the climate hook and recompute every quantity that depends on temperature.
+
+        The hook gets the present state and returns a temperature profile (and, with
+        `Kzz_prof = 'climate'`, an eddy diffusion profile), which replace VULCAN's. The
+        mixing ratios are kept; the number densities follow the new temperature at the fixed
+        pressures. Rate coefficients, molecular diffusion, saturation pressures, scale
+        heights, settling velocities and photolysis rates are then recomputed, as at the
+        start of a run. An update that changes the temperature by more than `agni_T_rtol`
+        also restarts the step size from `dttry`, and the steady-state test in `conv` then
+        only uses the steps after it; a smaller change does neither, so frequent updates of a
+        settled climate do not hold back the steady state.
+
+        Returns
+        -------
+        float
+            Largest relative temperature change over the layers, max |dT| / T [1].
+        """
+        update = climate(atm.pco.copy(), atm.Tco.copy(), list(species), var.ymix.copy())
+        t_new = regrid_temperature(update, atm.pco)
+        kzz_new = None
+        if self.cfg.Kzz_prof == 'climate' and self.cfg.use_Kzz:
+            kzz_new = regrid_kzz(update, atm.pico[1:-1])
+        d_tmp = max_relative_change(atm.Tco, t_new)
+        atm.Tco = t_new
+        if kzz_new is not None:
+            atm.Kzz = kzz_new
+
+        self._refresh_densities(var, atm)
+        self._refresh_rates(var, atm)
+        self._refresh_transport(var, atm, make_atm)
+        if self.cfg.use_photo:
+            self.odesolver.compute_tau(var, atm)
+            self.odesolver.compute_flux(var, atm)
+            self.odesolver.compute_J(var, atm)
+            if self.cfg.use_ion:
+                self.odesolver.compute_Jion(var, atm)
+            ReadRate(self.cfg).remove_rate(var)
+
+        # a real change starts a fast transient that the large steady-state step overshoots
+        if d_tmp > self.cfg.agni_T_rtol:
+            var.dt = self.cfg.dttry
+            para.climate_count = para.count
+        para.climate_dT.append(d_tmp)
+        log.info(
+            'Climate update %d at step %d: max |dT|/T = %.3e, T from %.1f to %.1f K'
+            % (len(para.climate_dT), para.count, d_tmp, np.min(atm.Tco), np.max(atm.Tco))
+        )
+        return d_tmp
+
+    def _refresh_densities(self, var, atm):
+        """Number densities at the fixed pressures and the new temperature, same mixing ratios.
+
+        Condensates are rescaled with the gas, since their mixing ratios are relative to the
+        gas density; the column of each species, n dz with dz proportional to T, is then kept.
+        The element totals that `loss` compares with change with the number densities, so
+        they are rescaled keeping the relative element loss accumulated so far.
+        """
+        atm.M = atm.pco / (kb * atm.Tco)
+        atm.n_0 = atm.M.copy()
+        var.y = np.vstack(atm.n_0) * var.ymix
+        for atom in self.cfg.atom_list:
+            total = np.sum(
+                [compo[compo_row.index(species[i])][atom] * var.y[:, i] for i in range(ni)]
+            )
+            var.atom_ini[atom] = total / (1.0 + var.atom_loss.get(atom, 0.0))
+            var.atom_sum[atom] = total
+        var.atom_loss_prev = var.atom_loss.copy()
+
+    def _refresh_rates(self, var, atm):
+        """Rate coefficients at the new temperature, through the same steps as at the start.
+
+        Condensation rates are set by `conden` at every step, so their present values are
+        kept; photolysis rates are set again by `compute_J` afterwards.
+        """
+        conden = {i: var.k[i] for re in var.conden_re_list for i in (re, re + 1)}
+        var.conden_re_list = []
+        rate = ReadRate(self.cfg)
+        rate.read_rate(var, atm)
+        if self.cfg.use_lowT_limit_rates:
+            rate.lim_lowT_rates(var, atm)
+        rate.rev_rate(var, atm)
+        rate.remove_rate(var)
+        var.k.update(conden)
+
+    def _refresh_transport(self, var, atm, make_atm):
+        """Molecular diffusion, saturation, scale heights and settling at the new temperature."""
+        make_atm.mol_diff(atm)
+        if self.cfg.use_condense:
+            make_atm.sp_sat(atm)
+            for sp in self.cfg.condense_sp:
+                atm.sat_mix[sp] = saturation_mixing_ratio(self.cfg, atm, sp)
+        self.update_mu_dz(var, atm, make_atm)
+        if self.cfg.use_settling:
+            make_atm.settling_velocity(atm)
+        self.update_phi_esc(var, atm)
 
     def update_mu_dz(self, var, atm, make_atm):  # y, ni, spec, Tco, pco
 
@@ -1311,6 +1438,12 @@ class Integration(object):
         # Don't check more than self.cfg.conv_step (1000) steps back
         indx = max(para.count - self.cfg.conv_step, indx)
 
+        # Nor before the latest climate update, whose new densities are no chemical change
+        if para.climate_dT:
+            indx = max(para.climate_count, indx)
+            if indx >= count - 1 or t_time[-1] <= t_time[indx]:
+                return False
+
         # TEST
         longdy = np.abs((y_time[count - 1] - y_time[indx]) / np.vstack(atm.n_0))
         longdy[ymix < mtol_conv] = 0
@@ -1345,6 +1478,33 @@ class Integration(object):
 
         return False
 
+    def _climate_settled(self, var, atm, para) -> bool:
+        """At a chemical steady state, update the climate once more and test the change.
+
+        Returns True when the largest relative temperature change is at most `agni_T_rtol`.
+        The state then goes back to the one before this update (temperature, Kzz, rates and
+        every other refreshed quantity), which is the state the chemistry is steady for, so
+        that is what the run saves; `para.climate_dT` still records the update. Otherwise the
+        integration continues from the updated state, unless this was the
+        `agni_max_calls`-th such update, which sets `end_case = 4`.
+        """
+        para.climate_iter += 1
+        saved = (_state_copy(var), _state_copy(atm))
+        d_tmp = self.update_climate(self.climate, var, atm, para, self.make_atm)
+        if d_tmp <= self.cfg.agni_T_rtol:
+            vars(var).update(saved[0])
+            vars(atm).update(saved[1])
+            return True
+        if para.climate_iter >= self.cfg.agni_max_calls:
+            log.warning(
+                'Temperature still changing by %.3e after %d climate updates at steady state'
+                % (d_tmp, para.climate_iter)
+            )
+            para.end_case = 4
+        else:
+            log.info('Steady state reached; the temperature changed, so integration continues')
+        return False
+
     def stop(self, var, para, atm):
         """
         To check the convergence criteria and stop the integration
@@ -1352,8 +1512,11 @@ class Integration(object):
         if (
             var.t > self.cfg.trun_min
             and para.count > self.cfg.count_min
+            and (not para.climate_dT or para.count - para.climate_count > self.cfg.count_min)
             and self.conv(var, para, atm)
         ):
+            if self.climate is not None and not self._climate_settled(var, atm, para):
+                return para.end_case == 4
             log.info('Integration successful with ' + str(para.count) + ' steps')
             log.info('long dy, long dydt = ' + str(var.longdy) + ', ' + str(var.longdydt))
             log.debug('Actinic flux change: ' + '{:.2E}'.format(var.aflux_change))

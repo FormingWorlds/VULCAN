@@ -115,7 +115,8 @@ source term that VULCAN integrates.
 | `vulcan_version`, `date_created` | Code version and UTC creation time. |
 | `hostname`, `username` | Machine and user that wrote the file. |
 | `network`, `atom_list` | Chemical network file and elements. |
-| `end_case`, `termination` | How the run ended: 1 converged, 2 `runtime` limit, 3 `count_max` limit. |
+| `end_case`, `termination` | How the run ended: 1 converged, 2 `runtime` limit, 3 `count_max` limit, 4 `agni_max_calls` reached with the temperature still changing. |
+| `climate_updates`, `climate_max_rel_dT` | Number of climate updates, and $\max \lvert \Delta T \rvert / T$ of each (the second only when there was one). |
 | `steps`, `model_time_s`, `dt_s` | Number of steps, final model time and step size. |
 | `longdy`, `longdydt` | Final values of the convergence measures. |
 | `wall_time_s` | Wall-clock run time. |
@@ -126,6 +127,5 @@ The full configuration is written separately to `vulcan_cfg.txt`.
 
 !!! note "Consistency of rate coefficients"
     Photolysis rate coefficients are only updated every `final_update_photo_frq` steps, so
-    they can lag the final abundances by a few steps. When coupled to AGNI
-    (`agni_call_frq > 0`), rate coefficients are not re-evaluated after the last temperature
-    update.
+    they can lag the final abundances by a few steps. With a climate model, every climate
+    update re-evaluates the rate coefficients at the new temperature.
