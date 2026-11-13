@@ -58,8 +58,8 @@ def activate_julia(vulcan_cfg: Config):
     Load AGNI into Julia, unless a caller (such as PROTEUS) has loaded it already.
 
     When AGNI is already loaded, its Julia environment and logger are left as they are.
-    Otherwise the Julia environment in `agni_dir` is activated, headless plotting is set
-    up, AGNI is imported and its log goes to `agni_recent.log` in `Config.output_dir`.
+    Otherwise the Julia environment in `agni_dir` is activated, AGNI is imported and its
+    log goes to `agni_recent.log` in `Config.output_dir`.
 
     Parameters
     ----------
