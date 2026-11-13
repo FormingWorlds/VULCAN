@@ -82,7 +82,7 @@ Module roles: `config.py` holds every runtime setting; `paths.py` the absolute p
 - `Config` is an object passed explicitly (`vulcan_cfg`) through nearly every part; a new runtime setting is added there first. Each run writes the configuration to `output_dir/vulcan_cfg.txt` (`Config.write_file`).
 - The default initial composition is `ini_mix = 'eq'`, which needs the `fastchem_vulcan/fastchem` executable.
 - Output is controlled by `save_type` (default `['pickle', 'netcdf', 'plain']`), `out_name` (default `example`), `output_dir` (default `output/`), `clean_output` and `save_evolution`. `output_humanread` is deprecated; use `save_type = 'plain'`.
-- AGNI coupling goes through the file system: AGNI is expected in `VULCAN/AGNI/` with `agni.jl`, called from Python through `juliacall`.
+- Climate coupling goes through a climate hook (`climate.py`): `run_vulcan(cfg, make_network, climate=hook)` takes the caller's hook, and `agni_call_frq > 0` without one builds `agni.AgniClimate`, which calls AGNI through `juliacall` from `agni_dir` (default `VULCAN/AGNI/` with `agni.jl`). After each climate update `op.Integration.update_climate` recomputes every temperature-dependent quantity; a new one goes there too.
 
 ## Agent files
 

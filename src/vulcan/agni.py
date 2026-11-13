@@ -1,310 +1,297 @@
 """
 ---
 
-Wrapper functions for coupling VULCAN to AGNI.
+Climate hook that couples VULCAN to the AGNI radiative-convective model.
+
+`AgniClimate` sets up an AGNI atmosphere on VULCAN's pressure range and, at each climate
+update, hands it VULCAN's mixing ratios, solves for the temperature profile (or, with
+`solve_rce = False`, keeps VULCAN's temperature) and returns the temperature and AGNI's eddy
+diffusion profile as a `vulcan.climate.ClimateUpdate`. `set_composition` and
+`climate_update` work on any AGNI atmosphere, so a coupled framework that builds its own
+AGNI atmosphere can use them in its own hook.
+
+AGNI works in SI units and VULCAN in CGS: pressures are converted with `PA_TO_DYN` and
+diffusion coefficients with `M2_TO_CM2` at this boundary.
 
 Imports
 ---
 
+- [`vulcan.climate`](climate.md): the climate-hook interface.
 - [`vulcan.config`](config.md): `Config` class for handling configuration settings.
 - [`vulcan.paths`](paths.md): Paths to various files and directories used in VULCAN.
-- [`vulcan.phy_const`](phy_const.md): Physical constants used in VULCAN.
-- [`vulcan.store`](store.md): `AtmData` and `Variables` classes for storing atmospheric data and variables.
-- `vulcan.chem_funs`: `spec_list` for the list of chemical species in VULCAN, `gas_list` for the list of gas species in AGNI.
 """
 
-# Import system modules
 from __future__ import annotations
 
 import logging
 import os
-from tempfile import mkdtemp
 
 import numpy as np
-from juliacall import Main as jl
 from scipy.integrate import trapezoid
-from scipy.interpolate import PchipInterpolator
 
-# Import some VULCAN modules
 from . import paths
-from .chem_funs import spec_list as gas_list
+from .climate import ClimateUpdate, interp_logp, map_composition
 from .config import Config
 from .phy_const import au, r_sun, spacer
-from .store import AtmData, Variables
 
-# initialise logger for vulcan
 log = logging.getLogger('fwl.' + __name__)
 
-# constants
 AGNI_LOGFILE_NAME = 'agni_recent.log'
+PA_TO_DYN = 10.0  # 1 Pa = 10 dyn cm-2
+M2_TO_CM2 = 1.0e4  # 1 m2 s-1 = 1e4 cm2 s-1
+
+
+def _julia():
+    """The Julia `Main` module, imported only when AGNI is used."""
+    from juliacall import Main as jl
+
+    return jl
+
+
+def agni_dir(vulcan_cfg: Config) -> str:
+    """AGNI folder: `agni_dir` from the config, or `VULCAN/AGNI` when that is empty."""
+    return vulcan_cfg.agni_dir or paths.AGNI_DIR
 
 
 def activate_julia(vulcan_cfg: Config):
+    """Load AGNI into Julia, unless a caller (such as PROTEUS) has loaded it already.
 
-    # Check AGNI is in the right location
-    if not os.path.isdir(paths.AGNI_DIR):
-        raise FileNotFoundError(paths.AGNI_DIR)
-    if not os.path.isfile(os.path.join(paths.AGNI_DIR, 'agni.jl')):
-        raise FileNotFoundError(os.path.join(paths.AGNI_DIR, 'agni.jl'))
+    When AGNI is already loaded, its Julia environment and logger are left as they are.
 
-    # Activate environment for Julia
-    log.info(f'Activating Julia environment {paths.AGNI_DIR}')
+    Returns
+    -------
+    The Julia `Main` module.
+    """
+    jl = _julia()
+    if bool(jl.seval('isdefined(Main, :AGNI)')):
+        log.info('AGNI is already loaded; using it as it is')
+        return jl
+
+    root = agni_dir(vulcan_cfg)
+    if not os.path.isfile(os.path.join(root, 'agni.jl')):
+        raise FileNotFoundError(os.path.join(root, 'agni.jl'))
+
+    log.info(f'Activating Julia environment {root}')
     jl.seval('using Pkg')
-    jl.Pkg.activate(paths.AGNI_DIR)
-
-    # Plotting configuration
+    jl.Pkg.activate(root)
     jl.seval('ENV["GKSwstype"] = "100"')
     jl.seval('using Plots')
     jl.seval('default(label=nothing, dpi=250)')
-
-    # Import AGNI
     jl.seval('import AGNI')
 
-    # Setup logging from AGNI
-    #    This handle will be kept open throughout, so the file
-    #    should not be deleted at runtime. However, it will be emptied when appropriate.
-    verbosity = 2
+    # AGNI keeps this log file open for the whole run
     logpath = os.path.join(vulcan_cfg.output_dir, AGNI_LOGFILE_NAME)
-    jl.AGNI.setup_logging(logpath, verbosity)
-
+    jl.AGNI.setup_logging(logpath, 2)
     log.debug("AGNI will log to '%s'" % logpath)
+    return jl
 
 
-def init_agni_atmos(vulcan_cfg: Config, atm: AtmData, var: Variables):
+def _instellation(vulcan_cfg: Config) -> float:
+    """Bolometric instellation at the planet [W m-2], from the spectrum at the stellar surface."""
+    sflux = np.loadtxt(vulcan_cfg.sflux_file).T  # nm, erg s-1 cm-2 nm-1
+    flux = trapezoid(sflux[1], x=sflux[0])  # erg s-1 cm-2 at the stellar surface
+    flux *= (vulcan_cfg.r_star * r_sun) ** 2 / (vulcan_cfg.orbit_radius * au) ** 2
+    return float(flux * 1.0e-3)  # erg s-1 cm-2 to W m-2
+
+
+def init_agni_atmos(vulcan_cfg: Config, atm, var):
+    """Set up and allocate an AGNI atmosphere on VULCAN's pressure range.
+
+    The composition starts from VULCAN's column-median mixing ratios and the temperature
+    from VULCAN's profile.
+
+    Returns
+    -------
+    AGNI.atmosphere.Atmos_t
+    """
+    if vulcan_cfg.spectral_file == 'greygas' and vulcan_cfg.use_rayleigh:
+        raise ValueError('AGNI does not support Rayleigh scattering with greygas')
+    from .chem_funs import spec_list
+
+    jl = _julia()
     log.debug('New AGNI atmosphere')
-
     atmos = jl.AGNI.atmosphere.Atmos_t()
-    succ = True
 
-    # Stellar spectrum path (scaled to stellar surface)
     sflux_path = vulcan_cfg.sflux_file
-
-    # Calculate instellation by scaling spectrum to TOA
-    sflux_data = np.loadtxt(sflux_path).T  # erg/s/cm^2/nm
-    sflux_integ = trapezoid(sflux_data[1], x=sflux_data[0])  # erg/s/cm^2
-    sflux_integ *= (vulcan_cfg.r_star * r_sun) ** 2 / (vulcan_cfg.orbit_radius * au) ** 2
-    sflux_integ *= 0.001  # W/m^2
-
-    # Spectral file path
     try_spfile = os.path.join(vulcan_cfg.output_dir, 'runtime.sf')
     if os.path.exists(try_spfile):
-        # exists => don't modify it
-        input_sf = try_spfile
-        input_star = ''
+        input_sf, input_star = try_spfile, ''  # AGNI made it in an earlier run
     elif vulcan_cfg.spectral_file == 'greygas':
-        # grey gas solution
-        input_sf = vulcan_cfg.spectral_file
-        input_star = sflux_path
+        input_sf, input_star = 'greygas', sflux_path
     else:
-        # doesn't exist => AGNI will copy it + modify as required
-        input_sf = os.path.join(paths.AGNI_DIR, vulcan_cfg.spectral_file)
+        input_sf = os.path.join(agni_dir(vulcan_cfg), vulcan_cfg.spectral_file)
         input_star = sflux_path
 
-    # composition set initially well-mixed
-    vol_dict = {}
-    for g in gas_list:
-        if '_' in g:
-            continue
-        vol_dict[g] = np.median(var.ymix[:, gas_list.index(g)])
+    # condensates and excited states carry an underscore
+    vol_dict = {
+        g: float(np.median(var.ymix[:, i])) for i, g in enumerate(spec_list) if '_' not in g
+    }
 
-    # set condensation
-    condensates = []
+    fastchem_work = os.path.join(vulcan_cfg.output_dir, 'agni_fastchem')
+    os.makedirs(fastchem_work, exist_ok=True)
 
-    # Boundary pressures
-    p_surf = atm.pico[0] * 1e-6  # convert to bar
-    p_top = atm.pico[-1] * 1e-6  # convert to bar
-
-    # FC working directory for AGNI
-    fastchem_work = mkdtemp()
-
-    # Setup struct
     succ = jl.AGNI.atmosphere.setup_b(
         atmos,
-        paths.AGNI_DIR,
+        agni_dir(vulcan_cfg),
         vulcan_cfg.output_dir,
         input_sf,
-        sflux_integ,
-        vulcan_cfg.f_diurnal,
+        _instellation(vulcan_cfg),
+        float(vulcan_cfg.f_diurnal),
         0.0,
-        vulcan_cfg.sl_angle * 180.0 / np.pi,  # convert radians to degrees
-        vulcan_cfg.Tsurf_guess,
-        vulcan_cfg.gs * 0.01,  # convert to SI, m/s^2
-        vulcan_cfg.Rp * 0.01,  # convert to SI, m
-        vulcan_cfg.agni_nlev,
-        p_surf,
-        p_top,
+        float(vulcan_cfg.sl_angle * 180.0 / np.pi),
+        float(vulcan_cfg.Tsurf_guess),
+        float(vulcan_cfg.gs * 0.01),  # cm s-2 to m s-2
+        float(vulcan_cfg.Rp * 0.01),  # cm to m
+        int(vulcan_cfg.agni_nlev),
+        float(atm.pico[0] * 1e-6),  # dyn cm-2 to bar
+        float(atm.pico[-1] * 1e-6),
         vol_dict,
         '',
-        flag_rayleigh=vulcan_cfg.use_rayleigh,
+        flag_rayleigh=bool(vulcan_cfg.use_rayleigh),
         flag_cloud=False,
         overlap_method='ee',
-        albedo_s=vulcan_cfg.surf_albedo,
+        albedo_s=float(vulcan_cfg.surf_albedo),
         surface_material='greybody',
-        condensates=condensates,
+        condensates=[],
         use_all_gases=False,
         fastchem_work=fastchem_work,
         real_gas=False,
         skin_d=0.01,
         skin_k=2.0,
-        tmp_magma=vulcan_cfg.Tsurf_guess,
+        tmp_magma=float(vulcan_cfg.Tsurf_guess),
         tmp_floor=50.0,
+        flux_int=float(vulcan_cfg.agni_flux_int),
     )
     if not succ:
         raise RuntimeError('Could not initialise AGNI atmos object')
-
-    # Allocate arrays
-    succ = jl.AGNI.atmosphere.allocate_b(atmos, input_star)
-
-    if not succ:
+    if not jl.AGNI.atmosphere.allocate_b(atmos, input_star):
         raise RuntimeError('Could not allocate AGNI atmos object')
 
-    # Set temperature profile to initial guess
-    tmp_top = 500.0
-    tmp_top = min(tmp_top, vulcan_cfg.Tsurf_guess)
-    log.debug('Initialised log-linear (top = %.2f K)' % tmp_top)
-    jl.AGNI.setpt.loglinear_b(atmos, -0.5 * vulcan_cfg.Tsurf_guess)
-    jl.AGNI.setpt.stratosphere_b(atmos, tmp_top)
-
+    set_temperature(atmos, atm.pco, atm.Tco)
     return atmos
 
 
 def deallocate_atmos(atmos):
+    """Deallocate an AGNI atmosphere."""
+    _julia().AGNI.atmosphere.deallocate_b(atmos)
+
+
+def set_temperature(atmos, pco, tco):
+    """Set the AGNI temperature profile from VULCAN's.
+
+    Parameters
+    ----------
+    pco : np.ndarray
+        VULCAN layer-centre pressures [dyn cm-2].
+    tco : np.ndarray
+        VULCAN temperatures on `pco` [K].
     """
-    Deallocate atmosphere struct
+    p_layers = np.asarray(atmos.p, dtype=float) * PA_TO_DYN
+    p_levels = np.asarray(atmos.pl, dtype=float) * PA_TO_DYN
+    atmos.tmp[:] = interp_logp(pco, tco, p_layers)
+    atmos.tmpl[:] = interp_logp(pco, tco, p_levels)
+    atmos.tmp_surf = float(atmos.tmpl[-1])
+    _julia().AGNI.atmosphere.calc_layer_props_b(atmos)
+
+
+def set_composition(atmos, pco, species: list[str], ymix):
+    """Give an AGNI atmosphere VULCAN's mixing ratio profiles (see `map_composition`).
+
+    Parameters
+    ----------
+    pco : np.ndarray
+        VULCAN layer-centre pressures [dyn cm-2].
+    species : list of str
+        VULCAN species names, the columns of `ymix`.
+    ymix : np.ndarray
+        VULCAN volume mixing ratios [layer, species].
     """
-    jl.AGNI.atmosphere.deallocate_b(atmos)
+    current = {str(g): np.asarray(atmos.gas_vmr[g], dtype=float) for g in atmos.gas_names}
+    p_layers = np.asarray(atmos.p, dtype=float) * PA_TO_DYN
+    for gas, prof in map_composition(pco, species, ymix, p_layers, current).items():
+        atmos.gas_vmr[gas][:] = prof
+        atmos.gas_ovmr[gas][:] = prof
 
 
-def _solve_energy(
-    atmos,
-    vulcan_cfg: Config,
-):
-    """Use AGNI to solve for energy-conserving solution."""
+def climate_update(atmos) -> ClimateUpdate:
+    """The temperature and eddy diffusion of an AGNI atmosphere, in VULCAN's CGS units.
 
-    # atmosphere solver plotting frequency
-    modplot = 0
-    if vulcan_cfg.use_live_plot:
-        modplot = 1
+    Temperature is on AGNI's layer centres and Kzz on its level edges.
+    """
+    return ClimateUpdate(
+        p=np.asarray(atmos.p, dtype=float) * PA_TO_DYN,
+        tmp=np.asarray(atmos.tmp, dtype=float),
+        p_kzz=np.asarray(atmos.pl, dtype=float) * PA_TO_DYN,
+        kzz=np.asarray(atmos.Kzz, dtype=float) * M2_TO_CM2,
+    )
 
-    # tracking
-    agni_success = False  # success?
-    attempts = 0  # number of attempts so far
 
-    # make attempts
-    while not agni_success:
-        attempts += 1
-        log.info('Attempt %d' % attempts)
-
-        # default parameters
-        linesearch = 2
-        easy_start = not bool(atmos.is_solved)
-        dx_max = 300.0
-        ls_increase = 1.04
-        perturb_all = True
-        max_steps = 70
-
-        # try different solver parameters if struggling
-        if attempts == 2:
-            linesearch = 1
-            dx_max *= 2.0
-            ls_increase = 1.1
-
-        log.debug('Solver parameters:')
-        log.debug(
-            '    ls_method=%d, easy_start=%s, dx_max=%.1f, ls_increase=%.2f'
-            % (linesearch, str(easy_start), dx_max, ls_increase)
+def _solve_energy(atmos, vulcan_cfg: Config) -> bool:
+    """Solve for the energy-conserving temperature profile, with a second, wider attempt."""
+    jl = _julia()
+    modplot = 1 if vulcan_cfg.use_live_plot else 0
+    for attempt in (1, 2):
+        log.info('Attempt %d' % attempt)
+        wide = attempt == 2
+        success = bool(
+            jl.AGNI.solver.solve_energy_b(
+                atmos,
+                sol_type=int(vulcan_cfg.agni_sol_type),
+                method=1,
+                chem=False,
+                conduct=False,
+                convect=True,
+                sens_heat=True,
+                latent=False,
+                rainout=True,
+                max_steps=70,
+                max_runtime=900.0,
+                conv_atol=float(vulcan_cfg.agni_atol),
+                conv_rtol=float(vulcan_cfg.agni_rtol),
+                ls_method=1 if wide else 2,
+                ls_increase=1.1 if wide else 1.04,
+                dx_max=600.0 if wide else 300.0,
+                easy_start=not bool(atmos.is_solved),
+                perturb_all=True,
+                save_frames=False,
+                modplot=modplot,
+            )
         )
+        if success:
+            log.info('Attempt %d succeeded' % attempt)
+            return True
+        log.warning('Attempt %d failed' % attempt)
+    log.error('Maximum attempts when executing AGNI')
+    return False
 
-        jl.AGNI.solver.ls_increase = float(ls_increase)
 
-        # Try solving temperature profile
-        agni_success = jl.AGNI.solver.solve_energy_b(
-            atmos,
-            sol_type=int(3),
-            method=int(1),
-            chem=False,
-            conduct=False,
-            convect=True,
-            sens_heat=True,
-            latent=False,
-            rainout=True,
-            max_steps=int(max_steps),
-            max_runtime=900.0,
-            conv_atol=float(vulcan_cfg.agni_atol),
-            conv_rtol=float(vulcan_cfg.agni_rtol),
-            ls_method=int(linesearch),
-            dx_max=float(dx_max),
-            easy_start=easy_start,
-            perturb_all=perturb_all,
-            save_frames=False,
-            modplot=int(modplot),
-            plot_jacobian=False,
-        )
+class AgniClimate:
+    """Climate hook that solves the temperature profile with AGNI (see `vulcan.climate`).
 
-        # Model status check
-        if agni_success:
-            # success
-            log.info('Attempt %d succeeded' % attempts)
-            break
+    With `solve_rce = True` AGNI solves for radiative-convective equilibrium with the
+    surface condition `agni_sol_type`. With `solve_rce = False` VULCAN's temperature is kept,
+    and AGNI only computes the convective fluxes and the eddy diffusion profile from it.
+    """
+
+    def __init__(self, vulcan_cfg: Config, atm, var):
+        self.cfg = vulcan_cfg
+        activate_julia(vulcan_cfg)
+        self.atmos = init_agni_atmos(vulcan_cfg, atm, var)
+
+    def __call__(self, pco, tco, species, ymix) -> ClimateUpdate:
+        log.info('Running climate calculation...')
+        set_composition(self.atmos, pco, species, ymix)
+        if self.cfg.solve_rce:
+            log.info('Using nonlinear solver to conserve fluxes')
+            if not _solve_energy(self.atmos, self.cfg):
+                raise RuntimeError('AGNI did not converge at this climate update')
         else:
-            # failure
-            log.warning('Attempt %d failed' % attempts)
+            log.info('Using the present temperature profile')
+            set_temperature(self.atmos, pco, tco)
+            _julia().AGNI.energy.calc_fluxes_b(self.atmos, convective=True)
+        log.info(spacer)
+        return climate_update(self.atmos)
 
-            # Max attempts
-            if attempts >= 2:
-                log.error('Maximum attempts when executing AGNI')
-                break
-    return atmos
-
-
-def _solve_once(atmos):
-    """Use AGNI to solve radiative transfer with prescribed T(p) profile"""
-
-    #    dry convection
-    jl.AGNI.setpt.dry_adiabat_b(atmos)
-
-    #    temperature floor in stratosphere
-    jl.AGNI.setpt.stratosphere_b(atmos, 0.5)
-
-    # calculate convective flux only, to get Kzz profile
-    jl.AGNI.energy.calc_fluxes_b(atmos, convective=True)
-
-    # fill kzz values
-    jl.AGNI.energy.fill_Kzz_b(atmos)
-
-    return atmos
-
-
-def run_agni(atmos, vulcan_cfg: Config, atm: AtmData, var: Variables):
-    """Run AGNI atmosphere model."""
-
-    # Inform
-    log.info('Running climate calculation...')
-
-    # update gas compositions (interpolate from VULCAN to AGNI)
-    for g in atmos.gas_names:
-        p_vul = atm.pco[::-1] * 0.1  # convert to Pa
-        g_vul = np.clip(var.ymix[::-1, gas_list.index(g)], 1e-30, 1.0)
-        g_itp = PchipInterpolator(p_vul, np.log10(g_vul))
-
-        atmos.gas_vmr[g][:] = 10 ** g_itp(atmos.p)[:]
-        atmos.gas_ovmr[g][:] = atmos.gas_vmr[g][:]
-
-    # jl.AGNI.plotting.plot_vmr(atmos,os.path.join(vulcan_cfg.plot_dir,"_agni_vmr.png"))
-
-    # Run model
-    if vulcan_cfg.solve_rce:
-        log.info('Using nonlinear solver to conserve fluxes')
-        atmos = _solve_energy(atmos, vulcan_cfg)
-    else:
-        log.info('Using prescribed temperature profile')
-        atmos = _solve_once(atmos)
-
-    # jl.AGNI.plotting.plot_pt(atmos,os.path.join(vulcan_cfg.plot_dir, "_agni_tp.png"))
-
-    # Parse result (interpolate from AGNI to VULCAN)
-    t_itp = PchipInterpolator(atmos.p, atmos.tmp)
-    atm.Tco[:] = t_itp(atm.pco * 0.1)[:]
-
-    log.info(spacer)
-    return atmos
+    def close(self):
+        """Deallocate the AGNI atmosphere."""
+        deallocate_atmos(self.atmos)

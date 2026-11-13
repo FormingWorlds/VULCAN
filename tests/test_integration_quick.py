@@ -23,6 +23,7 @@ import pytest
 
 from vulcan import Config, chem_funs, run_vulcan
 from vulcan.chem_funs import spec_list
+from vulcan.climate import ClimateUpdate
 from vulcan.phy_const import au, r_sun
 
 ELEMENTS = ('H', 'O', 'C', 'He')
@@ -87,11 +88,11 @@ EQ_SETTINGS = dict(
 )
 
 
-def _fastchem_equilibrium(out_dir):
+def _fastchem_equilibrium(out_dir, **overrides):
     """FastChem equilibrium mixing ratios on the EQ_SETTINGS grid, shape (nz, ni)."""
     from vulcan import build_atm, store
 
-    cfg = _config(out_dir, ini_mix='eq', **EQ_SETTINGS)
+    cfg = _config(out_dir, ini_mix='eq', **{**EQ_SETTINGS, **overrides})
     var, atm = store.Variables(cfg), store.AtmData(cfg)
     make_atm = build_atm.Atm(cfg)
     atm = make_atm.f_pico(atm)
@@ -342,3 +343,49 @@ def test_unknown_setup_option_raises(tmp_path, setting, error):
     cfg = _config(tmp_path, **{**BAD_RUN, **setting})
     with pytest.raises(error):
         run_vulcan(cfg, make_network=False)
+
+
+# ---------------------------------------------------------------------------
+# Climate coupling: a temperature change at steady state moves the kinetics with it
+# ---------------------------------------------------------------------------
+
+
+class _StepClimate:
+    """Isothermal climate hook: the start temperature on its first call, then `t_new`."""
+
+    def __init__(self, t_new):
+        self.t_new, self.calls = t_new, 0
+
+    def __call__(self, pco, tco, species, ymix):
+        self.calls += 1
+        tmp = tco if self.calls == 1 else np.full_like(tco, self.t_new)
+        return ClimateUpdate(p=pco, tmp=tmp)
+
+
+@pytest.mark.integration
+@pytest.mark.physics_invariant
+@pytest.mark.parametrize('call_frq', [0, 50], ids=['at-steady-state', 'every-50-steps'])
+def test_climate_update_moves_the_kinetics_to_the_new_equilibrium(tmp_path, call_frq):
+    """Started at the 1500 K equilibrium, a climate that then sets 1200 K ends at FastChem's.
+
+    The second climate call cools the column to 1200 K: at the 1500 K steady state, or at
+    step 50 with periodic updates. The kinetics relax to a new steady state, where the next
+    update changes nothing, and the result must match FastChem's 1200 K equilibrium, an
+    independent code. Rate coefficients or number densities left at 1500 K would keep the
+    1500 K equilibrium, which differs from the 1200 K one by far more than the tolerance.
+    """
+    x_1200 = _fastchem_equilibrium(tmp_path / 'ref1200', Tiso=1200.0)
+    x_1500 = _fastchem_equilibrium(tmp_path / 'ref1500')
+    climate = _StepClimate(1200.0)
+    cfg = _config(tmp_path / 'run', ini_mix='eq', agni_call_frq=call_frq, **EQ_SETTINGS)
+
+    run_vulcan(cfg, make_network=False, climate=climate)
+    with open(cfg.output_dir + cfg.out_name + '.pkl', 'rb') as hdl:
+        run = pickle.load(hdl)
+
+    np.testing.assert_allclose(run['atm']['Tco'], 1200.0, rtol=1e-12)
+    if call_frq == 0:  # before integrating, at the 1500 K and at the 1200 K steady state
+        assert climate.calls == 3
+    _assert_matches_equilibrium(run, x_1200)
+    mask = x_1200 > 1e-10
+    assert np.max(np.abs(x_1500[mask] / x_1200[mask] - 1.0)) > 0.1

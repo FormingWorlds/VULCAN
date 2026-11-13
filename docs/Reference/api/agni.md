@@ -4,13 +4,15 @@ title: vulcan.agni
 
 ::: vulcan.agni
     options:
-      members: 
-        - _solve_energy
-        - _solve_once
+      members:
+        - AgniClimate
         - activate_julia
+        - agni_dir
+        - climate_update
         - deallocate_atmos
         - init_agni_atmos
-        - run_agni
+        - set_composition
+        - set_temperature
       inherited_members: false
       show_source: true
       show_if_no_docstring: true

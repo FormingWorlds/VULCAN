@@ -25,6 +25,7 @@ END_CASES = {
     1: 'converged to steady state',
     2: 'stopped at runtime limit',
     3: 'stopped at count_max limit',
+    4: 'stopped at agni_max_calls with the temperature still changing',
 }
 
 
@@ -175,6 +176,10 @@ def write_netcdf(fpath, var, atm, para, cfg, species, nr, re_wM_dict, compress=T
         ds.longdydt = float(var.longdydt)
         if getattr(para, 'start_time', None) is not None:
             ds.wall_time_s = time.time() - para.start_time
+        climate_dT = list(getattr(para, 'climate_dT', []))
+        ds.climate_updates = len(climate_dT)
+        if climate_dT:
+            ds.climate_max_rel_dT = np.asarray(climate_dT, dtype=float)
 
         for key in (
             'Rp',

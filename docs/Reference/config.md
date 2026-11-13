@@ -110,7 +110,7 @@ are the shipped configuration, which describes the hot Jupiter **HD 189733b**.
 | Parameter | Default | Description |
 |---|---|---|
 | `use_Kzz` | `True` | Enable eddy diffusion. |
-| `Kzz_prof` | `'file'` | $K_{zz}$ source: `'file'`, `'const'`, `'Pfunc'` (Tsai 2021 form), `'JM16'` (Moses 2016 form). |
+| `Kzz_prof` | `'file'` | $K_{zz}$ source: `'file'`, `'const'`, `'Pfunc'` (Tsai 2021 form), `'JM16'` (Moses 2016 form), `'climate'` (from the climate model at each climate update; needs a climate hook or `agni_call_frq > 0`). |
 | `const_Kzz` | `1e10` | Constant $K_{zz}$ (cm$^2$ s$^{-1}$), used **only** when `Kzz_prof='const'`. |
 | `K_max`, `K_p_lev` | `1e5`, `0.1` | Parameters for `Kzz_prof='Pfunc'`. |
 | `use_vz` | `True` | Enable vertical advection. |
@@ -159,8 +159,13 @@ are the shipped configuration, which describes the hot Jupiter **HD 189733b**.
 
 | Parameter | Default | Description |
 |---|---|---|
-| `agni_call_frq` | `0` | Step interval for calling AGNI; `0` disables the coupling. |
-| `solve_rce` | `False` | If `True`, solve radiative-convective equilibrium; else apply a prescribed profile and fill $K_{zz}$. |
+| `agni_call_frq` | `0` | Solver steps between climate updates. Without a climate hook, `0` disables the coupling and a value $> 0$ couples to AGNI. With a hook passed to `run_vulcan`, `0` updates the climate only at each steady state. |
+| `agni_T_rtol` | `1e-2` | The run ends when the climate update made at a steady state changes the temperature by at most this fraction in every layer, $\max \lvert \Delta T \rvert / T$. |
+| `agni_max_calls` | `10` | Climate updates made at steady states before the run stops with `end_case = 4`. |
+| `agni_dir` | `''` | AGNI folder; empty means `VULCAN/AGNI`. Not used when AGNI is already loaded. |
+| `agni_sol_type` | `3` | AGNI surface condition: 1 fixed surface temperature, 2 conductive skin, 3 internal flux `agni_flux_int`, 4 target OLR. |
+| `agni_flux_int` | `0.0` | Internal flux for `agni_sol_type = 3` (W m$^{-2}$). |
+| `solve_rce` | `False` | If `True`, AGNI solves radiative-convective equilibrium; else VULCAN's temperature is kept and AGNI only fills $K_{zz}$ from it. |
 | `spectral_file` | `'greygas'` | AGNI spectral file (or grey-gas solution). |
 | `use_rayleigh` | `False` | Include Rayleigh scattering in AGNI. |
 | `surf_albedo` | `0.0` | Surface albedo. |
