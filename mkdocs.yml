@@ -48,6 +48,7 @@ nav:
           - vulcan.make_chem_funs: Reference/api/make_chem_funs.md
           - vulcan.build_atm: Reference/api/build_atm.md
           - vulcan.agni: Reference/api/agni.md
+          - vulcan.climate: Reference/api/climate.md
           - vulcan.config: Reference/api/config.md
           - vulcan.paths: Reference/api/paths.md
           - vulcan.phy_const: Reference/api/phy_const.md

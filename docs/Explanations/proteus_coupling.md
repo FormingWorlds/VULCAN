@@ -189,3 +189,44 @@ flipped to surface-first ordering to match AGNI's convention.
 | Network compilation | Runs if `make_funs = True` | Runs on first snapshot only (tracked via function attribute `_made`) |
 
 
+
+---
+
+## Climate coupling during the chemistry
+
+By default VULCAN keeps the temperature profile it starts from. A chemistry run can also
+change the temperature, because the gases it makes or destroys absorb and emit radiation
+differently. To follow this, VULCAN can call a climate model during its integration.
+
+The climate model is given to `run_vulcan` as a *climate hook*: a function that receives
+VULCAN's pressures, temperatures and mixing ratios and returns a new temperature profile,
+and optionally a new eddy diffusion profile $K_{zz}$ (`vulcan.climate.ClimateUpdate`).
+`vulcan.agni.AgniClimate` is the hook for AGNI; PROTEUS passes its own hook, built on its
+AGNI setup, so the climate matches the one in the planet's evolution.
+
+VULCAN calls the hook once before it integrates, every `agni_call_frq` steps, and whenever
+the chemistry reaches a steady state. After each call it:
+
+1. takes the new temperature, and the new $K_{zz}$ when `Kzz_prof = 'climate'`, both
+   interpolated in log pressure onto its own grid;
+2. keeps the mixing ratios and sets the number densities to $n = p / (k_B T)$ at the fixed
+   pressures;
+3. recomputes every rate coefficient, the molecular diffusion, the saturation pressures,
+   the scale heights and the photolysis rates at the new temperature;
+4. if the update changed the temperature by more than `agni_T_rtol` in some layer, restarts
+   from the initial step size `dttry`, because such a change starts a fast chemical
+   transient, and tests for a steady state only on the steps after it. A smaller change
+   does neither, so frequent updates of a climate that has settled do not hold the run
+   back.
+
+The run ends when a steady state is reached and the climate update made at that steady
+state changes the temperature by no more than `agni_T_rtol` in any layer. The chemistry and
+the climate then agree with each other. That last update is not integrated, so the run
+saves the state from before it: the temperature, $K_{zz}$ and rates that the chemistry is
+steady for. If the temperature has not settled within `agni_max_calls` such updates, the
+run stops with `end_case = 4`.
+
+With `solve_rce = False`, AGNI does not solve for the temperature: the hook returns
+VULCAN's own temperature unchanged, and only $K_{zz}$ comes from AGNI. Fixed species
+(`fix_species`) and temperature-dependent cross sections (`T_cross_sp`) cannot be used with
+a climate, because both are set once, at the temperature of the start.

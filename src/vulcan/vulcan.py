@@ -43,7 +43,31 @@ mpl_logger.setLevel(logging.WARNING)
 log = logging.getLogger('fwl.' + __name__)
 
 
-def run_vulcan(vulcan_cfg: Config, make_network: bool = True):
+def check_climate_config(vulcan_cfg: Config, climate=None) -> None:
+    """Refuse climate coupling settings that cannot work, before any work is done.
+
+    Raises
+    ------
+    ValueError
+        If `Kzz_prof = 'climate'` has no climate to come from; if temperature-dependent
+        cross sections (read once, at the start) or fixed species (held at densities of the
+        old temperature) are requested with a climate; or if `agni_T_rtol` or
+        `agni_max_calls` is not positive.
+    """
+    coupled = climate is not None or vulcan_cfg.agni_call_frq > 0
+    if vulcan_cfg.Kzz_prof == 'climate' and not coupled:
+        raise ValueError("Kzz_prof = 'climate' needs a climate hook or agni_call_frq > 0")
+    if coupled and vulcan_cfg.T_cross_sp:
+        raise ValueError('T_cross_sp must be empty when the climate updates the temperature')
+    if coupled and vulcan_cfg.fix_species:
+        raise ValueError('fix_species must be empty when the climate updates the temperature')
+    if not vulcan_cfg.agni_T_rtol > 0:
+        raise ValueError(f'agni_T_rtol must be positive, got {vulcan_cfg.agni_T_rtol}')
+    if not vulcan_cfg.agni_max_calls >= 1:
+        raise ValueError(f'agni_max_calls must be at least 1, got {vulcan_cfg.agni_max_calls}')
+
+
+def run_vulcan(vulcan_cfg: Config, make_network: bool = True, climate=None):
     """Run VULCAN with the given configuration.
 
     Parameters
@@ -52,7 +76,14 @@ def run_vulcan(vulcan_cfg: Config, make_network: bool = True):
         The configuration object containing all settings for the VULCAN run.
     make_network : bool, optional
         Whether to remake the chemical network (chem_funs.py). Default is True.
+    climate : callable, optional
+        Climate hook (see `vulcan.climate`) that updates the temperature, and with
+        `Kzz_prof = 'climate'` the eddy diffusion, before the integration, every
+        `agni_call_frq` steps and at each steady state. Without one, `agni_call_frq > 0`
+        couples to AGNI through `vulcan.agni.AgniClimate`.
     """
+
+    check_climate_config(vulcan_cfg, climate)
 
     # make network?
     if make_network:
@@ -136,17 +167,6 @@ def run_vulcan(vulcan_cfg: Config, make_network: bool = True):
     # specify the BC
     make_atm.BC_flux(data_atm)
 
-    # initialise environment for T(p) solver
-    atmos = None
-    if vulcan_cfg.agni_call_frq > 0:
-        # setup julia
-        from .agni import activate_julia, deallocate_atmos, init_agni_atmos
-
-        activate_julia(vulcan_cfg)
-
-        # setup AGNI atmosphere object
-        atmos = init_agni_atmos(vulcan_cfg, data_atm, data_var)
-
     # ============== Execute VULCAN  ==============
     # time-steping in the while loop until conv() returns True or count > count_max
 
@@ -174,14 +194,22 @@ def run_vulcan(vulcan_cfg: Config, make_network: bool = True):
 
     # Running the integration loop
     log.info(f'Starting VULCAN integration with {os.environ["OMP_NUM_THREADS"]} threads...')
-    integ(data_var, data_atm, data_para, make_atm, atmos=atmos)
+    # climate hook: the caller's, or AGNI's when agni_call_frq > 0
+    own_climate = climate is None and vulcan_cfg.agni_call_frq > 0
+    try:
+        if own_climate:
+            from .agni import AgniClimate
+
+            climate = AgniClimate(vulcan_cfg, data_atm, data_var)
+        if climate is not None:
+            integ.update_climate(climate, data_var, data_atm, data_para, make_atm)
+        integ(data_var, data_atm, data_para, make_atm, climate=climate)
+    finally:
+        if own_climate and climate is not None:
+            climate.close()
 
     # Save result to disk
     output.save_out(data_var, data_atm, data_para)
-
-    # Deallocate AGNI
-    if atmos:
-        deallocate_atmos(atmos)
 
 
 def run_cli():

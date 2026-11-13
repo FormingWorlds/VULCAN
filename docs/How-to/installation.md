@@ -98,8 +98,9 @@ file AGNI/agni.jl
 ```
 
 VULCAN talks to AGNI through `juliacall` and expects to find `AGNI/agni.jl` at that path
-(`agni.py` checks for it). The coupling is **off by default** — enable it by setting
-`agni_call_frq > 0` (and `solve_rce` as desired) in your configuration.
+(`agni.py` checks for it), or in `agni_dir` when that is set. The coupling is **off by
+default**: enable it by setting `agni_call_frq > 0` (and `solve_rce` as desired) in your
+configuration.
 
 ---
 

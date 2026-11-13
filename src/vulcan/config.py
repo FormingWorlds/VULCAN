@@ -103,7 +103,7 @@ class Config:
         self.vz_prof = 'const'  # Options: 'const' or 'file'
         self.const_vz = 0.0  # (cm/s)
         self.use_Kzz = True
-        self.Kzz_prof = 'file'  # Options: 'const','file'
+        self.Kzz_prof = 'file'  # Options: 'const', 'file', 'JM16', 'Pfunc', 'climate'
         self.const_Kzz = 1e10  # Only reads when Kzz_prof = 'const'
         self.K_max = 1e5  # for Kzz_prof = 'Pfunc'
         self.K_p_lev = 0.1  # for Kzz_prof = 'Pfunc'
@@ -134,8 +134,15 @@ class Config:
         )
         self.humidity = 1.0
 
-        # ====== coupling to AGNI ======
+        # ====== coupling to a climate model (AGNI) ======
+        # Steps between climate updates; 0 updates only at steady state, given a climate hook.
+        # Without a hook, a value > 0 couples to AGNI through vulcan.agni.AgniClimate.
         self.agni_call_frq = 0
+        self.agni_T_rtol = 1e-2  # settled when max |dT|/T of an update is at most this
+        self.agni_max_calls = 10  # climate updates at steady state before giving up
+        self.agni_dir = ''  # AGNI folder; empty means VULCAN/AGNI
+        self.agni_sol_type = 3  # AGNI surface condition: 1 fixed T, 2 skin, 3 flux, 4 OLR
+        self.agni_flux_int = 0.0  # internal flux for agni_sol_type 3 (W m-2)
         self.spectral_file = 'greygas'  # "res/spectral_files/Dayspring/48/Dayspring.sf"
         self.use_rayleigh = False
         self.surf_albedo = 0.0

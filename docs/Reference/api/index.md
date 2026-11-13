@@ -15,7 +15,8 @@ src/vulcan
 ├── make_chem_funs.py   # parses the network file and generates chem_funs.py
 ├── chem_funs.py         # generated: chemdf, Gibbs, symjac/neg_symjac, spec_list, ni, nr
 ├── op.py                # ReadRate, Integration, ODESolver, Ros2, Output: the numerical core
-├── agni.py              # optional coupling to the AGNI radiative-convective model
+├── climate.py           # climate-hook interface: ClimateUpdate, regridding, composition map
+├── agni.py              # AgniClimate: the climate hook for the AGNI radiative-convective model
 ├── phy_const.py         # physical constants (cgs)
 ├── paths.py             # VULCAN_DIR, THERMO_DIR, CROSS_DIR and other path resolution
 └── logs.py              # logging setup
@@ -50,7 +51,8 @@ src/vulcan
 | Module | Key classes | Reference |
 |---|---|---|
 | `op` | `ReadRate`, `Integration`, `ODESolver`, `Ros2`, `Output` | [API](op.md) |
-| `agni` | `run_agni` (optional, requires `agni_call_frq > 0`) | [API](agni.md) |
+| `climate` | `ClimateUpdate`, `regrid_temperature`, `regrid_kzz`, `map_composition` | [API](climate.md) |
+| `agni` | `AgniClimate` (optional, used when `agni_call_frq > 0` and no hook is given) | [API](agni.md) |
 
 ### Utilities
 
