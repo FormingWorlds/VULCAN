@@ -83,6 +83,12 @@ Module roles: `config.py` holds every runtime setting; `paths.py` the absolute p
 - The default initial composition is `ini_mix = 'eq'`, which needs the `fastchem_vulcan/fastchem` executable.
 - Output is controlled by `save_type` (default `['pickle', 'netcdf', 'plain']`), `out_name` (default `example`), `output_dir` (default `output/`), `clean_output` and `save_evolution`. `output_humanread` is deprecated; use `save_type = 'plain'`.
 - Climate coupling goes through a climate hook (`climate.py`): `run_vulcan(cfg, make_network, climate=hook)` takes the caller's hook, and `agni_call_frq > 0` without one builds `agni.AgniClimate`, which calls AGNI through `juliacall` from `agni_dir` (default `VULCAN/AGNI/` with `agni.jl`). After each climate update `op.Integration.update_climate` recomputes every temperature-dependent quantity; a new one goes there too.
+- On some machines and shells, not all, starting AGNI through juliacall fails with `could not load library ".../.juliaup/bin/../lib/julia/sys.so"`. juliapkg recorded the juliaup launcher as the Julia executable, and juliacall looks for the system image next to it. Julia ends the Python process, so pytest can exit with code 1 and no output; `tests/test_agni.py` checks in a subprocess first and skips its AGNI test. Point juliacall at the real Julia binary and its project, both together (juliacall refuses one without the other):
+
+  ```bash
+  export PYTHON_JULIACALL_EXE="$(julia --startup-file=no -e 'print(joinpath(Sys.BINDIR, "julia"))')"
+  export PYTHON_JULIACALL_PROJECT="$(python -c 'import juliapkg; print(juliapkg.project())')"
+  ```
 
 ## Agent files
 
