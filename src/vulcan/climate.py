@@ -7,12 +7,12 @@ diffusion profile during an integration.
 A climate hook is any callable `hook(pco, Tco, species, ymix)` that returns a
 `ClimateUpdate`. VULCAN passes its layer-centre pressures `pco` [dyn cm-2] from the bottom of
 the column up, its temperature `Tco` [K] on those layers, the list of species names and
-their volume mixing ratios `ymix` [layer, species]. The hook returns the new temperature
+their volume mixing ratios `ymix`, shape (nz, ni). The hook returns the new temperature
 profile, and optionally a new eddy diffusion profile, on its own pressure grid; VULCAN maps
 them onto its grid with `regrid_temperature` and `regrid_kzz`. `vulcan.agni.AgniClimate` is
 the hook for AGNI; a coupled framework can pass its own hook to `vulcan.run_vulcan`.
 
-All quantities are in CGS units, as everywhere in VULCAN.
+All quantities are in cgs units, as everywhere in VULCAN.
 """
 
 from __future__ import annotations
@@ -138,12 +138,12 @@ def regrid_kzz(update: ClimateUpdate, pico_inner: np.ndarray) -> np.ndarray:
         Climate result; `p_kzz` [dyn cm-2] and `kzz` [cm2 s-1] are used.
     pico_inner : np.ndarray
         VULCAN interface pressures without the top and bottom ones, `pico[1:-1]`
-        [dyn cm-2], shape (nz-1,).
+        [dyn cm-2], shape (nz - 1,).
 
     Returns
     -------
     np.ndarray
-        Kzz on `pico_inner` [cm2 s-1], shape (nz-1,).
+        Kzz on `pico_inner` [cm2 s-1], shape (nz - 1,).
 
     Raises
     ------
@@ -180,7 +180,7 @@ def map_composition(
     species : list of str
         VULCAN species names, the columns of `ymix`.
     ymix : np.ndarray
-        VULCAN volume mixing ratios [layer, species].
+        VULCAN volume mixing ratios [dimensionless], shape (nz, ni).
     p_tgt : np.ndarray
         Pressures of the climate model's layers, in the same unit as `p_src`.
     current : dict

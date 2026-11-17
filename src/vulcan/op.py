@@ -114,7 +114,7 @@ class ReadRate(object):
     Read the chemical network and compute the rate coefficients on the T-P profile.
 
     Each reaction in the network file gets an odd internal number and its reverse the next
-    even number. The methods are called in this order by `vulcan.vulcan.run_vulcan`:
+    even number. The methods are called in this order by `vulcan.run_vulcan`:
     `read_rate`, optionally `lim_lowT_rates`, `rev_rate`, `remove_rate`, and with
     photochemistry `make_bins_read_cross` and `remove_rate` again after the first photolysis
     rates.
@@ -149,11 +149,8 @@ class ReadRate(object):
         Parameters
         ----------
         var : store.Variables
-            Filled in place: `k`, `k_fun`, `kinf_fun`, `Rf`, `Rindx`, the Arrhenius parameters,
-            `photo_sp`, `pho_rate_index`, `n_branch`, `conden_re_list`, `ion_rate_index` and
-            `ion_branch` from the `# ionisation` section, with `use_ion` also `ion_sp`, and
-            the first reaction number of each
-            section (`conden_indx`, `recomb_indx`, `photo_indx`, `ion_indx`, `stop_rev_indx`).
+            Updates the rate coefficients `k` and `k_fun`, the reaction lists, the photolysis
+            and ionisation indices, and the first reaction number of each section.
         atm : store.AtmData
             Reads `Tco` [K] and `M` [cm-3].
 
@@ -578,25 +575,18 @@ class ReadRate(object):
         """
         Build the wavelength grid and put the cross sections on it.
 
-        The grid covers the wavelengths absorbed by the photodissociating and photoionising
-        species, limited to `var.def_bin_min`-`var.def_bin_max` and to the longest
-        photodissociation threshold (`thresholds.txt`), with spacing `Config.dbin1` below
-        `Config.dbin_12trans` and `Config.dbin2` above if `dbin_12trans` lies inside the grid,
-        otherwise `dbin1` throughout. Cross sections are interpolated
-        linearly onto the grid with zero outside the data; branching ratios are held constant
-        beyond their data. For the species in `Config.T_cross_sp`, the cross sections in each
-        layer are interpolated linearly in T and in log10 of the cross section between the
-        tabulated temperatures (the default file counts as 300 K), and held at the nearest
-        table beyond them.
+        The grid covers the wavelengths absorbed by the photolysed species, within
+        `var.def_bin_min` to `var.def_bin_max` and up to the longest dissociation threshold.
+        The spacing is `Config.dbin1` below `Config.dbin_12trans` and `Config.dbin2` above
+        it, if `dbin_12trans` lies inside the grid; otherwise `dbin1` throughout. Cross
+        sections are interpolated linearly, with zero outside the data. For the species in
+        `Config.T_cross_sp`, they are also interpolated in temperature in each layer.
 
         Parameters
         ----------
         var : store.Variables
-            Reads `photo_sp`, `ion_sp`, `n_branch`, `ion_branch`, `def_bin_min` and
-            `def_bin_max` [nm]. Sets `bins` [nm], `nbin`, `dbin1` and `dbin2` [nm],
-            `threshold` [nm], the cross sections `cross`, `cross_J`, `cross_scat`, `cross_T`,
-            `cross_J_T` and with `use_ion` `cross_Jion` [cm2], `cross_T_sp_list` [K], and
-            allocates `sflux`, `dflux_u`, `dflux_d`, `aflux`, `tau` and `sflux_top`.
+            Reads the photolysed species and their branches; sets the grid `bins` [nm], the
+            cross sections `cross*` [cm2] and the empty flux arrays.
         atm : store.AtmData
             Reads `Tco` [K].
 
@@ -1203,10 +1193,8 @@ class Integration(object):
             Used to update the mean molar mass, the height grid and, after a climate
             update, the other temperature-dependent profiles.
         climate : callable or None
-            Climate hook (see `vulcan.climate`). With a hook, the temperature and, with
-            `Kzz_prof = 'climate'` and `use_Kzz`, the eddy diffusion are updated every
-            `agni_call_frq` steps (never when 0) and at each steady state, until the
-            temperature settles.
+            Climate hook (see `vulcan.climate`), called every `agni_call_frq` steps (never
+            when 0) and at each steady state, until the temperature settles.
         """
 
         nz = self.cfg.nz
@@ -1385,7 +1373,7 @@ class Integration(object):
 
     def backup(self, var):
         """
-        Store `y`, `dy` and `atom_loss` as the previous-step values.
+        Store `y`, `dy` and `atom_loss` as the previous-step values, so a step can be undone.
 
         Parameters
         ----------
@@ -1406,16 +1394,12 @@ class Integration(object):
         """
         Call the climate hook and recompute every quantity that depends on temperature.
 
-        The hook gets the present state and returns a temperature profile (and, with
-        `Kzz_prof = 'climate'` and `use_Kzz`, an eddy diffusion profile), which replace
-        VULCAN's after regridding (`vulcan.climate.regrid_temperature`, `regrid_kzz`). The
-        mixing ratios are kept; the number densities follow the new temperature at the fixed
-        pressures. Rate coefficients, molecular diffusion, saturation pressures, scale
-        heights, settling velocities, escape fluxes and photolysis rates are then
-        recomputed, as at the start of a run. An update that changes the temperature by more
-        than `agni_T_rtol` also restarts the step size from `dttry`, and the steady-state
-        test in `conv` then only uses the steps after it; a smaller change does neither, so
-        frequent updates of a settled climate do not hold back the steady state.
+        The new temperature (and, with `Config.Kzz_prof = 'climate'` and `use_Kzz`, the new
+        Kzz) replaces VULCAN's on its own grid. The mixing ratios are kept, so the number
+        densities follow the new temperature at fixed pressure. Every temperature-dependent
+        quantity is then recomputed as at the start of a run. A change larger than
+        `agni_T_rtol` also restarts the step size from `dttry` and the steady-state test in
+        `conv`; a smaller one does not, so a settled climate does not delay convergence.
 
         Parameters
         ----------
@@ -1423,11 +1407,10 @@ class Integration(object):
             Climate hook, called as `climate(pco, Tco, species, ymix)` with copies of the
             present state; returns a `vulcan.climate.ClimateUpdate`.
         var : store.Variables
-            Reads `ymix`; updates `y` [cm-3], `k`, `atom_ini`, `atom_sum`, `atom_loss_prev`,
-            with photochemistry the photolysis rates, and `dt` [s] after a large change.
+            Reads `ymix`; updates `y` [cm-3], the rate coefficients and the atom budgets, and
+            `dt` [s] after a large change.
         atm : store.AtmData
-            Updates `Tco` [K], `Kzz` [cm2 s-1], `M` and `n_0` [cm-3] and every quantity
-            derived from them.
+            Updates `Tco` [K], `Kzz` [cm2 s-1] and every quantity derived from them.
         para : store.Parameters
             Appends to `climate_dT`; sets `climate_count` after a large change.
         make_atm : build_atm.Atm
@@ -1472,12 +1455,10 @@ class Integration(object):
         return d_tmp
 
     def _refresh_densities(self, var, atm):
-        """Number densities at the fixed pressures and the new temperature, same mixing ratios.
+        """Recompute the number densities at the new temperature, keeping the mixing ratios.
 
-        Condensates are rescaled with the gas, since their mixing ratios are relative to the
-        gas density; the column of each species, n dz with dz proportional to T, is then kept.
-        The element totals that `loss` compares with change with the number densities, so
-        they are rescaled keeping the relative element loss accumulated so far.
+        The element totals that `loss` compares with are rescaled too, keeping the relative
+        element loss accumulated so far.
         """
         atm.M = atm.pco / (kb * atm.Tco)
         atm.n_0 = atm.M.copy()
@@ -1491,10 +1472,9 @@ class Integration(object):
         var.atom_loss_prev = var.atom_loss.copy()
 
     def _refresh_rates(self, var, atm):
-        """Rate coefficients at the new temperature, through the same steps as at the start.
+        """Recompute the rate coefficients at the new temperature, as at the start of a run.
 
-        Condensation rates are set by `conden` at every step, so their present values are
-        kept; photolysis rates are set again by `compute_J` afterwards.
+        The condensation rates keep their present values; `conden` sets them every step.
         """
         conden = {i: var.k[i] for re in var.conden_re_list for i in (re, re + 1)}
         var.conden_re_list = []
@@ -1507,7 +1487,7 @@ class Integration(object):
         var.k.update(conden)
 
     def _refresh_transport(self, var, atm, make_atm):
-        """Molecular diffusion, saturation, scale heights and settling at the new temperature."""
+        """Recompute diffusion, saturation, heights and settling at the new temperature."""
         make_atm.mol_diff(atm)
         if self.cfg.use_condense:
             make_atm.sp_sat(atm)
@@ -1660,16 +1640,13 @@ class Integration(object):
         """
         Check whether the model has reached steady state.
 
-        `longdy` is the largest change of the mixing ratios, relative to themselves, between now
-        and the saved step closest to `Config.st_factor` times the current time (at most
-        `Config.conv_step` steps back); `longdydt` divides it by the elapsed time. Species with
-        mixing ratio below `mtol_conv` or density below `atol`, those in `conver_ignore` and the
-        non-gaseous species are ignored. Converged means `longdy < yconv_cri` and
-        `longdydt < slope_cri`, or `longdy < yconv_min` and `longdydt` below
-        min(Kzz / (0.1 H_p)^2) (kept between 1e-10 and 1e-8 s-1), with the actinic flux change
-        below `flux_cri` in both cases. After a climate update, steps before
-        `para.climate_count` are not used, since the densities changed there without chemistry;
-        if no later step is available, the model is not converged.
+        `longdy` is the largest relative change of the mixing ratios since the step at about
+        `Config.st_factor` times the current time, and `longdydt` that change per second.
+        Trace species (below `mtol_conv` or `atol`), `conver_ignore` and condensates are
+        left out. Converged means `longdy < yconv_cri` and `longdydt < slope_cri`, or
+        `longdy < yconv_min` and `longdydt` below a mixing rate Kzz / (0.1 H_p)^2; in both
+        cases the actinic flux change must be below `flux_cri`. Steps before the latest
+        climate update are not compared.
 
         Parameters
         ----------
@@ -1753,12 +1730,10 @@ class Integration(object):
     def _climate_settled(self, var, atm, para) -> bool:
         """At a chemical steady state, update the climate once more and test the change.
 
-        Returns True when the largest relative temperature change is at most `agni_T_rtol`.
-        The state then goes back to the one before this update (temperature, Kzz, rates and
-        every other refreshed quantity), which is the state the chemistry is steady for, so
-        that is what the run saves; `para.climate_dT` still records the update. Otherwise the
-        integration continues from the updated state, unless this was the
-        `agni_max_calls`-th such update, which sets `end_case = 4`.
+        Returns True when the largest relative temperature change is at most
+        `Config.agni_T_rtol`; the state then goes back to the one before this update, for
+        which the chemistry is steady. Otherwise the integration continues from the updated
+        state, or stops with `end_case = 4` after `agni_max_calls` such updates.
         """
         para.climate_iter += 1
         saved = (_state_copy(var), _state_copy(atm))
@@ -1783,11 +1758,9 @@ class Integration(object):
 
         Stops when converged (`conv`, after `Config.trun_min` and `Config.count_min`), when the
         time exceeds `Config.runtime` [s], or when the step count exceeds `Config.count_max`.
-        After a climate update that changed the temperature, convergence is only tested once
-        `count_min` more steps have passed. With a climate hook, a converged state also
-        needs a settled climate (`_climate_settled`); if the temperature still changes, the
-        integration continues, or stops with `end_case = 4` after `Config.agni_max_calls`
-        updates at steady state.
+        After a climate update, `count_min` steps must pass again before convergence is
+        tested. With a climate hook, convergence also needs a settled climate
+        (`_climate_settled`).
 
         Parameters
         ----------
@@ -2136,9 +2109,10 @@ class Integration(object):
         """
         Relax supersaturated H2O towards saturation and move the excess to H2O_l_s.
 
+        Not called by the current code; `h2o_conden_evap_relax` is used instead.
+
         An implicit Euler step with the timescale 1 / |D m / (rho_p r_p^2) (n - n_sat)|, with
-        a fixed particle density of 0.95 g cm-3. Not called by the current code;
-        `h2o_conden_evap_relax` is used instead.
+        a fixed particle density of 0.95 g cm-3.
 
         Parameters
         ----------
@@ -2369,8 +2343,10 @@ class ODESolver(object):
     @staticmethod
     def sub_interior(dfdy, offset, val):
         """
-        dfdy[r, r + offset] -= val for every row r of the interior layers 1..nz-2.
-        val has shape (nz-2, 1) (the same for every species) or (nz-2, ni).
+        Subtract a transport term from one diagonal of the Jacobian in the interior layers.
+
+        Sets dfdy[r, r + offset] -= val for every row r of the layers 1 to nz - 2; `val` has
+        shape (nz - 2, 1), the same for every species, or (nz - 2, ni).
         """
         nlev = val.shape[0]
         rows = np.arange(ni, (nlev + 1) * ni)
@@ -3568,8 +3544,9 @@ class ODESolver(object):
         """
         Rosenbrock matrix as `lhs_jac_tot`, with the molecular advection velocity `atm.vm`.
 
-        Selected only with `Config.use_vm_mol`, which `Integration` rejects. It no longer
-        runs: it calls the generated `neg_symjac` without `nz`, which raises TypeError.
+        Not called by the current code: only `Config.use_vm_mol` selects it, and
+        `Integration` rejects that setting. It no longer runs: it calls the generated
+        `neg_symjac` without `nz`, which raises TypeError.
 
         Parameters
         ----------
@@ -3840,10 +3817,12 @@ class ODESolver(object):
         """
         Rosenbrock matrix like `lhs_jac_tot`, with no dependence on the bottom layer.
 
+        Not called by the current code: its only caller, `Ros2.solver_fix_all_bot`, is
+        unused. The columns of the bottom layer, its 1/(r h) diagonal included, are zero, so
+        the matrix is singular and `band_lu` raises LinAlgError.
+
         Unlike `lhs_jac_tot`, it adds the diffusion-limited escape term for `Config.diff_esc`
-        on the top-layer diagonal and omits the `bot_vdep` deposition term. The columns of
-        the bottom layer, its 1/(r h) diagonal included, are zero, so the matrix is singular
-        and `band_lu` raises LinAlgError. Used only by `Ros2.solver_fix_all_bot`.
+        on the top-layer diagonal and omits the `bot_vdep` deposition term.
 
         Parameters
         ----------
@@ -4015,9 +3994,9 @@ class ODESolver(object):
         """
         Rosenbrock matrix as `lhs_jac_no_mol`, with no dependence on the bottom layer.
 
-        Used by `Ros2.solver_fix_all_bot` without molecular diffusion. The columns of the
-        bottom layer, its 1/(r h) diagonal included, are zero, so the matrix is singular and
-        `band_lu` raises LinAlgError.
+        Not called by the current code: its only caller, `Ros2.solver_fix_all_bot`, is
+        unused. The columns of the bottom layer, its 1/(r h) diagonal included, are zero, so
+        the matrix is singular and `band_lu` raises LinAlgError.
 
         Parameters
         ----------
@@ -4353,8 +4332,9 @@ class ODESolver(object):
         """
         Rosenbrock matrix as `lhs_jac_settling`, with the molecular advection velocity `atm.vm`.
 
-        Matches `diffdf_settling_vm`; selected only with `Config.use_vm_mol`. It no longer
-        runs: it calls the generated `neg_symjac` without `nz`, which raises TypeError.
+        Not called by the current code: only `Config.use_vm_mol` selects it, and
+        `Integration` rejects that setting. It no longer runs: it calls the generated
+        `neg_symjac` without `nz`, which raises TypeError. Matches `diffdf_settling_vm`.
 
         Parameters
         ----------
@@ -4607,8 +4587,10 @@ class ODESolver(object):
 
     def step_ok(self, var, para, loss_eps=1e-1, rtol=0.6):
         """
-        Accept the step if y >= 0, the truncation error is within `rtol`, and the relative
-        element loss changed by less than `loss_eps` over the step.
+        Check whether the last step can be accepted.
+
+        It can if y >= 0, the truncation error is within `rtol`, and the relative element
+        loss changed by less than `loss_eps` over the step.
 
         Parameters
         ----------
@@ -4764,8 +4746,8 @@ class ODESolver(object):
         """
         Solve a tridiagonal system for several right-hand sides with the Thomas algorithm.
 
-        Not used by the current code. It has no `self` argument, so it only works when called
-        through the class.
+        Not called by the current code. It has no `self` argument, so it only works when
+        called through the class.
 
         Parameters
         ----------
@@ -4850,21 +4832,17 @@ class ODESolver(object):
         """
         Compute the direct and diffuse stellar flux and the actinic flux in each layer.
 
-        The direct beam follows Beer's law along the zenith angle `Config.sl_angle`. The
-        diffuse flux comes from a two-stream solution with the Eddington coefficient
-        `Config.edd`, isotropic scattering (`phy_const.ag0` = 0), the single-scattering albedo
-        from the Rayleigh cross sections and the absorption of the photodissociating species,
-        and no upward diffuse flux at the bottom. The actinic flux is the direct beam plus
-        the diffuse fluxes divided by `edd`, converted to photons.
+        The direct beam follows Beer's law along the zenith angle `Config.sl_angle`; the
+        diffuse flux comes from a two-stream solution with isotropic Rayleigh scattering and
+        no upward diffuse flux at the bottom.
 
         Parameters
         ----------
         var : store.Variables
-            Reads `tau`, `sflux_top` [erg cm-2 s-1 nm-1], `ymix`, the cross sections [cm2] and
-            `bins` [nm]. Sets `sflux`, `dflux_u` and `dflux_d` at the interfaces, shape
-            (nz + 1, nbin) [erg cm-2 s-1 nm-1]; `aflux` at the layer centres, shape (nz, nbin)
-            [photons cm-2 s-1 nm-1]; `prev_aflux`; `aflux_change` [dimensionless]; and
-            `zeta_m`, `zeta_p` and `tran`.
+            Reads `tau`, `sflux_top` [erg cm-2 s-1 nm-1] and the cross sections [cm2]. Sets
+            the direct and diffuse fluxes `sflux`, `dflux_u` and `dflux_d` at the interfaces
+            [erg cm-2 s-1 nm-1], the actinic flux `aflux` at the layer centres
+            [photons cm-2 s-1 nm-1], and its relative change `aflux_change`.
         atm : store.AtmData
             Not used.
         """
@@ -5010,17 +4988,16 @@ class ODESolver(object):
         """
         Compute the photodissociation rates and put them into the rate coefficients.
 
-        J = integral of aflux times the branch cross section over wavelength, with the
-        trapezoidal rule on the two parts of the grid, using the temperature-dependent cross
-        sections where available. Each branch rate, times `Config.f_diurnal`, becomes the rate
-        coefficient of its reaction unless the reaction is in `Config.remove_list`.
+        J is the integral over wavelength of the actinic flux times the cross section of each
+        branch. Times `Config.f_diurnal`, it becomes the rate coefficient of the reaction,
+        unless the reaction is in `Config.remove_list`.
 
         Parameters
         ----------
         var : store.Variables
-            Reads `aflux` [photons cm-2 s-1 nm-1], `cross_J` and `cross_J_T` [cm2], `dbin1`,
-            `dbin2` [nm] and `sflux_din12_indx`. Sets `J_sp[(sp, branch)]`, shape (nz,) [s-1],
-            with branch 0 the sum over branches, and updates `k`.
+            Reads `aflux` [photons cm-2 s-1 nm-1] and the cross sections [cm2]. Sets
+            `J_sp[(sp, branch)]`, shape (nz,) [s-1], with branch 0 the sum over branches,
+            and updates `k`.
         atm : store.AtmData
             Not used.
         """
@@ -5285,16 +5262,13 @@ class Ros2(ODESolver):
         """
         Take one Rosenbrock step of chemistry and transport.
 
-        The transport terms and matrix are chosen by `use_moldiff` and `use_settling`
-        (`diffdf` / `lhs_jac_tot`, `diffdf_settling` / `lhs_jac_settling`, or
-        `diffdf_no_mol` / `lhs_jac_no_mol`). Species held fixed by condensation
-        (`fix_species`) and the electron with `use_ion` are kept out of the update, and the
-        species in `use_fix_sp_bot` are reset to their fixed bottom mixing ratios. The
-        truncation error ignores species below `mtol` or `atol`, the bottom layer with bottom
-        boundary conditions, and the condensing species. With `use_ion`, the electron density
-        is then set by charge balance. With `use_fix_H2He`, once t > 1e6 s it adds H2 and He
-        at their current bottom mixing ratios to `Config.use_fix_sp_bot`, which changes the
-        shared Config.
+        The transport terms and matrix depend on `Config.use_moldiff` and `use_settling`.
+        Species in `fix_species` and, with `use_ion`, the electron are kept out of the
+        update; the species in `use_fix_sp_bot` are reset to their bottom mixing ratios.
+        With `use_ion`, the electron density is then set by charge balance.
+
+        With `use_fix_H2He`, once t > 1e6 s, it adds H2 and He to `Config.use_fix_sp_bot`,
+        which changes the shared Config for the rest of the run.
 
         Parameters
         ----------
@@ -5478,11 +5452,12 @@ class Ros2(ODESolver):
         """
         Take one Rosenbrock step with the bottom-layer composition held fixed.
 
-        Like `solver`, with `lhs_jac_fix_all_bot` or `lhs_jac_no_mol_fix_all_bot`, and the
-        bottom mixing ratios reset after the step. Unlike `solver`, it does not handle
-        `fix_species`, `use_fix_sp_bot` or settling. `naming_solver` always selects `solver`,
-        so this method is not used by the current code; it would fail anyway, because the
-        matrix from `lhs_jac_*_fix_all_bot` is singular and `band_lu` raises LinAlgError.
+        Not called by the current code: `naming_solver` always selects `solver`. It would
+        fail anyway, because the matrix from `lhs_jac_*_fix_all_bot` is singular and
+        `band_lu` raises LinAlgError.
+
+        Like `solver`, with the bottom mixing ratios reset after the step, but without
+        `fix_species`, `use_fix_sp_bot` or settling.
 
         Parameters
         ----------
@@ -5755,8 +5730,10 @@ class Output(object):
 
     def print_prog(self, var, para):
         """
-        Log the time, the step number, `longdy`, `longdydt`, `dt`, and where the composition
-        changes most.
+        Log the progress of the integration.
+
+        Logs the time, the step number, `longdy`, `longdydt`, `dt`, and the species and
+        layer where the composition changes most.
 
         Parameters
         ----------
@@ -5809,11 +5786,9 @@ class Output(object):
         """
         Make the final plots and write the output files.
 
-        Plots the evolution (`use_plot_evo`) and the final mixing ratios to `plot_dir/mix.<fmt>`
-        (`use_plot_end`). The pickle holds a dict with the keys 'variable' (the attributes in
-        `var.var_save`, plus `species` and `nr`), 'atm' and 'parameter'; the plain files hold
-        the same three groups as text. With `save_evolution`, the time series in
-        `var.var_evol_save` are kept every `save_evo_frq` steps.
+        Plots the evolution (`Config.use_plot_evo`) and the final mixing ratios
+        (`use_plot_end`), then writes the formats in `save_type` to `output_dir`. With
+        `save_evolution`, the time series are kept every `save_evo_frq` steps.
 
         Parameters
         ----------

@@ -39,11 +39,9 @@ def read_network(vulcan_cfg: Config):
 
     The forward reactions get the odd numbers 1, 3, 5, ... in file order (the reverse
     reaction of n is n + 1), and the network file is overwritten with the new numbers.
-    The section headers ('# 3-body', '# special', '# condensation', '# radiative',
-    '# photo', '# ionisation') set the label of each entry in the table ('#M', '#S',
-    '#C', '#R', '#P', '#I'; '#R' before the first header). Without `use_photo`, the
-    reactions from the photo section on go to a separate table instead, except the
-    condensation reactions.
+    The section headers set the label of each entry ('#M' for three-body, '#P' for
+    photolysis, and so on). Without `use_photo`, the photochemical reactions go to a
+    separate table.
 
     Parameters
     ----------
@@ -162,12 +160,9 @@ def make_chemdf(re_table, ofname):
 
     The species are numbered in order of first appearance in `re_table`. For each
     reaction j with stoichiometric coefficients nu, the net rate is
-    v_j = k[j] prod(y_reac^nu) - k[j+1] prod(y_prod^nu), with M the total number density.
-    The file gets `spec_list`, `ni`, `nr`, `re_dict` and `re_wM_dict` (reactants and
-    products of each reaction, without and with M), `chemdf(y, M, k)` (the production
-    minus loss dn/dt of every species [cm-3 s-1] for y of shape (nz, ni)), `df(y, M, k)`
-    (the same terms written out explicitly, for the Jacobian), the rate functions `v_j`
-    and `rate_ans(sp)` (the individual production and loss terms of species sp).
+    v_j = k[j] prod(y_reac^nu) - k[j+1] prod(y_prod^nu). The main function written is
+    `chemdf(y, M, k)`, the production minus loss dn/dt of every species [cm-3 s-1] for y of
+    shape (nz, ni); `df` writes the same terms out for the Jacobian.
 
     Parameters
     ----------
@@ -537,14 +532,11 @@ def make_Gibbs(re_table, gibbs_text, ofname):
     """
     Append the equilibrium constants of the reactions to `chem_funs.py`.
 
-    Appends the Gibbs energy functions of `thermo/gibbs_text.txt`, the loading of the
-    NASA 9-coefficient polynomials of every species, and `Gibbs(j, T)`, the equilibrium
-    constant of forward reaction j in number-density units,
-    K_j = exp(-sum(nu g / RT)) (k_B T / P_0)^(n_reac - n_prod), with g / RT from the
-    NASA polynomials (valid for 200-6000 K), P_0 = 1 bar and n_reac and n_prod the
-    numbers of reactant and product molecules without M; K_j is in
-    (cm3)^(n_reac - n_prod). `op.ReadRate.rev_rate` sets the reverse rate
-    k[j+1] = k[j] / K_j. The parsing repeats that of `make_chemdf`.
+    Writes `Gibbs(j, T)`, the equilibrium constant of forward reaction j in number-density
+    units, K_j = exp(-sum(nu g / RT)) (k_B T / P_0)^(n_reac - n_prod) [(cm3)^(n_reac -
+    n_prod)], with g / RT from the NASA 9-coefficient polynomials (valid for 200 to 6000 K),
+    P_0 = 1 bar, and n_reac and n_prod the numbers of reactant and product molecules
+    without M. `op.ReadRate.rev_rate` sets the reverse rate k[j+1] = k[j] / K_j.
 
     Parameters
     ----------
@@ -791,8 +783,7 @@ def make_jac(ni, nr, ofname, chemistry):
     The Jacobian d(df)/dy is derived symbolically with SymPy from `chemistry.df`. The
     generated function returns a dense array of shape (nz ni, nz ni) for the state
     flattened layer by layer (index layer * ni + species); only the blocks within each
-    layer are filled, since chemistry does not couple layers. It is evaluated with
-    y of shape (nz, ni) [cm-3], M of shape (nz,) [cm-3] and the rate coefficients k.
+    layer are filled, since chemistry does not couple layers.
 
     Parameters
     ----------
@@ -964,10 +955,9 @@ def check_duplicate(nr, photo_re_indx):
     """
     Warn about forward reactions that repeat another one.
 
-    Two reactions count as duplicates when their sets of reactant and product species
-    (with M) are equal, in the same or the opposite direction; stoichiometric
-    coefficients are not compared. Only the reactions before the first photolysis
-    reaction are checked. Duplicates are logged as warnings, not raised.
+    Two reactions count as duplicates when they have the same reactant and product
+    species, in either direction; stoichiometric coefficients are not compared. Only the
+    reactions before the first photolysis reaction are checked.
 
     Parameters
     ----------
@@ -1010,11 +1000,9 @@ def make_all(vulcan_cfg: Config):
     """
     Generate `chem_funs.py` from the network and check the network.
 
-    Runs `read_network` (which renumbers the network file in place), `make_chemdf`,
-    `make_Gibbs`, `make_jac` and `make_neg_jac`, reloads `chem_funs`, then
-    `check_conserv` and `check_duplicate`. `make_jac` reads `df` from
-    `importlib.import_module`, which returns an already imported `chem_funs` unchanged,
-    so this must run before anything imports `chem_funs`, as `vulcan.run_vulcan` does.
+    Runs the `make_*` functions in turn, then `check_conserv` and `check_duplicate`.
+    It must run before anything imports `chem_funs`, as `vulcan.run_vulcan` does: an
+    already imported `chem_funs` is not reloaded before `make_jac` reads it.
 
     Parameters
     ----------

@@ -16,9 +16,8 @@ def mol_to_ele(mol: str):
     """
     Count the atoms of each element in a molecule name.
 
-    The name is split into an upper-case letter, an optional lower-case letter and an
-    optional count (after https://codereview.stackexchange.com/a/232664). Anything else in
-    the name, such as the '_l_s' of a condensate or a charge sign, is ignored.
+    Anything other than element symbols and counts, such as the '_l_s' of a condensate or
+    a charge sign, is ignored.
 
     Parameters
     ----------
@@ -148,10 +147,8 @@ def _generate_colour(gas: str):
     """
     Make a colour for a gas by mixing the preset colours of its elements.
 
-    Each element adds the first hex digit of each RGB channel of its preset colour, times
-    its number of atoms; the sum is scaled so that the largest channel is 255, and darkened
-    to keep the channel sum at most 3 x 220, so the colour stays visible on white. The
-    method follows AGNI's phys.jl.
+    The element colours are weighted by the number of atoms, then brightened and capped so
+    that the colour stays visible on white. The method follows AGNI's phys.jl.
 
     Parameters
     ----------
@@ -268,22 +265,19 @@ def plot_update(cfg, species, var, atm, para, fpath=None):
     Plot the mixing ratios of `Config.plot_spec` and the temperature at the current step.
 
     Mixing ratios are drawn against pressure [bar] or, with `Config.plot_height`, height
-    [km], with the saturation mixing ratio of each condensing species dashed and the
-    temperature [K] dotted on a second x axis. The title gives the step count, the time
-    [s] and `longdydt` [s-1].
+    [km], with the saturation mixing ratios dashed and the temperature [K] dotted on a
+    second x axis.
 
     Parameters
     ----------
     cfg : Config
-        Run configuration; reads `plot_spec`, `plot_height`, `use_condense`,
-        `condense_sp`, `P_b` and `P_t` [dyn cm-2], `plot_dir`, `plot_fmt` and `plot_dpi`.
+        Run configuration.
     species : list of str
         Species names, the columns of `var.ymix`.
     var : store.Variables
         Reads `ymix`, `t` [s] and `longdydt` [s-1].
     atm : store.AtmData
-        Reads `pco` [dyn cm-2], `zco` and `zmco` [cm], `Tco` [K] and with condensation
-        `sat_mix`.
+        Reads `pco`, `zco`, `zmco`, `Tco` and, with condensation, `sat_mix`.
     para : store.Parameters
         Reads `count`; increments `pic_count`.
     fpath : str, optional
@@ -443,9 +437,10 @@ def plot_evo_inter(cfg, species, var, atm, plot_j=-1, plot_ymin=1e-16, dn=1):
     """
     Plot the mixing ratios of `Config.plot_spec` in one layer against time, mid-run.
 
-    Like `plot_evo`, but for a run that was interrupted: `var.t_time` is converted to an
-    array in place, the colours come from the rainbow map and the labels are the plain
-    names. It overwrites `evo.<plot_fmt>` in `plot_dir`. Not called by the current code.
+    Not called by the current code.
+
+    Like `plot_evo`, but for a run that was interrupted; it converts `var.t_time` to an
+    array in place and overwrites `evo.<plot_fmt>` in `plot_dir`.
 
     Parameters
     ----------
@@ -493,17 +488,17 @@ def plot_TP(cfg, atm):
     """
     Plot the initial temperature and Kzz profiles.
 
-    Temperature [K] is drawn as a solid line and Kzz [cm^2 s^-1] as a dashed line on a
-    second x axis, against pressure [bar] or, with `cfg.plot_height`, height [km].
-    The figure is saved as `TPK_initial.<plot_fmt>` in `cfg.plot_dir`; the name is
+    Temperature [K] is drawn as a solid line and Kzz [cm2 s-1] as a dashed line on a
+    second x axis, against pressure [bar] or, with `Config.plot_height`, height [km].
+    The figure is saved as `TPK_initial.<plot_fmt>` in `Config.plot_dir`; the name is
     appended to `plot_dir` directly, so `plot_dir` must end with a path separator.
 
     Parameters
     ----------
     cfg : Config
-        VULCAN configuration.
-    atm : AtmData
-        Atmosphere data with `Tco`, `Kzz`, `pco` and `pico` [dyn cm^-2] and `zmco` [cm].
+        Run configuration.
+    atm : store.AtmData
+        Atmosphere data; reads `Tco`, `Kzz`, `pco`, `pico` and `zmco`.
     """
     plot_dir = cfg.plot_dir
     # plt.figure('TPK')

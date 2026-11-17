@@ -10,7 +10,7 @@ diffusion profile as a `vulcan.climate.ClimateUpdate`. `set_composition` and
 `climate_update` work on any AGNI atmosphere, so a coupled framework that builds its own
 AGNI atmosphere can use them in its own hook.
 
-AGNI works in SI units and VULCAN in CGS: pressures are converted with `PA_TO_DYN` and
+AGNI works in SI units and VULCAN in cgs: pressures are converted with `PA_TO_DYN` and
 diffusion coefficients with `M2_TO_CM2` at this boundary.
 
 Imports
@@ -55,7 +55,7 @@ def agni_dir(vulcan_cfg: Config) -> str:
     Parameters
     ----------
     vulcan_cfg : Config
-        VULCAN configuration; `agni_dir` is used.
+        Run configuration; `agni_dir` is used.
 
     Returns
     -------
@@ -76,7 +76,7 @@ def activate_julia(vulcan_cfg: Config):
     Parameters
     ----------
     vulcan_cfg : Config
-        VULCAN configuration; `agni_dir` and `output_dir` are used.
+        Run configuration; `agni_dir` and `output_dir` are used.
 
     Returns
     -------
@@ -127,9 +127,8 @@ def init_agni_atmos(vulcan_cfg: Config, atm, var):
     The composition starts from VULCAN's column-median mixing ratios, leaving out species
     with '_' in their name (condensates and excited states), and the temperature from
     VULCAN's profile (`set_temperature`). The instellation comes from `_instellation`
-    [W m-2]. The boundary pressures `atm.pico[0]` and `atm.pico[-1]` are converted from
-    dyn cm-2 to bar, gravity and planet radius from CGS to SI, and `Config.sl_angle` from
-    radians to degrees.
+    [W m-2]. AGNI gets the boundary pressures `atm.pico[0]` and `atm.pico[-1]` in bar,
+    gravity and planet radius in SI, and `Config.sl_angle` in degrees.
 
     A `runtime.sf` spectral file in `Config.output_dir` is used unchanged when it exists;
     otherwise AGNI makes it from `Config.spectral_file` in `agni_dir` and the stellar
@@ -139,7 +138,7 @@ def init_agni_atmos(vulcan_cfg: Config, atm, var):
     Parameters
     ----------
     vulcan_cfg : Config
-        VULCAN configuration.
+        Run configuration.
     atm : store.AtmData
         Atmosphere data; reads `pico` [dyn cm-2], `pco` [dyn cm-2] and `Tco` [K].
     var : store.Variables
@@ -276,7 +275,7 @@ def set_composition(atmos, pco, species: list[str], ymix):
     species : list of str
         VULCAN species names, the columns of `ymix`.
     ymix : np.ndarray
-        VULCAN volume mixing ratios, shape (nz, ni) [1].
+        VULCAN volume mixing ratios, [dimensionless], shape (nz, ni).
     """
     # gas_ovmr, not the rained-out gas_vmr, so a gas VULCAN lacks keeps its full inventory
     current = {str(g): np.asarray(atmos.gas_ovmr[g], dtype=float) for g in atmos.gas_names}
@@ -288,7 +287,7 @@ def set_composition(atmos, pco, species: list[str], ymix):
 
 def climate_update(atmos) -> ClimateUpdate:
     """
-    The temperature and eddy diffusion of an AGNI atmosphere, in VULCAN's CGS units.
+    The temperature and eddy diffusion of an AGNI atmosphere, in VULCAN's cgs units.
 
     Temperature is on AGNI's layer centres and Kzz on its level edges. Pressures are
     converted from Pa to dyn cm-2 and Kzz from m2 s-1 to cm2 s-1.
@@ -313,7 +312,10 @@ def climate_update(atmos) -> ClimateUpdate:
 
 
 def _solve_energy(atmos, vulcan_cfg: Config) -> bool:
-    """Solve for the energy-conserving temperature profile, with a second, wider attempt."""
+    """Solve AGNI for the energy-conserving temperature profile; return True on success.
+
+    A failed first attempt is followed by a second one with larger steps.
+    """
     jl = _julia()
     modplot = 1 if vulcan_cfg.use_live_plot else 0
     for attempt in (1, 2):
@@ -365,7 +367,7 @@ class AgniClimate:
         Parameters
         ----------
         vulcan_cfg : Config
-            VULCAN configuration.
+            Run configuration.
         atm : store.AtmData
             Atmosphere data, passed to `init_agni_atmos`.
         var : store.Variables
@@ -388,7 +390,7 @@ class AgniClimate:
         species : list of str
             VULCAN species names, the columns of `ymix`.
         ymix : np.ndarray
-            VULCAN volume mixing ratios, shape (nz, ni) [1].
+            VULCAN volume mixing ratios, [dimensionless], shape (nz, ni).
 
         Returns
         -------

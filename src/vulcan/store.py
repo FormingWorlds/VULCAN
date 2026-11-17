@@ -55,18 +55,13 @@ class Variables(object):
         Integration time [s].
     dt : float
         Current time step [s]; starts at `Config.dttry`.
-    dy : float
-        Largest relative change of y over the last step [dimensionless].
-    dy_prev : float
-        `dy` of the step before [dimensionless].
-    dydt : float
-        `dy / dt` [s-1].
-    longdy : float
-        Largest change of the mixing ratios, relative to themselves, over the convergence
-        look-back window (dn in eq. 10 of Tsai et al. 2017) [dimensionless].
-    longdydt : float
-        `longdy` divided by the length of that window (dn/dt in eq. 11 of Tsai et al. 2017)
-        [s-1].
+    dy, dy_prev, dydt : float
+        Largest relative change of y over the last step and the step before
+        [dimensionless], and `dy / dt` [s-1].
+    longdy, longdydt : float
+        Largest relative change of the mixing ratios over the convergence window
+        [dimensionless], and that change per second [s-1] (eqs. 10 and 11 of Tsai et al.
+        2017).
     aflux_change : float
         Largest relative change of the actinic flux at the last photochemistry update
         [dimensionless]; stays 0 without photochemistry.
@@ -74,15 +69,12 @@ class Variables(object):
         `y` [cm-3] and `t` [s] after each accepted step.
     atom_loss_time : list
         `atom_loss` values after each accepted step [dimensionless].
-    atom_ini : dict
-        Per element, the initial sum over all species and layers of the number of atoms
-        times the number density [cm-3]. This is a sum over layers, not a column density.
-    atom_sum : dict
-        The same sum for the current `y` [cm-3].
-    atom_loss : dict
-        Relative change `(atom_sum - atom_ini) / atom_ini` per element [dimensionless].
-    atom_loss_prev : dict
-        `atom_loss` at the previous step [dimensionless].
+    atom_ini, atom_sum : dict
+        Per element, the number of atoms summed over all species and layers, initially and
+        now [cm-3, summed over layers; not a column density].
+    atom_loss, atom_loss_prev : dict
+        Relative change `(atom_sum - atom_ini) / atom_ini` per element, now and at the
+        previous step [dimensionless].
     atom_conden : dict
         Per element; set to 0 by `build_atm.InitialAbun.ele_sum` and not updated elsewhere.
     Rf : dict
@@ -117,8 +109,8 @@ class Variables(object):
     charge_list : list
         Species with non-zero charge, excluding the electron 'e'.
     def_bin_min, def_bin_max : float
-        Wavelength range of the stellar spectrum clipped to 2-700 nm [nm];
-        `op.ReadRate.make_bins_read_cross` limits its grid to this range.
+        Wavelength range of the stellar spectrum, clipped to 2 to 700 nm [nm]; the limits
+        of the photochemistry grid.
     threshold : dict
         Photodissociation threshold wavelength per species [nm], set by
         `op.ReadRate.make_bins_read_cross`.

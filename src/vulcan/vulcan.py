@@ -83,7 +83,7 @@ def run_vulcan(vulcan_cfg: Config, make_network: bool = True, climate=None):
     Parameters
     ----------
     vulcan_cfg : Config
-        The configuration object containing all settings for the VULCAN run.
+        Run configuration.
     make_network : bool, optional
         Whether to remake the chemical network (chem_funs.py). Default is True.
     climate : callable, optional
@@ -223,7 +223,7 @@ def run_vulcan(vulcan_cfg: Config, make_network: bool = True, climate=None):
 
 
 def run_cli():
-    """Entry point for the script when run directly."""
+    """Run VULCAN from the command line with the default `Config`; `-n` skips `make_all`."""
 
     print('Starting VULCAN from command line')
 

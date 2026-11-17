@@ -17,7 +17,7 @@ from .paths import VULCAN_DIR
 
 class Config:
     """
-    Configuration class for VULCAN model.
+    Every runtime setting of a VULCAN run, as attributes set to their defaults in `__init__`.
     """
 
     def __init__(self):

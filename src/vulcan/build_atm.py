@@ -8,7 +8,7 @@ Imports
 - [`vulcan.config`](config.md): `Config` class for handling configuration settings.
 - [`vulcan.paths`](paths.md): Paths to various files and directories used in VULCAN.
 - [`vulcan.phy_const`](phy_const.md): Physical constants used in VULCAN.
-- `chem_funs`: `ni`, `spec_list`: number of species and reactions in the network, and the list of species.
+- `chem_funs`: `ni`, `spec_list`: number of species in the network and the list of species.
 
 """
 
@@ -163,13 +163,11 @@ class InitialAbun(object):
         """
         Run FastChem for the equilibrium composition on the current T-P profile.
 
-        Writes the FastChem inputs inside `paths.FASTCHEM_DIR`: it copies the parameter file
-        with or without ions over `input/parameters.dat`, writes the elemental abundances to
-        `input/element_abundances_vulcan.dat` and the profile to `input/vulcan_TP/
-        vulcan_TP.dat` (pressure in bar, T in K). With `Config.use_solar = False` the
-        elements in `atom_list` take the ratios `<X>_H` from the configuration and the other
-        FastChem elements are scaled by `fastchem_met_scale`. FastChem writes its result to
-        `output/vulcan_EQ.dat`, which `ini_y` reads.
+        Writes the FastChem inputs (elemental abundances and the T-P profile in bar and K)
+        inside `paths.FASTCHEM_DIR` and runs FastChem there; `ini_y` reads the result from
+        `output/vulcan_EQ.dat`. With `Config.use_solar = False`, the elements in `atom_list`
+        take the ratios `<X>_H` from the configuration and the others are scaled by
+        `fastchem_met_scale`.
 
         Parameters
         ----------
@@ -316,16 +314,14 @@ class InitialAbun(object):
         """
         Set the initial number densities and mixing ratios for `Config.ini_mix`.
 
-        With `use_condense`, also sets the saturation mixing ratios and, with
-        `use_ini_cold_trap` (not applied for `ini_mix = 'table'`), caps each condensing
-        species at saturation and, if it condenses, holds it above the cold trap at the
-        saturation mixing ratio of the cold-trap level.
+        With `Config.use_condense` and `use_ini_cold_trap` (not for `ini_mix = 'table'`),
+        each condensing species is capped at saturation and held at its cold-trap value
+        above the cold trap.
 
         Parameters
         ----------
         data_var : store.Variables
-            Filled in place: `y` [cm-3], `y_ini` [cm-3], `ymix` and, with `use_ion`,
-            `charge_list`.
+            Sets `y` and `y_ini` [cm-3], `ymix` and, with `use_ion`, `charge_list`.
         data_atm : store.AtmData
             Reads `pco` [dyn cm-2], `Tco` [K], `M` and `n_0` [cm-3], and with condensation
             `sat_p` [dyn cm-2]; sets `sat_mix` and `conden_min_lev`.
@@ -339,8 +335,7 @@ class InitialAbun(object):
         ------
         ValueError
             If a 'table' file has a different number of layers, or `use_ion` is set and no
-            charged species were collected (always the case for `ini_mix = 'table'`, which
-            does not fill `charge_list`).
+            charged species were found (always the case for `ini_mix = 'table'`).
         IOError
             If `ini_mix` is not recognised.
         """
@@ -611,16 +606,16 @@ class Atm(object):
         """
         Set the temperature, eddy diffusion and vertical velocity profiles.
 
-        `Config.atm_type` sets T: 'isothermal' (`Tiso`), 'analytical' (`TP_H14` with
-        `para_anaTP`), 'file' (interpolated in p from `atm_file`, columns Pressure
-        [dyn cm-2], Temp [K] and, with `Kzz_prof = 'file'`, Kzz [cm2 s-1]; constant beyond
-        the file range), 'vulcan_ini' (from a previous run's pickle) or 'table' (p and T from
-        `vul_ini`). `Kzz_prof` sets Kzz on the interior interfaces: 'const' (`const_Kzz`),
-        'file', 'JM16' (1e5 (300 / p[mbar])^0.5 cm2 s-1, at least `K_deep`) or 'Pfunc'
-        (`K_max` (`K_p_lev`[bar] / p[bar])^0.4, at least `K_max`) or 'climate' (zero here;
-        the climate hook sets it in its first update, before the integration). `vz_prof`
-        sets vz: 'const' (`const_vz`) or 'file' (column vz of `atm_file`, which needs
-        `atm_type = 'file'`). Kzz and vz are zero when `use_Kzz` and `use_vz` are off.
+        - `Config.atm_type` sets T: 'isothermal' (`Tiso`), 'analytical' (`TP_H14`), 'file'
+          (from `atm_file`, constant beyond its pressure range), 'vulcan_ini' (from a
+          previous run) or 'table' (p and T from `vul_ini`).
+        - `Kzz_prof` sets Kzz on the interior interfaces: 'const' (`const_Kzz`), 'file',
+          'JM16' (1e5 (300 / p[mbar])^0.5 cm2 s-1, at least `K_deep`), 'Pfunc'
+          (`K_max` (`K_p_lev` / p)^0.4, at least `K_max`) or 'climate' (zero until the
+          first climate update, before the integration).
+        - `vz_prof` sets vz: 'const' (`const_vz`) or 'file' (needs `atm_type = 'file'`).
+
+        Kzz and vz are zero when `use_Kzz` and `use_vz` are off.
 
         Parameters
         ----------
@@ -905,19 +900,17 @@ class Atm(object):
         Integrates hydrostatic balance layer by layer, dz = H_p ln(p_i / p_{i+1}) with
         H_p = k_B T N_A / (mu g) and g = g_s (R_p / (R_p + z))^2. For a gas giant with
         `P_b` >= 1 bar, z = 0 and g = g_s at the interface closest to 1 bar; otherwise at
-        the bottom. With `use_settling`, also sets the settling velocities with
-        `settling_velocity`. Plots the T-P profile when `plot_TP` is set and warns when T is
-        outside 200-6000 K, the range of the thermodynamic data.
+        the bottom. With `use_settling`, also calls `settling_velocity`. Plots the T-P
+        profile when `plot_TP` is set and warns when T is outside the 200 to 6000 K range of
+        the thermodynamic data.
 
         Parameters
         ----------
         data_var : store.Variables
             Reads `ymix`.
         data_atm : store.AtmData
-            Reads `Tco` [K] and `pico` [dyn cm-2]; sets `mu` [g mol-1], `g` and `gs`
-            [cm s-2], `Hp`, `dz`, `dzi`, `zco`, `zmco` [cm], `pref_indx`, with
-            `use_moldiff` `Ti` [K] and `Hpi` [cm] on the interfaces, and with
-            `use_settling` `vs` [cm s-1].
+            Reads `Tco` and `pico`; sets `mu`, `g`, `Hp` and the height grid (`dz`, `dzi`,
+            `zco`, `zmco`). See `store.AtmData` for units.
         output : op.Output
             Not used.
 
@@ -1020,7 +1013,7 @@ class Atm(object):
         ----------
         data_atm : store.AtmData
             Reads `Tco` [K], `g` [cm s-2], `rho_p` [g cm-3] and `r_p` [cm]; sets the columns
-            of `vs` [cm s-1] of the species in `Config.non_gas_sp`, shape (nz-1, ni),
+            of `vs` [cm s-1] of the species in `Config.non_gas_sp`, shape (nz - 1, ni),
             negative downward.
 
         Raises
@@ -1075,8 +1068,8 @@ class Atm(object):
 
         The flux at the stellar surface from `Config.sflux_file` (wavelength [nm], flux
         [erg cm-2 s-1 nm-1]) is scaled by (R_star / a)^2 and interpolated linearly onto
-        `var.bins`, with zero outside the file range. Logs the fraction of the energy in
-        the bin range that the binned flux keeps, both integrated with the trapezoidal rule.
+        `var.bins`, with zero outside the file range. Logs how much of the energy the
+        binning keeps.
 
         Parameters
         ----------
@@ -1166,12 +1159,11 @@ class Atm(object):
         """
         Set the molar masses and the molecular diffusion coefficients.
 
-        Without `use_moldiff`, only `ms` is set. Otherwise the coefficient of each species
-        in the `atm_base` gas is a reference binary coefficient A T^s / n (H2: CH4-H2 from
+        Without `Config.use_moldiff`, only `ms` is set. Otherwise each species gets a
+        reference binary coefficient A T^s / n in the `atm_base` gas (H2: CH4-H2 from
         Moses 2000a; N2 and O2: CH4-N2 and CH4-O2 from Banks & Kockarts 1973; CO2: H2-CO2),
-        scaled by the square root of the ratio of reduced masses, and evaluated with T and n
-        averaged onto the interior interfaces. Non-gaseous species get zero. Also sets the
-        thermal diffusion factors.
+        scaled by the square root of the ratio of reduced masses. Non-gaseous species get
+        zero.
 
         Parameters
         ----------
