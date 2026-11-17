@@ -14,9 +14,26 @@ log = logging.getLogger('fwl.' + __name__)
 
 def mol_to_ele(mol: str):
     """
-    Return the number of atoms of each element in a given molecule, as a dictionary
+    Count the atoms of each element in a molecule name.
 
-    https://codereview.stackexchange.com/a/232664
+    The name is split into an upper-case letter, an optional lower-case letter and an
+    optional count (after https://codereview.stackexchange.com/a/232664). Anything else in
+    the name, such as the '_l_s' of a condensate or a charge sign, is ignored.
+
+    Parameters
+    ----------
+    mol : str
+        Molecule name, for example 'H2O' or 'CH3OH'.
+
+    Returns
+    -------
+    dict of str to int
+        Number of atoms of each element, for example {'H': 2, 'O': 1}.
+
+    Raises
+    ------
+    ValueError
+        If the name does not start with an upper-case letter or contains no element.
     """
 
     # Validate
@@ -129,9 +146,23 @@ _preset_colours = {
 
 def _generate_colour(gas: str):
     """
-    Systematically generate a colour for a gas, from its composition.
+    Make a colour for a gas by mixing the preset colours of its elements.
 
-    This method for mixing colours was taken from AGNI's phys.jl
+    Each element adds the first hex digit of each RGB channel of its preset colour, times
+    its number of atoms; the sum is scaled so that the largest channel is 255, and darkened
+    to keep the channel sum at most 3 x 220, so the colour stays visible on white. The
+    method follows AGNI's phys.jl.
+
+    Parameters
+    ----------
+    gas : str
+        Molecule name.
+
+    Returns
+    -------
+    str
+        Colour as '#rrggbb'; the fallback magenta if the name cannot be split into
+        elements or an element has no preset colour.
     """
 
     # Break into atoms
@@ -179,7 +210,18 @@ def _generate_colour(gas: str):
 
 def get_colour(thing: str):
     """
-    Get a colour for something which needs one (e.g. for plotting a particular gas)
+    Colour for a gas, element, flux or model component in the plots.
+
+    Parameters
+    ----------
+    thing : str
+        Name to look up in the preset colours, for example 'H2O', 'OLR' or 'atm'.
+
+    Returns
+    -------
+    str
+        Colour as '#rrggbb': the preset colour if there is one, otherwise one mixed from
+        the elements of the name (`_generate_colour`).
     """
 
     # Try getting it from dictionary
@@ -195,7 +237,20 @@ def get_colour(thing: str):
 
 def latexify(gas: str):
     """
-    Convert gas name to latex-formatted string
+    Write a gas name with its digits as LaTeX subscripts, for plot labels.
+
+    Each digit becomes its own subscript, so 'H2O' gives 'H$_2$O' and 'C10' gives
+    'C$_1$$_0$'.
+
+    Parameters
+    ----------
+    gas : str
+        Gas name.
+
+    Returns
+    -------
+    str
+        The label for matplotlib.
     """
 
     out = ''
@@ -210,22 +265,30 @@ def latexify(gas: str):
 
 def plot_update(cfg, species, var, atm, para, fpath=None):
     """
-    Plot the current state of the simulation.
+    Plot the mixing ratios of `Config.plot_spec` and the temperature at the current step.
+
+    Mixing ratios are drawn against pressure [bar] or, with `Config.plot_height`, height
+    [km], with the saturation mixing ratio of each condensing species dashed and the
+    temperature [K] dotted on a second x axis. The title gives the step count, the time
+    [s] and `longdydt` [s-1].
 
     Parameters
     ----------
     cfg : Config
-        The configuration object containing all settings for the VULCAN run.
-    species : list
-        List of species names in the chemical network.
-    var : Variables
-        The Variables object containing the current state of the simulation.
-    atm : AtmData
-        The AtmData object containing atmospheric properties.
-    para : Parameters
-        The Parameters object containing simulation parameters.
+        Run configuration; reads `plot_spec`, `plot_height`, `use_condense`,
+        `condense_sp`, `P_b` and `P_t` [dyn cm-2], `plot_dir`, `plot_fmt` and `plot_dpi`.
+    species : list of str
+        Species names, the columns of `var.ymix`.
+    var : store.Variables
+        Reads `ymix`, `t` [s] and `longdydt` [s-1].
+    atm : store.AtmData
+        Reads `pco` [dyn cm-2], `zco` and `zmco` [cm], `Tco` [K] and with condensation
+        `sat_mix`.
+    para : store.Parameters
+        Reads `count`; increments `pic_count`.
     fpath : str, optional
-        File path to save the plot. If None, a default path is used.
+        File to save to. If None, the plot goes to `_recent.<plot_fmt>` in `plot_dir` and
+        is copied to `<pic_count>.<plot_fmt>` (five digits) for the live-plot frames.
     """
 
     log.debug('Plotting mixing ratios')
@@ -330,17 +393,29 @@ def plot_update(cfg, species, var, atm, para, fpath=None):
 
 def plot_evo(cfg, species, var, atm, plot_j=-1, plot_ymin=1e-16, dn=1):
     """
-    Plot the evolution of mixing ratios over time.
+    Plot the mixing ratios of `Config.plot_spec` in one layer against time.
 
-    Arguments
-    ------------
-    - cfg: configuration object containing plotting parameters
-    - species: list of species
-    - var: variable object containing the time evolution data
-    - atm: atmosphere object containing the atmospheric properties
-    - plot_j: index of the atmospheric layer to plot (default: -1)
-    - plot_ymin: minimum y-axis value for the plot (default: 1e-16)
-    - dn: data point interval for plotting (default: 1, meaning plot all points)
+    The mixing ratios are the saved number densities divided by the present `atm.n_0`.
+    The figure is saved as `evo.<plot_fmt>`; the name is appended to `plot_dir`
+    directly, so `plot_dir` must end with a path separator.
+
+    Parameters
+    ----------
+    cfg : Config
+        Run configuration; reads `plot_spec`, `plot_dir`, `plot_fmt` and `plot_dpi`.
+    species : list of str
+        Species names, the last axis of `var.y_time`.
+    var : store.Variables
+        Reads `y_time` [cm-3], an array of shape (number of saved steps, nz, ni), and
+        `t_time` [s].
+    atm : store.AtmData
+        Reads `n_0` [cm-3].
+    plot_j : int, optional
+        Layer to plot; the default -1 is the top layer.
+    plot_ymin : float, optional
+        Lower limit of the mixing-ratio axis [dimensionless].
+    dn : int, optional
+        Plot every `dn`-th saved step.
     """
 
     plot_spec = cfg.plot_spec
@@ -366,7 +441,28 @@ def plot_evo(cfg, species, var, atm, plot_j=-1, plot_ymin=1e-16, dn=1):
 
 def plot_evo_inter(cfg, species, var, atm, plot_j=-1, plot_ymin=1e-16, dn=1):
     """
-    plot the evolution when the code is interrupted
+    Plot the mixing ratios of `Config.plot_spec` in one layer against time, mid-run.
+
+    Like `plot_evo`, but for a run that was interrupted: `var.t_time` is converted to an
+    array in place, the colours come from the rainbow map and the labels are the plain
+    names. It overwrites `evo.<plot_fmt>` in `plot_dir`. Not called by the current code.
+
+    Parameters
+    ----------
+    cfg : Config
+        Run configuration; reads `plot_spec`, `plot_dir`, `plot_fmt` and `plot_dpi`.
+    species : list of str
+        Species names, the last axis of `var.y_time`.
+    var : store.Variables
+        Reads `y_time` [cm-3] and `t_time` [s].
+    atm : store.AtmData
+        Reads `n_0` [cm-3].
+    plot_j : int, optional
+        Layer to plot; the default -1 is the top layer.
+    plot_ymin : float, optional
+        Lower limit of the mixing-ratio axis [dimensionless].
+    dn : int, optional
+        Plot every `dn`-th saved step.
     """
     var.t_time = np.array(var.t_time)
     ymix_time = np.array(var.y_time / atm.n_0[:, np.newaxis])
