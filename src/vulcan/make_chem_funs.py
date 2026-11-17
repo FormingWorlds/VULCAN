@@ -2,7 +2,14 @@
 """
 ---
 
-Module that reads the chemical network and produces the .txt table for `chemdf`. Rearranges the numbers in the chemical network.
+Generate `chem_funs.py`, the chemistry functions of the network, from the network file and
+the thermodynamic data.
+
+`make_all` renumbers the reactions in the network file, writes the net reaction rates and
+the chemical tendency `chemdf`, the equilibrium constants `Gibbs` for the reverse rates and
+the analytical Jacobians `symjac` and `neg_symjac` into `chem_funs.py`, and checks the
+network for element conservation and duplicate reactions. `chem_funs.py` is generated:
+edit the network or the thermodynamic input instead, and run without `-n`.
 
 Imports
 ---
@@ -27,6 +34,32 @@ log = logging.getLogger('fwl.' + __name__)
 
 
 def read_network(vulcan_cfg: Config):
+    """
+    Renumber the reactions of the network file and collect them as a reaction table.
+
+    The forward reactions get the odd numbers 1, 3, 5, ... in file order (the reverse
+    reaction of n is n + 1), and the network file is overwritten with the new numbers.
+    The section headers ('# 3-body', '# special', '# condensation', '# radiative',
+    '# photo', '# ionisation') set the label of each entry in the table ('#M', '#S',
+    '#C', '#R', '#P', '#I'; '#R' before the first header). Without `use_photo`, the
+    reactions from the photo section on go to a separate table instead, except the
+    condensation reactions.
+
+    Parameters
+    ----------
+    vulcan_cfg : Config
+        Run configuration; reads `network` and `use_photo`.
+
+    Returns
+    -------
+    re_table : str
+        Reaction table for `make_chemdf`: a header line, then for each reaction a label
+        line such as '#M5' and the reaction such as 'H + H + M -> H2 + M'.
+    photo_table : str
+        The photolysis, radiative and ionisation reactions left out without `use_photo`.
+    photo_re_indx : int
+        Number of the first photolysis reaction, or 0 if the network has none.
+    """
 
     Rf, Rindx = {}, {}
     i = 1
@@ -125,7 +158,32 @@ def read_network(vulcan_cfg: Config):
 
 def make_chemdf(re_table, ofname):
     """
-    Make the function chemdf for calculating the chemical production/loss term
+    Write the species, the reaction lists and the chemical tendency into `chem_funs.py`.
+
+    The species are numbered in order of first appearance in `re_table`. For each
+    reaction j with stoichiometric coefficients nu, the net rate is
+    v_j = k[j] prod(y_reac^nu) - k[j+1] prod(y_prod^nu), with M the total number density.
+    The file gets `spec_list`, `ni`, `nr`, `re_dict` and `re_wM_dict` (reactants and
+    products of each reaction, without and with M), `chemdf(y, M, k)` (the production
+    minus loss dn/dt of every species [cm-3 s-1] for y of shape (nz, ni)), `df(y, M, k)`
+    (the same terms written out explicitly, for the Jacobian), the rate functions `v_j`
+    and `rate_ans(sp)` (the individual production and loss terms of species sp).
+
+    Parameters
+    ----------
+    re_table : str
+        Reaction table from `read_network`.
+    ofname : str
+        File to write; overwritten.
+
+    Returns
+    -------
+    ni : int
+        Number of species.
+    nr : int
+        Number of reactions, forward and reverse.
+    species : dict_keys
+        Species names in index order.
     """
 
     chem_dict = {}
@@ -477,8 +535,25 @@ def make_chemdf(re_table, ofname):
 
 def make_Gibbs(re_table, gibbs_text, ofname):
     """
-    Calculating the equilibrium constants (K_eq) from the Gibbs free energy to reverse the reaction rates.
-    To DO: combine the repetitive parts of make_chemdf and make_Gibbs into one finction
+    Append the equilibrium constants of the reactions to `chem_funs.py`.
+
+    Appends the Gibbs energy functions of `thermo/gibbs_text.txt`, the loading of the
+    NASA 9-coefficient polynomials of every species, and `Gibbs(j, T)`, the equilibrium
+    constant of forward reaction j in number-density units,
+    K_j = exp(-sum(nu g / RT)) (k_B T / P_0)^(n_reac - n_prod), with g / RT from the
+    NASA polynomials (valid for 200-6000 K), P_0 = 1 bar and n_reac and n_prod the
+    numbers of reactant and product molecules without M; K_j is in
+    (cm3)^(n_reac - n_prod). `op.ReadRate.rev_rate` sets the reverse rate
+    k[j+1] = k[j] / K_j. The parsing repeats that of `make_chemdf`.
+
+    Parameters
+    ----------
+    re_table : str
+        Reaction table from `read_network`.
+    gibbs_text : str
+        Not used; the functions are always read from `paths.GIBBS_FILE`.
+    ofname : str
+        File to append to.
     """
     chem_dict = {}
     reac_dict = {}  # reaction dict. packed with v_i
@@ -711,7 +786,24 @@ def make_Gibbs(re_table, gibbs_text, ofname):
 
 def make_jac(ni, nr, ofname, chemistry):
     """
-    to make the analytical Jacobian matrix of chemdf
+    Append `symjac(y, M, k, nz)`, the analytical Jacobian of the chemistry, to `chem_funs.py`.
+
+    The Jacobian d(df)/dy is derived symbolically with SymPy from `chemistry.df`. The
+    generated function returns a dense array of shape (nz ni, nz ni) for the state
+    flattened layer by layer (index layer * ni + species); only the blocks within each
+    layer are filled, since chemistry does not couple layers. It is evaluated with
+    y of shape (nz, ni) [cm-3], M of shape (nz,) [cm-3] and the rate coefficients k.
+
+    Parameters
+    ----------
+    ni : int
+        Number of species.
+    nr : int
+        Number of reactions, forward and reverse.
+    ofname : str
+        File to append to.
+    chemistry : module
+        The `chem_funs` module written so far, which provides `df`.
     """
     M = Symbol('M')
     y, k = [], []
@@ -753,7 +845,22 @@ def make_jac(ni, nr, ofname, chemistry):
 
 def make_neg_jac(ni, nr, ofname, chemistry):
     """
-    to make the analytical Jocobian matrix of chemdf
+    Append `neg_symjac(y, M, k, nz)`, the negative of `symjac`, to `chem_funs.py`.
+
+    The Rosenbrock solver (`op.ODESolver.lhs_jac_*`) starts from -J, so this saves a
+    sign change of the full matrix at each step. Same layout and arguments as
+    `make_jac`.
+
+    Parameters
+    ----------
+    ni : int
+        Number of species.
+    nr : int
+        Number of reactions, forward and reverse.
+    ofname : str
+        File to append to.
+    chemistry : module
+        The `chem_funs` module written so far, which provides `df`.
     """
     M = Symbol('M')
     y, k = [], []
@@ -794,6 +901,25 @@ def make_neg_jac(ni, nr, ofname, chemistry):
 
 
 def check_conserv(nr):
+    """
+    Check that every forward reaction conserves each element.
+
+    The atoms of the reactants and of the products (without M) are counted from the
+    element columns of `thermo/all_compose.txt`; each reaction that does not balance is
+    logged as a warning.
+
+    Parameters
+    ----------
+    nr : int
+        Number of reactions, forward and reverse.
+
+    Raises
+    ------
+    RuntimeError
+        If any reaction does not conserve the elements.
+    ValueError
+        If a species is missing from `all_compose.txt`.
+    """
     from .chem_funs import re_dict
 
     conserv_check = True
@@ -835,6 +961,21 @@ def check_conserv(nr):
 
 
 def check_duplicate(nr, photo_re_indx):
+    """
+    Warn about forward reactions that repeat another one.
+
+    Two reactions count as duplicates when their sets of reactant and product species
+    (with M) are equal, in the same or the opposite direction; stoichiometric
+    coefficients are not compared. Only the reactions before the first photolysis
+    reaction are checked. Duplicates are logged as warnings, not raised.
+
+    Parameters
+    ----------
+    nr : int
+        Number of reactions, forward and reverse.
+    photo_re_indx : int
+        Number of the first photolysis reaction, or 0 to check all reactions.
+    """
     from .chem_funs import re_wM_dict
 
     if photo_re_indx > 0:
@@ -866,6 +1007,25 @@ def check_duplicate(nr, photo_re_indx):
 
 # Main function
 def make_all(vulcan_cfg: Config):
+    """
+    Generate `chem_funs.py` from the network and check the network.
+
+    Runs `read_network` (which renumbers the network file in place), `make_chemdf`,
+    `make_Gibbs`, `make_jac` and `make_neg_jac`, reloads `chem_funs`, then
+    `check_conserv` and `check_duplicate`. `make_jac` reads `df` from
+    `importlib.import_module`, which returns an already imported `chem_funs` unchanged,
+    so this must run before anything imports `chem_funs`, as `vulcan.run_vulcan` does.
+
+    Parameters
+    ----------
+    vulcan_cfg : Config
+        Run configuration; reads `network` and `use_photo`.
+
+    Raises
+    ------
+    RuntimeError
+        If a reaction does not conserve the elements (`check_conserv`).
+    """
 
     re_table, photo_table, photo_re_indx = read_network(vulcan_cfg)
     ni, nr, species = make_chemdf(re_table, CHEM_FUNS_FILE)
