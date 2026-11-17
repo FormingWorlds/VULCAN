@@ -49,7 +49,19 @@ def _julia():
 
 
 def agni_dir(vulcan_cfg: Config) -> str:
-    """AGNI folder: `agni_dir` from the config, or `VULCAN/AGNI` when that is empty."""
+    """
+    AGNI folder: `agni_dir` from the config, or `VULCAN/AGNI` when that is empty.
+
+    Parameters
+    ----------
+    vulcan_cfg : Config
+        VULCAN configuration; `agni_dir` is used.
+
+    Returns
+    -------
+    str
+        Path to the AGNI folder.
+    """
     return vulcan_cfg.agni_dir or paths.AGNI_DIR
 
 

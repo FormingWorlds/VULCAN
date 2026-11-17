@@ -49,10 +49,25 @@ compo_row = list(compo['species'])
 
 
 def saturation_mixing_ratio(cfg: Config, atm, sp: str) -> np.ndarray:
-    """Saturation mixing ratio of a condensing species on each layer [1].
+    """
+    Saturation mixing ratio of a condensing species on each layer.
 
     The saturation pressure `atm.sat_p[sp]` over the layer pressure, capped at 1; for H2O
     it is scaled by the relative humidity `cfg.humidity`.
+
+    Parameters
+    ----------
+    cfg : Config
+        Run configuration; `humidity` is used for H2O.
+    atm : store.AtmData
+        Reads `sat_p[sp]` and `pco` [dyn cm-2].
+    sp : str
+        Name of the condensing species.
+
+    Returns
+    -------
+    np.ndarray
+        Saturation mixing ratio, shape (nz,) [dimensionless].
     """
     sat_mix = np.minimum(1.0, atm.sat_p[sp] / atm.pco)
     if sp == 'H2O':
@@ -602,8 +617,9 @@ class Atm(object):
         the file range), 'vulcan_ini' (from a previous run's pickle) or 'table' (p and T from
         `vul_ini`). `Kzz_prof` sets Kzz on the interior interfaces: 'const' (`const_Kzz`),
         'file', 'JM16' (1e5 (300 / p[mbar])^0.5 cm2 s-1, at least `K_deep`) or 'Pfunc'
-        (`K_max` (`K_p_lev`[bar] / p[bar])^0.4, at least `K_max`). `vz_prof` sets vz:
-        'const' (`const_vz`) or 'file' (column vz of `atm_file`, which needs
+        (`K_max` (`K_p_lev`[bar] / p[bar])^0.4, at least `K_max`) or 'climate' (zero here;
+        the climate hook sets it in its first update, before the integration). `vz_prof`
+        sets vz: 'const' (`const_vz`) or 'file' (column vz of `atm_file`, which needs
         `atm_type = 'file'`). Kzz and vz are zero when `use_Kzz` and `use_vz` are off.
 
         Parameters
@@ -889,11 +905,9 @@ class Atm(object):
         Integrates hydrostatic balance layer by layer, dz = H_p ln(p_i / p_{i+1}) with
         H_p = k_B T N_A / (mu g) and g = g_s (R_p / (R_p + z))^2. For a gas giant with
         `P_b` >= 1 bar, z = 0 and g = g_s at the interface closest to 1 bar; otherwise at
-        the bottom. With `use_settling`, also sets the Stokes settling velocity of the
-        non-gaseous species, -2/9 rho_p r_p^2 g / eta, with the viscosity eta of the
-        `atm_base` gas from Cloutman (Table 1); CO2 uses the N2 values. Plots the T-P
-        profile when `plot_TP` is set and warns when T is outside 200-6000 K, the range of
-        the thermodynamic data.
+        the bottom. With `use_settling`, also sets the settling velocities with
+        `settling_velocity`. Plots the T-P profile when `plot_TP` is set and warns when T is
+        outside 200-6000 K, the range of the thermodynamic data.
 
         Parameters
         ----------
@@ -994,9 +1008,27 @@ class Atm(object):
         return data_atm
 
     def settling_velocity(self, data_atm):
-        """Terminal settling velocity of each condensate particle, `data_atm.vs` [cm s-1].
+        """
+        Set the terminal (Stokes) settling velocity of the non-gaseous species.
 
-        Stokes drag in the background gas, whose dynamic viscosity depends on temperature.
+        vs = -2/9 rho_p r_p^2 g / eta on each interface, with g averaged over the two layers
+        and eta = a T^n / (b + T) [g cm-1 s-1] the dynamic viscosity of the `Config.atm_base`
+        gas in the layer above, from Cloutman (Table 1); CO2 uses the N2 values. Called by
+        `f_mu_dz` and again after each climate update.
+
+        Parameters
+        ----------
+        data_atm : store.AtmData
+            Reads `Tco` [K], `g` [cm s-2], `rho_p` [g cm-3] and `r_p` [cm]; sets the columns
+            of `vs` [cm s-1] of the species in `Config.non_gas_sp`, shape (nz-1, ni),
+            negative downward.
+
+        Raises
+        ------
+        ValueError
+            If a non-gaseous species has no particle radius or density.
+        NameError
+            If `Config.atm_base` is not N2, H2, CO2, H2O or O2.
         """
         # TESTing settling velocity
         # based on L. D. Cloutman: A Database of Selected Transport Coefficients for Combustion Studies (Table 1.)

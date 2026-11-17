@@ -1136,7 +1136,8 @@ class Integration(object):
 
     Each step updates the photolysis rates when due, takes one solver step, updates the
     condensation rates, the height grid and the escape fluxes, restores hydrostatic
-    balance, and checks convergence (`stop`).
+    balance, adapts the step size, calls the climate hook every `Config.agni_call_frq`
+    steps (`update_climate`), and checks convergence (`stop`).
     """
 
     def __init__(self, odesolver, output, vulcan_cfg: Config):
@@ -1203,8 +1204,9 @@ class Integration(object):
             update, the other temperature-dependent profiles.
         climate : callable or None
             Climate hook (see `vulcan.climate`). With a hook, the temperature and, with
-            `Kzz_prof = 'climate'`, the eddy diffusion are updated every `agni_call_frq`
-            steps (never when 0) and at each steady state, until the temperature settles.
+            `Kzz_prof = 'climate'` and `use_Kzz`, the eddy diffusion are updated every
+            `agni_call_frq` steps (never when 0) and at each steady state, until the
+            temperature settles.
         """
 
         nz = self.cfg.nz
@@ -1401,22 +1403,41 @@ class Integration(object):
         return var
 
     def update_climate(self, climate, var, atm, para, make_atm) -> float:
-        """Call the climate hook and recompute every quantity that depends on temperature.
+        """
+        Call the climate hook and recompute every quantity that depends on temperature.
 
         The hook gets the present state and returns a temperature profile (and, with
-        `Kzz_prof = 'climate'`, an eddy diffusion profile), which replace VULCAN's. The
+        `Kzz_prof = 'climate'` and `use_Kzz`, an eddy diffusion profile), which replace
+        VULCAN's after regridding (`vulcan.climate.regrid_temperature`, `regrid_kzz`). The
         mixing ratios are kept; the number densities follow the new temperature at the fixed
         pressures. Rate coefficients, molecular diffusion, saturation pressures, scale
-        heights, settling velocities and photolysis rates are then recomputed, as at the
-        start of a run. An update that changes the temperature by more than `agni_T_rtol`
-        also restarts the step size from `dttry`, and the steady-state test in `conv` then
-        only uses the steps after it; a smaller change does neither, so frequent updates of a
-        settled climate do not hold back the steady state.
+        heights, settling velocities, escape fluxes and photolysis rates are then
+        recomputed, as at the start of a run. An update that changes the temperature by more
+        than `agni_T_rtol` also restarts the step size from `dttry`, and the steady-state
+        test in `conv` then only uses the steps after it; a smaller change does neither, so
+        frequent updates of a settled climate do not hold back the steady state.
+
+        Parameters
+        ----------
+        climate : callable
+            Climate hook, called as `climate(pco, Tco, species, ymix)` with copies of the
+            present state; returns a `vulcan.climate.ClimateUpdate`.
+        var : store.Variables
+            Reads `ymix`; updates `y` [cm-3], `k`, `atom_ini`, `atom_sum`, `atom_loss_prev`,
+            with photochemistry the photolysis rates, and `dt` [s] after a large change.
+        atm : store.AtmData
+            Updates `Tco` [K], `Kzz` [cm2 s-1], `M` and `n_0` [cm-3] and every quantity
+            derived from them.
+        para : store.Parameters
+            Appends to `climate_dT`; sets `climate_count` after a large change.
+        make_atm : build_atm.Atm
+            Recomputes molecular diffusion, saturation pressures and settling velocities.
 
         Returns
         -------
         float
-            Largest relative temperature change over the layers, max |dT| / T [1].
+            Largest relative temperature change over the layers, max |dT| / T
+            [dimensionless].
         """
         update = climate(atm.pco.copy(), atm.Tco.copy(), list(species), var.ymix.copy())
         t_new = regrid_temperature(update, atm.pco)
