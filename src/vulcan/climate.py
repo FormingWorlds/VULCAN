@@ -7,12 +7,12 @@ diffusion profile during an integration.
 A climate hook is any callable `hook(pco, Tco, species, ymix)` that returns a
 `ClimateUpdate`. VULCAN passes its layer-centre pressures `pco` [dyn cm-2] from the bottom of
 the column up, its temperature `Tco` [K] on those layers, the list of species names and
-their volume mixing ratios `ymix` [layer, species]. The hook returns the new temperature
+their volume mixing ratios `ymix`, shape (nz, ni). The hook returns the new temperature
 profile, and optionally a new eddy diffusion profile, on its own pressure grid; VULCAN maps
 them onto its grid with `regrid_temperature` and `regrid_kzz`. `vulcan.agni.AgniClimate` is
 the hook for AGNI; a coupled framework can pass its own hook to `vulcan.run_vulcan`.
 
-All quantities are in CGS units, as everywhere in VULCAN.
+All quantities are in cgs units, as everywhere in VULCAN.
 """
 
 from __future__ import annotations
@@ -76,9 +76,23 @@ def _checked_pair(p, val, name: str) -> tuple[np.ndarray, np.ndarray]:
 
 
 def interp_logp(p_src, val_src, p_tgt) -> np.ndarray:
-    """Interpolate linearly in log pressure; outside the source range the end values hold.
+    """
+    Interpolate linearly in log pressure; outside the source range the end values hold.
 
-    `p_src` and `p_tgt` share any one pressure unit; `p_src` may be in any order.
+    Parameters
+    ----------
+    p_src : array_like
+        Source pressures, in any order and in any one pressure unit shared with `p_tgt`;
+        must be positive.
+    val_src : array_like
+        Values on `p_src`, same shape.
+    p_tgt : array_like
+        Target pressures, in the unit of `p_src`.
+
+    Returns
+    -------
+    np.ndarray
+        Values on `p_tgt`, same shape as `p_tgt`.
     """
     p_src = np.asarray(p_src, dtype=float)
     val_src = np.asarray(val_src, dtype=float)
@@ -89,20 +103,52 @@ def interp_logp(p_src, val_src, p_tgt) -> np.ndarray:
 
 
 def regrid_temperature(update: ClimateUpdate, pco: np.ndarray) -> np.ndarray:
-    """Temperature of a climate update on VULCAN's layer-centre pressures `pco` [K].
+    """
+    Temperature of a climate update on VULCAN's layer-centre pressures.
 
     Linear in log pressure. Above or below the climate grid the temperature of its top or
     bottom layer holds, so no value is extrapolated.
+
+    Parameters
+    ----------
+    update : ClimateUpdate
+        Climate result; `p` [dyn cm-2] and `tmp` [K] are used.
+    pco : np.ndarray
+        VULCAN layer-centre pressures [dyn cm-2], shape (nz,).
+
+    Returns
+    -------
+    np.ndarray
+        Temperature on `pco` [K], shape (nz,).
     """
     return interp_logp(update.p, update.tmp, np.asarray(pco, dtype=float))
 
 
 def regrid_kzz(update: ClimateUpdate, pico_inner: np.ndarray) -> np.ndarray:
-    """Eddy diffusion of a climate update on VULCAN's inner interfaces `pico[1:-1]` [cm2 s-1].
+    """
+    Eddy diffusion of a climate update on VULCAN's inner interfaces `pico[1:-1]`.
 
     Linear in log pressure of log Kzz when Kzz is positive everywhere, which reproduces a
     power law in pressure exactly; linear in Kzz otherwise. The end values hold outside the
     climate grid.
+
+    Parameters
+    ----------
+    update : ClimateUpdate
+        Climate result; `p_kzz` [dyn cm-2] and `kzz` [cm2 s-1] are used.
+    pico_inner : np.ndarray
+        VULCAN interface pressures without the top and bottom ones, `pico[1:-1]`
+        [dyn cm-2], shape (nz - 1,).
+
+    Returns
+    -------
+    np.ndarray
+        Kzz on `pico_inner` [cm2 s-1], shape (nz - 1,).
+
+    Raises
+    ------
+    ValueError
+        If the update has no Kzz profile.
     """
     if update.kzz is None:
         raise ValueError('The climate update carries no kzz profile')
@@ -134,7 +180,7 @@ def map_composition(
     species : list of str
         VULCAN species names, the columns of `ymix`.
     ymix : np.ndarray
-        VULCAN volume mixing ratios [layer, species].
+        VULCAN volume mixing ratios [dimensionless], shape (nz, ni).
     p_tgt : np.ndarray
         Pressures of the climate model's layers, in the same unit as `p_src`.
     current : dict
@@ -162,6 +208,20 @@ def map_composition(
 
 
 def max_relative_change(t_old: np.ndarray, t_new: np.ndarray) -> float:
-    """Largest relative temperature change over the layers, max |T_new - T_old| / T_old."""
+    """
+    Largest relative temperature change over the layers, max |T_new - T_old| / T_old.
+
+    Parameters
+    ----------
+    t_old : np.ndarray
+        Temperature before the update [K], shape (nz,); must be positive.
+    t_new : np.ndarray
+        Temperature after the update [K], same shape.
+
+    Returns
+    -------
+    float
+        The largest relative change [dimensionless].
+    """
     t_old = np.asarray(t_old, dtype=float)
     return float(np.max(np.abs(np.asarray(t_new, dtype=float) - t_old) / t_old))

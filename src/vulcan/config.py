@@ -17,7 +17,7 @@ from .paths import VULCAN_DIR
 
 class Config:
     """
-    Configuration class for VULCAN model.
+    Every runtime setting of a VULCAN run, as attributes set to their defaults in `__init__`.
     """
 
     def __init__(self):
@@ -207,6 +207,11 @@ class Config:
         self.save_evo_frq = 10
 
     def write_file(self):
+        """
+        Write every attribute and its value to `vulcan_cfg.txt` in `output_dir`.
+
+        An existing file is overwritten.
+        """
         fpath = os.path.join(self.output_dir, 'vulcan_cfg.txt')
         with open(fpath, 'w') as hdl:
             hdl.write('# Variables set in vulcan_cfg object \n')

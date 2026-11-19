@@ -44,7 +44,17 @@ log = logging.getLogger('fwl.' + __name__)
 
 
 def check_climate_config(vulcan_cfg: Config, climate=None) -> None:
-    """Refuse climate coupling settings that cannot work, before any work is done.
+    """
+    Refuse climate coupling settings that cannot work, before any work is done.
+
+    Parameters
+    ----------
+    vulcan_cfg : Config
+        Run configuration; reads `Kzz_prof`, `agni_call_frq`, `T_cross_sp`, `fix_species`,
+        `agni_T_rtol` and `agni_max_calls`.
+    climate : callable or None
+        Climate hook passed to `run_vulcan`. The run counts as coupled when it is given or
+        when `agni_call_frq > 0`.
 
     Raises
     ------
@@ -73,7 +83,7 @@ def run_vulcan(vulcan_cfg: Config, make_network: bool = True, climate=None):
     Parameters
     ----------
     vulcan_cfg : Config
-        The configuration object containing all settings for the VULCAN run.
+        Run configuration.
     make_network : bool, optional
         Whether to remake the chemical network (chem_funs.py). Default is True.
     climate : callable, optional
@@ -213,7 +223,7 @@ def run_vulcan(vulcan_cfg: Config, make_network: bool = True, climate=None):
 
 
 def run_cli():
-    """Entry point for the script when run directly."""
+    """Run VULCAN from the command line with the default `Config`; `-n` skips `make_all`."""
 
     print('Starting VULCAN from command line')
 
